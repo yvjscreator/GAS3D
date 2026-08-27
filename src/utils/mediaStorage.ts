@@ -46,4 +46,8 @@ export async function removeMedia(key: string) {
 }
 
 export const printMediaKey = (placement: string) => `print:${placement}`
+export const variantMediaKey = (role: string) => `variant:${role}`
+export const collectionMediaKey = (id: string, role: 'main' | 'companion' = 'main') => role === 'main' ? `collection:${id}` : `collection:${id}:companion`
 export const backgroundMediaKey = 'background'
+export const overlayMediaKey = (id: string) => `overlay:${id}`
+export const musicMediaKey = 'music'
