@@ -12,9 +12,19 @@ const snap = (value: number, projectDuration: number, playhead: number, clips: T
   return Math.max(0, target ?? tenth)
 }
 
-export function AdvancedTimeline({ playing, onTogglePlay, onSeek }: { playing: boolean; onTogglePlay: () => void; onSeek: (time: number) => void }) {
+type AdvancedTimelineProps = {
+  playing: boolean
+  onTogglePlay: () => void
+  onSeek: (time: number) => void
+  embedded?: boolean
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
+}
+
+export function AdvancedTimeline({ playing, onTogglePlay, onSeek, embedded = false, collapsed: controlledCollapsed, onCollapsedChange }: AdvancedTimelineProps) {
   const studio = useStudioStore(); const project = studio.advancedProjects[studio.activeDirectorId]
-  const [collapsed, setCollapsed] = useState(false); const [height, setHeight] = useState(270)
+  const [internalCollapsed, setInternalCollapsed] = useState(false); const [height, setHeight] = useState(270)
+  const collapsed = controlledCollapsed ?? internalCollapsed
   const scroll = useRef<HTMLDivElement>(null); const pixelsPerSecond = 46 * project.zoom; const timelineWidth = Math.max(760, project.duration * pixelsPerSecond + 80)
   const allClips = project.tracks.flatMap((track) => track.clips)
   const rhythmBeats = beatTimes(studio.beatSync, project.duration)
@@ -48,10 +58,15 @@ export function AdvancedTimeline({ playing, onTogglePlay, onSeek }: { playing: b
     const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
   }
-  return <section className={collapsed ? 'advanced-timeline collapsed' : 'advanced-timeline'} style={{ height: collapsed ? 42 : height }}>
-    {!collapsed && <button className="timeline-resizer" onPointerDown={resizeDock} aria-label="Redimensionar línea de tiempo" />}
+  const toggleCollapsed = () => {
+    const next = !collapsed
+    if (onCollapsedChange) onCollapsedChange(next)
+    else setInternalCollapsed(next)
+  }
+  return <section className={`advanced-timeline${embedded ? ' embedded' : ''}${collapsed ? ' collapsed' : ''}`} style={embedded ? undefined : { height: collapsed ? 42 : height }}>
+    {!embedded && !collapsed && <button className="timeline-resizer" onPointerDown={resizeDock} aria-label="Redimensionar línea de tiempo" />}
     <div className="timeline-toolbar">
-      <button onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? 'Abrir timeline' : 'Contraer timeline'}>{collapsed ? 'Timeline' : '—'}</button>
+      <button onClick={toggleCollapsed} aria-label={collapsed ? 'Abrir timeline' : 'Contraer timeline'}>{collapsed ? 'Timeline' : '—'}</button>
       <button onClick={() => onSeek(0)} aria-label="Volver al inicio"><SkipBack size={14} /></button>
       <button className="timeline-play" onClick={onTogglePlay} aria-label={playing ? 'Pausar' : 'Reproducir'}>{playing ? <Pause size={14} /> : <Play size={14} />}</button>
       <strong>{project.playhead.toFixed(1)}s <span>/ {project.duration.toFixed(1)}s</span></strong>
