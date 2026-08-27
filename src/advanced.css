@@ -1,6 +1,10 @@
 .studio-mode-switch { position:fixed; z-index:82; top:10px; left:128px; display:flex; height:30px; padding:3px; background:#151922ee; border:1px solid #343c49; border-radius:8px; box-shadow:0 8px 22px #0007; }
 .studio-mode-switch button { display:flex; align-items:center; gap:5px; padding:0 10px; color:#758196; background:transparent; border:0; border-radius:5px; font-size:8px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
 .studio-mode-switch button.active { color:#f1f7ff; background:#28547f; box-shadow:0 2px 9px #0007; }.studio-mode-switch button:last-child.active { background:#4b327e; }
+.history-toolbar { position:fixed; z-index:82; top:10px; left:354px; display:flex; gap:4px; padding:3px; height:34px; background:#151922ee; border:1px solid #343c49; border-radius:8px; box-shadow:0 8px 22px #0007; }
+.history-toolbar button { display:grid; place-items:center; width:32px; padding:0; color:#bac6d6; background:#1d2430; border:1px solid #364252; border-radius:5px; }
+.history-toolbar button:hover:not(:disabled) { color:#fff; border-color:#62aaf0; background:#263b52; }
+.history-toolbar button:disabled { opacity:.35; cursor:not-allowed; }
 .action-dock button,.layer-add-actions button { display:flex; align-items:center; justify-content:center; gap:5px; }
 .advanced-mode .drawer-spacer { height:49px; }.advanced-mode .preview-hint { display:none; }.advanced-mode .action-dock { top:52px; bottom:auto; }
 .advanced-section-title { display:flex; align-items:center; gap:7px; margin:4px 0 8px; color:#a9bad0; font:8px 'DM Mono'; letter-spacing:.08em; text-transform:uppercase; }.advanced-section-title svg { color:#6cb7ff; }
@@ -68,4 +72,5 @@
 @media (max-width:800px) {
   .studio-mode-switch { left:122px; }
   .studio-mode-switch button { padding:0 7px; }
+  .history-toolbar { top:49px; left:10px; }
 }

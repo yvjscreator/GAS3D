@@ -19,9 +19,9 @@ import { getProfessionalDuration, getProfessionalRecordingFrame } from '../../co
 import { getMusicGain } from '../../utils/audioTimeline'
 import { AdvancedDirectorPanel } from './AdvancedDirectorPanel'
 import { AdvancedTimeline } from './AdvancedTimeline'
-import { activeAssetClips, activeClip, clipOpacity, getAdvancedDirectorFrame, getCollectionDirectorFrame, isCompleteCollectionItem, isValidCollectionSize } from '../../config/advancedDirectors'
+import { activeAssetClips, activeClip, clipOpacity, createDefaultCamera, getAdvancedDirectorFrame, getCollectionDirectorFrame, isCompleteCollectionItem, isValidCollectionSize } from '../../config/advancedDirectors'
 import type { VariantCameraPreset } from '../../types/studio'
-import { ChevronDown, Circle, Menu, PanelLeftClose, Pause, Play, Settings2, Sparkles } from '../icons'
+import { ChevronDown, Circle, Menu, PanelLeftClose, Pause, Play, Redo2, Settings2, Sparkles, Undo2 } from '../icons'
 import { beatDuration, hasBeatMap } from '../../utils/beatSync'
 
 const placementRotation: Record<PrintPlacement, number> = { frontCenter: 0, frontChest: 0, backCenter: Math.PI, leftSleeve: Math.PI / 2, rightSleeve: -Math.PI / 2 }
@@ -59,7 +59,7 @@ export function GarmentAdStudio() {
   const completeCollectionItems = studio.collectionItems.filter(isCompleteCollectionItem)
   const selectedCamera = studio.campaignMode === 'collection' ? activeCollectionItem?.camera ?? advancedProject.cameras.frontLeftSleeve : advancedProject.cameras[studio.activeVariantId]
   const [cameraDraft, setCameraDraft] = useState<VariantCameraPreset>(selectedCamera)
-  useEffect(() => { if (!framingMode) { const state = useStudioStore.getState(); const project = state.advancedProjects[state.activeDirectorId]; const item = state.collectionItems.find((candidate) => candidate.id === state.activeCollectionItemId); setCameraDraft(state.campaignMode === 'collection' ? item?.camera ?? project.cameras.frontLeftSleeve : project.cameras[state.activeVariantId]) } }, [framingMode, studio.activeDirectorId, studio.activeVariantId, studio.activeCollectionItemId, studio.campaignMode, studio.advancedProjects])
+  useEffect(() => { if (!framingMode) { const state = useStudioStore.getState(); const project = state.advancedProjects[state.activeDirectorId]; const item = state.collectionItems.find((candidate) => candidate.id === state.activeCollectionItemId); setCameraDraft(state.campaignMode === 'collection' ? item?.camera ?? project.cameras.frontLeftSleeve : project.cameras[state.activeVariantId]) } }, [framingMode, studio.activeDirectorId, studio.activeVariantId, studio.activeCollectionItemId, studio.campaignMode, studio.advancedProjects, studio.collectionItems])
   useEffect(() => { useStudioStore.getState().syncAdvancedAssets() }, [studio.background.videoAudioEnabled, studio.music.name, studio.overlayLayers.length])
   useEffect(() => {
     let active = true
@@ -110,6 +110,18 @@ export function GarmentAdStudio() {
     }
     void restore()
     return () => { active = false; restoredUrls.forEach((url) => URL.revokeObjectURL(url)) }
+  }, [])
+  useEffect(() => {
+    const handleHistoryKeys = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      const target = event.target as HTMLElement | null
+      if (target?.matches('input, textarea, [contenteditable="true"]')) return
+      const key = event.key.toLowerCase()
+      if (key === 'z') { event.preventDefault(); if (event.shiftKey) useStudioStore.getState().redo(); else useStudioStore.getState().undo() }
+      else if (key === 'y') { event.preventDefault(); useStudioStore.getState().redo() }
+    }
+    window.addEventListener('keydown', handleHistoryKeys)
+    return () => window.removeEventListener('keydown', handleHistoryKeys)
   }, [])
   useEffect(() => () => { cancelAnimationFrame(previewFrame.current); musicMedia.current?.pause() }, [])
   useEffect(() => {
@@ -251,11 +263,20 @@ export function GarmentAdStudio() {
     ? completeCollectionItems.slice(batchIndex * 4, batchIndex * 4 + 4).map((item, index) => ({ id: item.id, prints: collectionPrints(item, variantTemplate), zones: collectionZones(item, zoneTemplate), camera: item.camera, garmentColor: item.garmentColor, baseRotation: placementRotation[item.placement], primaryPlacement: item.placement, companionPlacement: item.companionPlacement, motion: studio.collectionMotionIds.length ? studio.collectionMotionIds[(batchIndex * 4 + index) % studio.collectionMotionIds.length] : 'turntableRight' as const, beatDelay: hasBeatMap(studio.beatSync) && studio.beatSync.stagger ? index * beatDuration(studio.beatSync) : 0, beatStyle: hasBeatMap(studio.beatSync) ? studio.beatSync.style : undefined }))
     : garmentVariantPresets.map((variant, index) => ({ id: variant.id, prints: createVariantPrints(studio.variantPrintSettings[variant.id], studio.variantAssets, variant.id), zones: studio.variantZoneAdjustments[variant.id], camera: advancedProject.cameras[variant.id], baseRotation: placementRotation[variant.largePlacement], beatDelay: hasBeatMap(studio.beatSync) && studio.beatSync.stagger ? index * beatDuration(studio.beatSync) : 0, beatStyle: hasBeatMap(studio.beatSync) ? studio.beatSync.style : undefined }))
   const viewerCamera = studio.studioMode === 'advanced' ? cameraDraft : studio.cameraView
+  const resetFraming = () => {
+    pauseAdvanced()
+    const reset = collectionMode ? createDefaultCamera() : createDefaultCamera(studio.activeVariantId)
+    setCameraDraft(reset)
+    if (collectionMode && activeCollectionItem) studio.updateCollectionItem(activeCollectionItem.id, { camera: reset })
+    else studio.updateAdvancedCamera(studio.activeVariantId, reset)
+    setFramingMode(false)
+  }
   const viewer = { garmentColor: collectionMode && activeCollectionItem ? activeCollectionItem.garmentColor : studio.garmentColor, printApplications, printZoneAdjustments: activeZoneAdjustments, activePrintPlacement: collectionMode && activeCollectionItem ? activeCollectionPlacement : studio.activePrintPlacement, editorMode: studio.editorMode, alignmentRequest: studio.alignmentRequest, onPrintMove: (placement: Parameters<typeof studio.setPrint>[0], x: number, y: number) => updatePrint(placement, { x, y }), onPrintScale: (placement: Parameters<typeof studio.setPrint>[0], scale: number) => updatePrint(placement, { scale }), onPrintZoneChange: updateZone, showPrintGuides: studio.recordingStatus !== 'recording' && !professionalPreviewing && !guidesHidden && studio.studioMode === 'basic', animation: studio.animation, duration: directedMode ? advancedProject.duration : basicProfessionalDuration, playbackKey: studio.playbackKey, targetRotation: studio.targetRotation, cameraView: viewerCamera, cameraFov: studio.studioMode === 'advanced' ? cameraDraft.fov : 35, cameraComposition: studio.studioMode === 'advanced' && framingMode ? cameraDraft.composition : [0, 0] as [number, number], onCameraViewChange: studio.studioMode === 'advanced' ? (view: typeof studio.cameraView) => framingMode && setCameraDraft((current) => ({ ...current, ...view })) : studio.setCameraView, professionalFrame, renderResolution: studio.recordingStatus === 'recording' ? getExportResolution(studio.format, studio.exportQuality) : null }
   const changeMode = (mode: 'basic' | 'advanced') => { cancelAnimationFrame(previewFrame.current); pauseAdvanced(); setFramingMode(false); studio.setStudioMode(mode); setActivePanel(mode === 'advanced' ? 'director' : 'variants') }
   return <main className={studio.studioMode === 'advanced' ? 'studio zen-studio advanced-mode' : 'studio zen-studio'}>
     <button className="controls-toggle" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label={sidebarOpen ? 'Ocultar controles' : 'Mostrar controles'}>{sidebarOpen ? <PanelLeftClose size={15} /> : <Menu size={15} />}<span>{sidebarOpen ? 'Ocultar' : 'Controles'}</span></button>
     <div className="studio-mode-switch" role="group" aria-label="Modo del estudio"><button className={studio.studioMode === 'basic' ? 'active' : ''} onClick={() => changeMode('basic')}><Settings2 size={13} /> Básico</button><button className={studio.studioMode === 'advanced' ? 'active' : ''} onClick={() => changeMode('advanced')}><Sparkles size={13} /> Avanzado</button></div>
+    {studio.studioMode === 'advanced' && <div className="history-toolbar" role="group" aria-label="Historial de cambios"><button disabled={!studio.canUndo} onClick={studio.undo} title="Deshacer (Ctrl+Z)" aria-label="Deshacer"><Undo2 size={15} /></button><button disabled={!studio.canRedo} onClick={studio.redo} title="Rehacer (Ctrl+Shift+Z)" aria-label="Rehacer"><Redo2 size={15} /></button></div>}
     <div className={sidebarOpen ? 'zen-layout' : 'zen-layout sidebar-closed'}>
       <aside className="control-drawer">
         <div className="drawer-spacer" />
@@ -264,7 +285,7 @@ export function GarmentAdStudio() {
         <div className="drawer-group"><p>02 · Artes</p><AccordionSection id="variants" title="Tipo de campaña y diseños" active={activePanel === 'variants'} onChange={setActivePanel}><CampaignPanel /></AccordionSection>{!collectionMode && <AccordionSection id="designs" title="Ajustar estampados y zonas" active={activePanel === 'designs'} onChange={setActivePanel}><DesignPanel /></AccordionSection>}</div>
         <div className="drawer-group"><p>03 · Escena</p><AccordionSection id="background" title="Fondo e iluminación" active={activePanel === 'background'} onChange={setActivePanel}><BackgroundPanel /></AccordionSection><AccordionSection id="format" title="Formato del lienzo" active={activePanel === 'format'} onChange={setActivePanel}><FormatSelector /></AccordionSection></div>
         <div className="drawer-group"><p>04 · Ritmo</p><AccordionSection id="beat" title="Sincronización musical" active={activePanel === 'beat'} onChange={setActivePanel}><BeatSyncPanel /></AccordionSection></div>
-        {studio.studioMode === 'advanced' ? <div className="drawer-group"><p>05 · Dirección</p><AccordionSection id="director" title="Director y cámaras" active={activePanel === 'director'} onChange={setActivePanel}><AdvancedDirectorPanel framing={framingMode} draft={cameraDraft} onBeginFraming={() => { pauseAdvanced(); setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : advancedProject.cameras[studio.activeVariantId]); setFramingMode(true) }} onCancelFraming={() => { setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : advancedProject.cameras[studio.activeVariantId]); setFramingMode(false) }} onSaveFraming={() => { if (collectionMode && activeCollectionItem) studio.updateCollectionItem(activeCollectionItem.id, { camera: { ...cameraDraft, saved: true } }); else studio.updateAdvancedCamera(studio.activeVariantId, { ...cameraDraft, saved: true }); setFramingMode(false) }} onDraftFov={(fov) => setCameraDraft((current) => ({ ...current, fov }))} onDraftComposition={(composition) => setCameraDraft((current) => ({ ...current, composition }))} /></AccordionSection></div> : <div className="drawer-group"><p>05 · Movimiento</p><AccordionSection id="animation" title="Movimiento" active={activePanel === 'animation'} onChange={setActivePanel}><AnimationPanel /></AccordionSection></div>}
+        {studio.studioMode === 'advanced' ? <div className="drawer-group"><p>05 · Dirección</p><AccordionSection id="director" title="Director y cámaras" active={activePanel === 'director'} onChange={setActivePanel}><AdvancedDirectorPanel framing={framingMode} draft={cameraDraft} onBeginFraming={() => { pauseAdvanced(); setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : advancedProject.cameras[studio.activeVariantId]); setFramingMode(true) }} onCancelFraming={() => { setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : advancedProject.cameras[studio.activeVariantId]); setFramingMode(false) }} onSaveFraming={() => { if (collectionMode && activeCollectionItem) studio.updateCollectionItem(activeCollectionItem.id, { camera: { ...cameraDraft, saved: true } }); else studio.updateAdvancedCamera(studio.activeVariantId, { ...cameraDraft, saved: true }); setFramingMode(false) }} onResetFraming={resetFraming} onDraftFov={(fov) => setCameraDraft((current) => ({ ...current, fov }))} onDraftComposition={(composition) => setCameraDraft((current) => ({ ...current, composition }))} /></AccordionSection></div> : <div className="drawer-group"><p>05 · Movimiento</p><AccordionSection id="animation" title="Movimiento" active={activePanel === 'animation'} onChange={setActivePanel}><AnimationPanel /></AccordionSection></div>}
         <div className="drawer-group"><p>06 · Salida</p><AccordionSection id="export" title="Exportar video" active={activePanel === 'export'} onChange={setActivePanel}><ExportPanel onRecord={record} /></AccordionSection></div>
       </aside>
       <section className={studio.studioMode === 'advanced' ? 'zen-workspace has-timeline' : 'zen-workspace'}>
