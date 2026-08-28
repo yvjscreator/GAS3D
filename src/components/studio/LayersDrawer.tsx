@@ -11,7 +11,7 @@ const transitions = Object.keys(transitionLabels) as LayerTransition[]
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `layer-${Date.now()}-${Math.random().toString(16).slice(2)}`
 const defaultTiming = (duration: number): LayerTiming => ({ start: 0, duration, enter: 'fade', exit: 'fade' })
 
-export function LayersDrawer() {
+export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: boolean; onRequestClose?: () => void }) {
   const studio = useStudioStore(); const input = useRef<HTMLInputElement>(null); const musicInput = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false); const [optionsOpen, setOptionsOpen] = useState(true); const [error, setError] = useState<string | null>(null)
   const selectedOverlay = studio.overlayLayers.find((layer) => layer.id === studio.selectedLayerId)
@@ -60,10 +60,11 @@ export function LayersDrawer() {
     void removeMedia(overlayMediaKey(selectedOverlay.id)); studio.removeOverlayLayer(selectedOverlay.id)
   }
   const orderedLayers = [...studio.layerOrder].reverse()
-  return <aside className={open ? 'layers-drawer open' : 'layers-drawer'}>
-    <button className="layers-toggle" onClick={() => setOpen(!open)}><Layers3 size={15} />{open ? 'Cerrar capas' : 'Capas'}</button>
-    {open && <div className="layers-content">
-      <div className="layers-heading"><div><span>Composición</span><strong>Capas del anuncio</strong></div><button onClick={() => setOpen(false)} aria-label="Cerrar capas"><X size={16} /></button></div>
+  const visible = embedded || open
+  return <aside className={`${visible ? 'layers-drawer open' : 'layers-drawer'}${embedded ? ' embedded' : ''}`}>
+    {!embedded && <button className="layers-toggle" onClick={() => setOpen(!open)}><Layers3 size={15} />{open ? 'Cerrar capas' : 'Capas'}</button>}
+    {visible && <div className="layers-content">
+      <div className="layers-heading"><div><span>Composición</span><strong>Capas del anuncio</strong></div><button onClick={() => { setOpen(false); onRequestClose?.() }} aria-label="Cerrar capas"><X size={16} /></button></div>
       <div className="layer-add-actions"><button onClick={() => input.current?.click()}><Plus size={11} /> Imagen</button><button onClick={addText}><Plus size={11} /> Texto</button><button onClick={() => musicInput.current?.click()}>{studio.music.url ? <RefreshCw size={11} /> : <Plus size={11} />} Música</button><input hidden ref={input} type="file" accept="image/png,image/webp" onChange={(event) => { selectImage(event.target.files?.[0]); event.currentTarget.value = '' }} /><input hidden ref={musicInput} type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,.m4a" onChange={(event) => { selectMusic(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
       {error && <p className="error layer-error">{error}</p>}
       <div className="layer-list">
