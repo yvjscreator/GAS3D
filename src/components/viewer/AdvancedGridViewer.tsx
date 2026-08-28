@@ -9,6 +9,7 @@ import { getGridLayout } from '../../utils/gridLayout'
 import { evaluateGarmentMotion } from '../../config/garmentMotions'
 import type { GarmentMotionId } from '../../types/studio'
 import { rhythmicProgress } from '../../utils/beatSync'
+import { renderAssetManager } from '../../render/RenderAssetManager'
 
 export type GridVariantView = {
   id: string
@@ -88,6 +89,7 @@ function GridRenderer({ views, color, time, duration }: { views: GridVariantView
     })
     gl.setScissorTest(false)
     gl.setViewport(0, 0, size.width, size.height)
+    renderAssetManager.updateRendererInfo(gl.info)
   }, 1)
   return <>{views.map((view, index) => <Fragment key={view.id}>{createPortal(<Suspense fallback={null}><group name={view.id}><GridGarment view={view} color={color} time={time} duration={duration} /></group></Suspense>, scenes[index])}</Fragment>)}</>
 }

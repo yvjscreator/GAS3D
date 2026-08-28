@@ -1,3 +1,5 @@
+import { renderAssetManager } from '../render/RenderAssetManager'
+
 export type PreflightPhase = 'preparing' | 'preloading' | 'warming' | 'ready'
 export type RecordingResourceKind = 'model' | 'image' | 'video' | 'audio' | 'font'
 
@@ -63,7 +65,7 @@ async function preloadResource(resource: RecordingResource, backgroundMedia: HTM
   if (!resource.url) throw new Error('No tiene una URL preparada.')
   if (resource.kind === 'image') {
     const image = new Image(); image.decoding = 'async'; image.src = resource.url
-    await Promise.race([image.decode(), new Promise((_, reject) => window.setTimeout(() => reject(new Error('Tiempo de espera agotado.')), timeoutMs))])
+    await Promise.all([Promise.race([image.decode(), new Promise((_, reject) => window.setTimeout(() => reject(new Error('Tiempo de espera agotado.')), timeoutMs))]), renderAssetManager.preload([resource.url])])
     return
   }
   if (resource.id === 'background' && backgroundMedia) {

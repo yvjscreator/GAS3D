@@ -30,6 +30,7 @@ import { buildPresentationGroups } from '../../utils/presentationPlanner'
 import { RenderLabPanel } from './RenderLabPanel'
 import { buildRecordingResourceManifest, runRecordingPreflight } from '../../utils/recordingPreflight'
 import { garmentModels } from '../../config/garmentModels'
+import { renderAssetManager } from '../../render/RenderAssetManager'
 
 const placementRotation: Record<PrintPlacement, number> = { frontCenter: 0, frontChest: 0, backCenter: Math.PI, leftSleeve: Math.PI / 2, rightSleeve: -Math.PI / 2 }
 const collectionPrints = (item: CollectionItem | null, template: Record<PrintPlacement, PrintSettings>) => {
@@ -74,6 +75,18 @@ export function GarmentAdStudio() {
   const advancedProject = studio.advancedProjects[studio.activeDirectorId]
   const activeCollectionItem = studio.collectionItems.find((item) => item.id === studio.activeCollectionItemId) ?? studio.collectionItems[0] ?? null
   const completeCollectionItems = studio.collectionItems.filter(isCompleteCollectionItem)
+  const orderedDirectorClips = [...(advancedProject.tracks.find((track) => track.type === 'director')?.clips ?? [])].sort((a, b) => a.start - b.start)
+  const activeDirectorClipIndex = Math.max(0, orderedDirectorClips.findIndex((clip) => advancedProject.playhead >= clip.start && advancedProject.playhead <= clip.start + clip.duration))
+  const preloadItemIds = orderedDirectorClips.slice(activeDirectorClipIndex, activeDirectorClipIndex + 2).flatMap((clip) => clip.itemIds ?? (clip.collectionItemId ? [clip.collectionItemId] : []))
+  const adaptivePreloadUrls = studio.campaignMode === 'collection'
+    ? [...new Set(preloadItemIds)].flatMap((id) => { const item = completeCollectionItems.find((candidate) => candidate.id === id); return item ? [item.asset.url, item.companionAsset.url] : [] })
+    : [studio.variantAssets.large.url, studio.variantAssets.small.url]
+  adaptivePreloadUrls.push(...studio.overlayLayers.filter((layer) => layer.type === 'image').map((layer) => layer.url))
+  const adaptivePreloadKey = [...new Set(adaptivePreloadUrls.filter((url): url is string => Boolean(url)))].sort().join('\u0000')
+  useEffect(() => {
+    const urls = adaptivePreloadKey ? adaptivePreloadKey.split('\u0000') : []
+    void renderAssetManager.preload(urls).then(() => renderAssetManager.evictExcept(new Set(urls))).catch(() => undefined)
+  }, [adaptivePreloadKey])
   const selectedCamera = studio.campaignMode === 'collection' ? activeCollectionItem?.camera ?? advancedProject.cameras.frontLeftSleeve : advancedProject.cameras[studio.activeVariantId]
   const [cameraDraft, setCameraDraft] = useState<VariantCameraPreset>(selectedCamera)
   useEffect(() => { if (!framingMode) { const state = useStudioStore.getState(); const project = state.advancedProjects[state.activeDirectorId]; const item = state.collectionItems.find((candidate) => candidate.id === state.activeCollectionItemId); setCameraDraft(state.campaignMode === 'collection' ? item?.camera ?? project.cameras.frontLeftSleeve : project.cameras[state.activeVariantId]) } }, [framingMode, studio.activeDirectorId, studio.activeVariantId, studio.activeCollectionItemId, studio.campaignMode, studio.advancedProjects, studio.collectionItems])

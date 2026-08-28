@@ -11,10 +11,10 @@ import {
   clampUvCenterToIsland, createPrintSurfaceFrame, createPrintUvSurfaceFrame, createZoneSurfaceFrame, createZoneUvSurfaceFrame,
   getPrintMovementLimits, getUvPrintMovementLimits, isUvPointInIsland, isUvPointInside, uvPointToFrame, type UvSurfaceFrame,
 } from './print/SurfaceFrame'
-import { preparePrintTexture } from '../../utils/preparePrintTexture'
 import { createCottonMaterial, createGarmentPrintUniforms, installGarmentPrintShader } from './print/GarmentPrintShader'
 import { sampleUvSurfacePoint } from './print/UvSurfaceSampler'
 import type { AmbilightRig } from './ambilightRig'
+import { renderAssetManager } from '../../render/RenderAssetManager'
 
 type UvInteraction =
   | { mode: 'designMove'; placement: PrintPlacement; zone: UvSurfaceFrame; pointerOffset: THREE.Vector2; startX: number; startY: number; axisLock: 'x' | 'y' | null }
@@ -69,7 +69,6 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
   const uvInteraction = useRef<UvInteraction | null>(null)
   const handledAlignment = useRef(0)
   const printUniforms = useMemo(() => createGarmentPrintUniforms(), [])
-  const textureLoader = useMemo(() => new THREE.TextureLoader(), [])
   const [printTextures, setPrintTextures] = useState<Record<string, THREE.Texture>>({})
   useFrame(() => {
     printUniforms.ambilight.color.value.copy(ambilightRig.average)
@@ -110,19 +109,17 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
   const printUrlKey = JSON.stringify(Array.from(new Set(prints.flatMap((print) => print.url ? [print.url] : []))).sort())
   useEffect(() => {
     let active = true
-    const loadedTextures: THREE.Texture[] = []
+    const acquired = new Set<string>()
     setPrintTextures({})
     const urls = JSON.parse(printUrlKey) as string[]
     urls.forEach((url) => {
-      textureLoader.load(url, (loaded) => {
-        if (!active) { loaded.dispose(); return }
-        preparePrintTexture(loaded, true)
-        loadedTextures.push(loaded)
-        setPrintTextures((current) => ({ ...current, [url]: loaded }))
-      })
+      void renderAssetManager.acquireTexture(url).then((loaded) => {
+        if (!active) { renderAssetManager.releaseTexture(url); return }
+        acquired.add(url); setPrintTextures((current) => ({ ...current, [url]: loaded }))
+      }).catch(() => undefined)
     })
-    return () => { active = false; loadedTextures.forEach((texture) => texture.dispose()) }
-  }, [printUrlKey, textureLoader])
+    return () => { active = false; acquired.forEach((url) => renderAssetManager.releaseTexture(url)) }
+  }, [printUrlKey])
 
   const getZoneFrame = useCallback((placement: PrintPlacement) => createZoneSurfaceFrame(
     config, placement, printZoneAdjustments[placement], prepared.normalizer, prepared.center,

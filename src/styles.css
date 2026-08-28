@@ -280,6 +280,9 @@ h2 { font-size:var(--font-ui-section); }
 .preflight-error-actions { display:flex; flex-wrap:wrap; gap:6px; margin:9px 0; }
 .preflight-error-actions button { display:flex; align-items:center; justify-content:center; gap:5px; flex:1; min-width:120px; }
 .preflight-error-actions button.warning { color:#ffd59a; border-color:#855f31; }
+.render-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:6px; margin-top:10px; padding-top:10px; border-top:1px solid #2d3743; }
+.render-metrics span { display:flex; flex-direction:column; gap:2px; color:var(--muted); font-size:var(--font-ui-caption); }
+.render-metrics strong { color:#dce8f5; font-family:'DM Mono',monospace; }
 
 @container (max-width:700px) {
   .design-adjustment-grid,.zone-slider-grid { grid-template-columns:1fr; }
