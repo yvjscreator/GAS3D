@@ -15,7 +15,8 @@ export type SystemLayerId = 'background' | 'garment'
 export type StudioMode = 'basic' | 'advanced'
 export type CampaignMode = 'variants' | 'collection'
 export type PresentationMode = 'grouped' | 'sequential' | 'mixed'
-export type PresentationSceneKind = 'group' | 'item'
+export type DirectorShotKind = 'groupShowcase' | 'itemShowcase' | 'hero' | 'detailLarge' | 'detailSmall'
+export type PresentationSceneKind = DirectorShotKind
 export type BeatSyncSource = 'music' | 'background'
 export type BeatSyncStyle = 'elegant' | 'dynamic' | 'impact'
 export type CollectionAssetRole = 'main' | 'companion'
@@ -23,7 +24,6 @@ export type DirectorId = 'cinematic' | 'grid2x2' | 'collection'
 export type TimelineTrackType = 'background' | 'director' | 'label' | 'image' | 'text' | 'music' | 'backgroundAudio'
 export type TimelineClipType = 'background' | 'directorShot' | 'gridScene' | 'variantLabel' | 'image' | 'text' | 'music' | 'backgroundAudio'
 export type GarmentMotionId = 'turntableRight' | 'turntableLeft' | 'whipCompanion' | 'heroArc' | 'detailPush' | 'companionReveal'
-export type DirectorShotKind = 'showcase' | 'hero' | 'detailLarge' | 'detailSmall'
 
 export interface PresentationScene {
   id: string

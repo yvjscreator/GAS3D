@@ -1,4 +1,5 @@
-import type { PresentationMode, PresentationPlan, PresentationScene } from '../types/studio'
+import type { DirectorShotKind, PresentationMode, PresentationPlan, PresentationScene } from '../types/studio'
+import { defaultEnabledShotTypes, shotDefinition } from '../config/directorShots'
 
 export const MAX_GROUP_SIZE = 4
 
@@ -23,23 +24,27 @@ export function buildPresentationGroups<T>(items: readonly T[], maxSize = MAX_GR
   return groups
 }
 
-export function buildPresentationPlan(itemIds: readonly string[], mode: PresentationMode): PresentationPlan {
+export function buildPresentationPlan(itemIds: readonly string[], mode: PresentationMode, enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes): PresentationPlan {
   const orderedIds = [...itemIds]
   const groups = buildPresentationGroups(orderedIds)
+  const enabled = new Set(enabledShotTypes)
   const groupScenes: PresentationScene[] = groups.map((group, index) => ({
     id: `group-${index + 1}`,
-    kind: 'group',
+    kind: 'groupShowcase',
     itemIds: group,
     order: index,
-    rhythmicUnits: 2,
-  }))
-  const itemScenes: PresentationScene[] = orderedIds.map((itemId, index) => ({
-    id: `item-${itemId}`,
-    kind: 'item',
-    itemIds: [itemId],
-    order: index,
-    rhythmicUnits: 1,
-  }))
+    rhythmicUnits: shotDefinition('groupShowcase').rhythmicUnits,
+  } satisfies PresentationScene)).filter(() => enabled.has('groupShowcase'))
+  const itemScenes: PresentationScene[] = orderedIds.flatMap((itemId) => {
+    const candidates: DirectorShotKind[] = ['itemShowcase', 'hero', 'detailLarge', 'detailSmall']
+    return candidates.filter((kind) => enabled.has(kind)).map((kind) => ({
+      id: `${kind}-${itemId}`,
+      kind,
+      itemIds: [itemId],
+      order: 0,
+      rhythmicUnits: shotDefinition(kind).rhythmicUnits,
+    } satisfies PresentationScene))
+  })
   const scenes = mode === 'grouped' ? groupScenes : mode === 'sequential' ? itemScenes : [...groupScenes, ...itemScenes]
   return { mode, itemIds: orderedIds, groups, scenes: scenes.map((scene, index) => ({ ...scene, order: index })) }
 }

@@ -1,12 +1,14 @@
 import { directorDefinitions } from '../../config/advancedDirectors'
+import { directorShotDefinitions } from '../../config/directorShots'
 import { garmentVariantPresets } from '../../config/garmentVariants'
 import { useStudioStore } from '../../store/studioStore'
 import type { CameraViewSettings, LayerTransition, PresentationMode, VariantCameraPreset } from '../../types/studio'
-import { Aperture, Frame, Grid2X2, Repeat2, Rotate3D, RotateCcw, Save, Split } from '../icons'
+import { Aperture, Frame, Grid2X2, Repeat2, Rotate3D, RotateCcw, Save, Search, Sparkles, Split } from '../icons'
 import { MasterDetailLayout, ResponsiveOptionGrid, SegmentedControl } from '../ui'
 
 const alignmentPoints: [number, number][] = [[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
 const transitions: { id: LayerTransition; label: string }[] = [{ id: 'none', label: 'Sin transición' }, { id: 'fade', label: 'Fundido' }, { id: 'slideLeft', label: 'Desde izquierda' }, { id: 'slideRight', label: 'Desde derecha' }, { id: 'slideUp', label: 'Desde abajo' }, { id: 'zoom', label: 'Zoom suave' }]
+const shotIcons = { groupShowcase: Grid2X2, itemShowcase: Rotate3D, hero: Sparkles, detailLarge: Search, detailSmall: Aperture }
 
 export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancelFraming, onSaveFraming, onResetFraming, onDraftFov, onDraftComposition }: {
   framing: boolean
@@ -30,6 +32,9 @@ export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancel
     {collectionMode ? <><SegmentedControl label="Modo de presentación" value={studio.presentationMode} onChange={(value: PresentationMode) => studio.setPresentationMode(value)} options={[{ value: 'grouped', label: 'Agrupado', icon: Grid2X2 }, { value: 'sequential', label: 'Secuencial', icon: Split }, { value: 'mixed', label: 'Mixto', icon: Repeat2 }]} /><div className="collection-director-card"><Grid2X2 size={16} /><span><strong>Planificador automático</strong><small>{studio.presentationMode === 'grouped' ? 'Presenta grupos equilibrados de hasta cuatro prendas.' : studio.presentationMode === 'sequential' ? 'Presenta cada diseño individualmente y en orden.' : 'Combina grupos equilibrados y tomas individuales.'}</small></span></div></> : <ResponsiveOptionGrid minWidth={180} className="director-type-grid">{directorDefinitions.map((definition) => <button key={definition.id} className={studio.activeDirectorId === definition.id ? 'active' : ''} onClick={() => studio.setActiveDirectorId(definition.id)}>
       {definition.id === 'grid2x2' ? <Grid2X2 size={15} /> : <Aperture size={15} />}<span><strong>{definition.name}</strong><small>{definition.description}</small></span>
     </button>)}</ResponsiveOptionGrid>}
+    <div className="advanced-section-title"><Aperture size={14} /><span>Tomas incluidas</span></div>
+    <ResponsiveOptionGrid minWidth={170} className="director-shot-grid">{directorShotDefinitions.map((shot) => { const Icon = shotIcons[shot.id]; return <label key={shot.id} className="collection-option-card"><input type="checkbox" checked={studio.enabledShotTypes.includes(shot.id)} onChange={() => studio.toggleShotType(shot.id)} /><Icon size={16} /><span><strong>{shot.name}</strong><small>{shot.description}</small></span></label> })}</ResponsiveOptionGrid>
+    {!studio.enabledShotTypes.length && <p className="advanced-current-variant">Activa al menos una toma para construir la película.</p>}
     <div className="advanced-section-title"><Frame size={14} /><span>{collectionMode ? 'Diseños' : 'Variantes'}</span></div>
     <div className="advanced-variant-tabs">{collectionMode ? studio.collectionItems.map((item, index) => <button key={item.id} className={studio.activeCollectionItemId === item.id ? 'active' : ''} onClick={() => studio.setActiveCollectionItemId(item.id)}>{index + 1}</button>) : garmentVariantPresets.map((variant, index) => <button key={variant.id} className={studio.activeVariantId === variant.id ? 'active' : ''} onClick={() => studio.setActiveVariantId(variant.id)}>{index + 1}</button>)}</div>
     <p className="advanced-current-variant">{collectionMode ? collectionItem?.name ?? 'Agrega un diseño a la colección' : garmentVariantPresets.find((variant) => variant.id === studio.activeVariantId)?.label}</p></div>
