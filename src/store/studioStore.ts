@@ -194,13 +194,13 @@ const initialPrints = Object.fromEntries(Object.entries(defaultPrints).map(([pla
 const initialZones = Object.fromEntries(Object.entries(defaultZoneAdjustments).map(([placement, value]) => [placement, { ...value, ...(persisted.printZoneAdjustments?.[placement as PrintPlacement] ?? {}) }])) as Record<PrintPlacement, PrintZoneAdjustment>
 const initialVariantPrintSettings = Object.fromEntries(variantIds.map((variant) => [variant, Object.fromEntries(Object.entries(initialPrints).map(([placement, value]) => [placement, { ...value, ...(persisted.variantPrintSettings?.[variant]?.[placement as PrintPlacement] ?? {}), url: null }]))])) as Record<GarmentVariantId, Record<PrintPlacement, PrintSettings>>
 const initialVariantZones = Object.fromEntries(variantIds.map((variant) => [variant, Object.fromEntries(Object.entries(initialZones).map(([placement, value]) => [placement, { ...value, ...(persisted.variantZoneAdjustments?.[variant]?.[placement as PrintPlacement] ?? {}) }]))])) as Record<GarmentVariantId, Record<PrintPlacement, PrintZoneAdjustment>>
-const initialVariantAssets = Object.fromEntries(Object.entries(defaultVariantAssets).map(([role, value]) => [role, { ...value, ...(persisted.variantAssets?.[role as VariantAssetRole] ?? {}), url: null }])) as Record<VariantAssetRole, VariantAsset>
+const initialVariantAssets = Object.fromEntries(Object.entries(defaultVariantAssets).map(([role, value]) => [role, { ...value, ...(persisted.variantAssets?.[role as VariantAssetRole] ?? {}), url: null, thumbnailUrl: null }])) as Record<VariantAssetRole, VariantAsset>
 const initialCollectionItems = (persisted.collectionItems ?? []).map((item) => {
   const companionPlacement = item.companionPlacement ?? (item.placement === 'leftSleeve' ? 'rightSleeve' : 'leftSleeve')
   return {
     ...item,
-    asset: { ...item.asset, url: null }, print: { ...item.print, url: null },
-    companionAsset: { ...emptyVariantAsset(), ...(item.companionAsset ?? {}), url: null },
+    asset: { ...item.asset, url: null, thumbnailUrl: null }, print: { ...item.print, url: null },
+    companionAsset: { ...emptyVariantAsset(), ...(item.companionAsset ?? {}), url: null, thumbnailUrl: null },
     companionPlacement,
     companionPrint: { ...createPrint(companionPlacement), ...(item.companionPrint ?? {}), placement: companionPlacement, url: null },
     companionZoneAdjustment: { ...createZoneAdjustment(), ...(item.companionZoneAdjustment ?? {}) },
@@ -480,10 +480,10 @@ useStudioStore.subscribe((state) => {
     const prints = Object.fromEntries(Object.entries(state.prints).map(([placement, print]) => [placement, { ...print, url: null }])) as Record<PrintPlacement, PrintSettings>
     const variantPrintSettings = Object.fromEntries(variantIds.map((variant) => [variant, Object.fromEntries(Object.entries(state.variantPrintSettings[variant]).map(([placement, print]) => [placement, { ...print, url: null }]))])) as Record<GarmentVariantId, Record<PrintPlacement, PrintSettings>>
     const snapshot: PersistedState = {
-      schemaVersion: ADVANCED_SCHEMA_VERSION, studioMode: state.studioMode, campaignMode: state.campaignMode, presentationMode: state.presentationMode, enabledShotTypes: state.enabledShotTypes, collectionItems: state.collectionItems.map((item) => ({ ...item, asset: { ...item.asset, url: null }, print: { ...item.print, url: null }, companionAsset: { ...item.companionAsset, url: null }, companionPrint: { ...item.companionPrint, url: null } })), activeCollectionItemId: state.activeCollectionItemId, activeCollectionAssetRole: state.activeCollectionAssetRole, collectionMotionIds: state.collectionMotionIds, collectionTransitionIds: state.collectionTransitionIds, activeDirectorId: state.activeDirectorId, advancedProjects: state.advancedProjects,
+      schemaVersion: ADVANCED_SCHEMA_VERSION, studioMode: state.studioMode, campaignMode: state.campaignMode, presentationMode: state.presentationMode, enabledShotTypes: state.enabledShotTypes, collectionItems: state.collectionItems.map((item) => ({ ...item, asset: { ...item.asset, url: null, thumbnailUrl: null }, print: { ...item.print, url: null }, companionAsset: { ...item.companionAsset, url: null, thumbnailUrl: null }, companionPrint: { ...item.companionPrint, url: null } })), activeCollectionItemId: state.activeCollectionItemId, activeCollectionAssetRole: state.activeCollectionAssetRole, collectionMotionIds: state.collectionMotionIds, collectionTransitionIds: state.collectionTransitionIds, activeDirectorId: state.activeDirectorId, advancedProjects: state.advancedProjects,
       garmentColor: state.garmentColor, prints, activePrintPlacement: state.activePrintPlacement,
       printZoneAdjustments: state.printZoneAdjustments, variantPrintSettings, variantZoneAdjustments: state.variantZoneAdjustments, editorMode: state.editorMode,
-      variantAssets: { large: { ...state.variantAssets.large, url: null }, small: { ...state.variantAssets.small, url: null } }, activeVariantId: state.activeVariantId,
+      variantAssets: { large: { ...state.variantAssets.large, url: null, thumbnailUrl: null }, small: { ...state.variantAssets.small, url: null, thumbnailUrl: null } }, activeVariantId: state.activeVariantId,
       background: { ...state.background, url: null }, cameraView: state.cameraView, music: { ...state.music, url: null }, beatSync: state.beatSync,
       overlayLayers: state.overlayLayers.map((layer) => layer.type === 'image' ? { ...layer, url: null } : layer), layerOrder: state.layerOrder,
       selectedLayerId: state.selectedLayerId, systemLayerTimings: state.systemLayerTimings,

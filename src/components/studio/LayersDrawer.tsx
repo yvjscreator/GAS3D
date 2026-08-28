@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { useStudioStore } from '../../store/studioStore'
 import type { LayerTiming, LayerTransition, StageOverlayLayer } from '../../types/studio'
-import { musicMediaKey, overlayMediaKey, removeMedia, storeMedia } from '../../utils/mediaStorage'
+import { musicMediaKey, overlayMediaKey, removeMedia, removePreparedMedia, storeMedia, storePreparedMedia } from '../../utils/mediaStorage'
+import { prepareVideoAsset } from '../../utils/mediaProcessor'
 import { ChevronDown, ChevronUp, EllipsisVertical, Image as ImageIcon, Layers3, Lock, Music2, Plus, RefreshCw, Type, X } from '../icons'
 
 const transitionLabels: Record<LayerTransition, string> = {
@@ -18,17 +19,17 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
   const selectedMusic = studio.selectedLayerId === 'music' && Boolean(studio.music.url)
   const selectedSystem = studio.selectedLayerId === 'background' || studio.selectedLayerId === 'garment' ? studio.selectedLayerId : null
   const selectedTiming = selectedSystem ? studio.systemLayerTimings[selectedSystem] : selectedOverlay?.timing
-  const selectImage = (file?: File) => {
+  const selectImage = async (file?: File) => {
     if (!file) return
     if (!['image/png', 'image/webp'].includes(file.type)) { setError('Carga un PNG o WebP con transparencia.'); return }
-    const id = newId(); const url = URL.createObjectURL(file); const image = new Image()
-    image.onload = () => {
-      const layer: StageOverlayLayer = { id, type: 'image', name: file.name, sourceName: file.name, url, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight, x: 50, y: 50, width: 28, rotation: 0, opacity: 100, timing: defaultTiming(studio.duration) }
+    const id = newId()
+    try {
+      const prepared = await prepareVideoAsset(file)
+      const url = URL.createObjectURL(prepared.renderBlob)
+      const layer: StageOverlayLayer = { id, type: 'image', name: file.name, sourceName: file.name, url, naturalWidth: prepared.metadata.proxyWidth, naturalHeight: prepared.metadata.proxyHeight, x: 50, y: 50, width: 28, rotation: 0, opacity: 100, timing: defaultTiming(studio.duration) }
       studio.addOverlayLayer(layer); setOpen(true); setError(null)
-      void storeMedia(overlayMediaKey(id), file).catch(() => setError('No se pudo guardar esta capa para la próxima sesión.'))
-    }
-    image.onerror = () => { URL.revokeObjectURL(url); setError('No se pudo leer la imagen.') }
-    image.src = url
+      await storePreparedMedia(overlayMediaKey(id), prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata)
+    } catch { setError('No se pudo procesar la imagen.') }
   }
   const addText = () => {
     studio.addOverlayLayer({ id: newId(), type: 'text', name: 'Texto', text: 'Tu texto', color: '#ffffff', fontSize: 5.2, fontWeight: 700, x: 50, y: 18, width: 40, rotation: 0, opacity: 100, timing: defaultTiming(studio.duration) })
@@ -57,7 +58,7 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
   const removeSelected = () => {
     if (!selectedOverlay) return
     if (selectedOverlay.type === 'image' && selectedOverlay.url) URL.revokeObjectURL(selectedOverlay.url)
-    void removeMedia(overlayMediaKey(selectedOverlay.id)); studio.removeOverlayLayer(selectedOverlay.id)
+    void removePreparedMedia(overlayMediaKey(selectedOverlay.id)); studio.removeOverlayLayer(selectedOverlay.id)
   }
   const orderedLayers = [...studio.layerOrder].reverse()
   const visible = embedded || open
@@ -65,7 +66,7 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
     {!embedded && <button className="layers-toggle" onClick={() => setOpen(!open)}><Layers3 size={15} />{open ? 'Cerrar capas' : 'Capas'}</button>}
     {visible && <div className="layers-content">
       <div className="layers-heading"><div><span>Composición</span><strong>Capas del anuncio</strong></div><button onClick={() => { setOpen(false); onRequestClose?.() }} aria-label="Cerrar capas"><X size={16} /></button></div>
-      <div className="layer-add-actions"><button onClick={() => input.current?.click()}><Plus size={11} /> Imagen</button><button onClick={addText}><Plus size={11} /> Texto</button><button onClick={() => musicInput.current?.click()}>{studio.music.url ? <RefreshCw size={11} /> : <Plus size={11} />} Música</button><input hidden ref={input} type="file" accept="image/png,image/webp" onChange={(event) => { selectImage(event.target.files?.[0]); event.currentTarget.value = '' }} /><input hidden ref={musicInput} type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,.m4a" onChange={(event) => { selectMusic(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
+      <div className="layer-add-actions"><button onClick={() => input.current?.click()}><Plus size={11} /> Imagen</button><button onClick={addText}><Plus size={11} /> Texto</button><button onClick={() => musicInput.current?.click()}>{studio.music.url ? <RefreshCw size={11} /> : <Plus size={11} />} Música</button><input hidden ref={input} type="file" accept="image/png,image/webp" onChange={(event) => { void selectImage(event.target.files?.[0]); event.currentTarget.value = '' }} /><input hidden ref={musicInput} type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,.m4a" onChange={(event) => { selectMusic(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
       {error && <p className="error layer-error">{error}</p>}
       <div className="layer-list">
         {studio.music.url && <button className={selectedMusic ? 'layer-row active audio-layer-row' : 'layer-row audio-layer-row'} onClick={() => studio.selectLayer('music')}><i><Music2 size={14} /></i><span><strong>{studio.music.name}</strong><small>Música · {studio.music.sourceDuration.toFixed(1)}s</small></span><b><EllipsisVertical size={13} /></b></button>}

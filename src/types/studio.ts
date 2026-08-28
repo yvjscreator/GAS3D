@@ -197,9 +197,15 @@ export interface AudioTrackSettings {
 
 export interface VariantAsset {
   url: string | null
+  thumbnailUrl?: string | null
   name: string | null
   width: number
   height: number
+  originalWidth?: number
+  originalHeight?: number
+  originalBytes?: number
+  renderBytes?: number
+  profile?: string
 }
 
 export interface PrintSettings {
