@@ -4,7 +4,7 @@ export type FormatId = 'reel' | 'feed' | 'square'
 export type ExportQualityId = 'high' | 'ultra'
 export type AssetQualityProfile = 'performance' | 'automatic' | 'quality'
 export type AlphaPipelineMode = 'pngCurrent' | 'webpLossless' | 'webpHigh' | 'straightAlpha'
-export type RecordingStatus = 'idle' | 'recording' | 'ready' | 'error'
+export type RecordingStatus = 'idle' | 'preparing' | 'preloading' | 'warming' | 'ready' | 'recording' | 'finalizing' | 'done' | 'error'
 export type EditorMode = 'design' | 'zone'
 export type PrintAlignment = 'topLeft' | 'topCenter' | 'topRight' | 'middleLeft' | 'center' | 'middleRight' | 'bottomLeft' | 'bottomCenter' | 'bottomRight'
 export interface PrintAlignmentRequest { placement: PrintPlacement; alignment: PrintAlignment; target: EditorMode; id: number }

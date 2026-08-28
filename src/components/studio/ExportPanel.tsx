@@ -1,3 +1,22 @@
-import { useStudioStore } from '../../store/studioStore'
 import { exportQualities, getExportResolution } from '../../config/exportPresets'
-export function ExportPanel() { const { recordingStatus, duration, format, exportQuality, setExportQuality, variantAssets, music, background } = useStudioStore(); const recording = recordingStatus === 'recording'; const professional = Boolean(variantAssets.large.url && variantAssets.small.url); const hasAudio = Boolean(music.url || (background.type === 'video' && background.url && background.videoAudioEnabled)); const resolution = getExportResolution(format, exportQuality); return <section className="panel export-panel"><h2>Exportación</h2><p className="muted">30 FPS · WebM · {hasAudio ? 'audio mezclado' : 'sin audio'}</p>{professional && <p className="professional-export"><strong>Workflow profesional</strong><span>7 tomas dirigidas · 4 variantes · {Math.max(duration, 24)}s</span></p>}<div className="quality-options">{Object.entries(exportQualities).map(([id, quality]) => <button key={id} disabled={recording} className={exportQuality === id ? 'quality-option active' : 'quality-option'} onClick={() => setExportQuality(id as typeof exportQuality)}><strong>{quality.label}</strong><small>{quality.detail}</small></button>)}</div><p className="export-resolution">Salida real <strong>{resolution.width} × {resolution.height}</strong></p>{exportQuality === 'ultra' && <p className="export-warning">Ultra exige más GPU y puede tardar en preparar el canvas.</p>}<p className="export-header-note">La previsualización y la grabación están siempre disponibles en la barra superior.</p></section> }
+import { buildProfessionalShotSequence } from '../../config/professionalRecording'
+import { useStudioStore } from '../../store/studioStore'
+import { AlertTriangle, RefreshCw, X } from '../icons'
+
+export function ExportPanel({ onRetry, onForce, onCancel }: { onRetry?: () => void; onForce?: () => void; onCancel?: () => void }) {
+  const studio = useStudioStore()
+  const recordingBusy = ['preparing', 'preloading', 'warming', 'ready', 'recording', 'finalizing'].includes(studio.recordingStatus)
+  const professional = Boolean(studio.variantAssets.large.url && studio.variantAssets.small.url)
+  const hasAudio = Boolean(studio.music.url || (studio.background.type === 'video' && studio.background.url && studio.background.videoAudioEnabled))
+  const resolution = getExportResolution(studio.format, studio.exportQuality)
+  const shotCount = buildProfessionalShotSequence(studio.activeVariantId, studio.enabledShotTypes).length
+  return <section className="panel export-panel"><h2>Exportación</h2>
+    <p className="muted">30 FPS · WebM · {hasAudio ? 'audio mezclado' : 'sin audio'}</p>
+    {professional && <p className="professional-export"><strong>Workflow profesional</strong><span>{shotCount} tomas activas · 4 variantes · {Math.max(studio.duration, 24)}s</span></p>}
+    <div className="quality-options">{Object.entries(exportQualities).map(([id, quality]) => <button key={id} disabled={recordingBusy} className={studio.exportQuality === id ? 'quality-option active' : 'quality-option'} onClick={() => studio.setExportQuality(id as typeof studio.exportQuality)}><strong>{quality.label}</strong><small>{quality.detail}</small></button>)}</div>
+    <p className="export-resolution">Salida real <strong>{resolution.width} × {resolution.height}</strong></p>
+    {studio.exportQuality === 'ultra' && <p className="export-warning">Ultra exige más GPU y puede tardar en preparar el canvas.</p>}
+    {studio.recordingStatus === 'error' && <div className="preflight-error-actions"><button onClick={onRetry}><RefreshCw size={13} /> Reintentar</button><button className="warning" onClick={onForce}><AlertTriangle size={13} /> Grabar de todas formas</button><button onClick={onCancel}><X size={13} /> Cancelar</button></div>}
+    <p className="export-header-note">Grabar ejecuta precarga, decodificación y calentamiento de GPU antes de capturar el primer frame.</p>
+  </section>
+}

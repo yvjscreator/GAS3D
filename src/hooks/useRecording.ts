@@ -25,6 +25,7 @@ type Args = {
   height: number
   bitrate: number
   onProgress: (seconds: number) => void
+  onFinalizing: () => void
   onFinish: (message: string) => void
   onError: (message: string) => void
 }
@@ -51,7 +52,7 @@ function drawCover(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
 export function useRecording() {
   const stopRef = useRef<(() => void) | null>(null)
   const start = useCallback((args: Args) => {
-    const { renderCanvas, media, background, music, beatSync, enabledShotTypes, overlayLayers, layerOrder, systemLayerTimings, professionalHeroVariantId, advancedProject = null, collectionItems = [], duration, width: outputWidth, height: outputHeight, bitrate, onProgress, onFinish, onError } = args
+    const { renderCanvas, media, background, music, beatSync, enabledShotTypes, overlayLayers, layerOrder, systemLayerTimings, professionalHeroVariantId, advancedProject = null, collectionItems = [], duration, width: outputWidth, height: outputHeight, bitrate, onProgress, onFinalizing, onFinish, onError } = args
     if (!renderCanvas || !renderCanvas.captureStream) { onError('Este navegador no permite capturar el canvas.'); return }
     const composition = document.createElement('canvas'); composition.width = outputWidth; composition.height = outputHeight
     if (!composition.width || !composition.height) { onError('El preview aún no está listo.'); return }
@@ -155,6 +156,7 @@ export function useRecording() {
     recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
     recorder.onerror = () => onError('La grabación se interrumpió inesperadamente.')
     recorder.onstop = () => {
+      onFinalizing()
       cancelAnimationFrame(frame); cleanupAudio()
       const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' }); const url = URL.createObjectURL(blob); const link = document.createElement('a')
       link.href = url; link.download = `garment-ad-${outputWidth}x${outputHeight}-${Date.now()}.webm`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)

@@ -74,7 +74,8 @@ type StudioState = {
   targetRotation: number; setTargetRotation: (rotation: number) => void
   playbackKey: number; play: () => void
   recordingStatus: RecordingStatus; recordingElapsed: number; recordingMessage: string | null
-  setRecording: (status: RecordingStatus, elapsed?: number, message?: string | null) => void
+  recordingPreparedResources: number; recordingTotalResources: number
+  setRecording: (status: RecordingStatus, elapsed?: number, message?: string | null, resources?: { completed: number; total: number }) => void
 }
 
 type HistorySnapshot = Pick<StudioState,
@@ -458,8 +459,8 @@ export const useStudioStore = create<StudioState>((set) => ({
     music: state.music.start === 0 && state.music.duration === state.duration ? { ...state.music, duration } : state.music,
   })), targetRotation: persisted.targetRotation ?? 0, setTargetRotation: (targetRotation) => set({ targetRotation }),
   playbackKey: 0, play: () => set((state) => ({ playbackKey: state.playbackKey + 1, targetRotation: 0 })),
-  recordingStatus: 'idle', recordingElapsed: 0, recordingMessage: null,
-  setRecording: (recordingStatus, recordingElapsed = 0, recordingMessage = null) => set({ recordingStatus, recordingElapsed, recordingMessage }),
+  recordingStatus: 'idle', recordingElapsed: 0, recordingMessage: null, recordingPreparedResources: 0, recordingTotalResources: 0,
+  setRecording: (recordingStatus, recordingElapsed = 0, recordingMessage = null, resources) => set((state) => ({ recordingStatus, recordingElapsed, recordingMessage, recordingPreparedResources: resources?.completed ?? (recordingStatus === 'idle' ? 0 : state.recordingPreparedResources), recordingTotalResources: resources?.total ?? (recordingStatus === 'idle' ? 0 : state.recordingTotalResources) })),
 }))
 
 let persistTimer: number | undefined
