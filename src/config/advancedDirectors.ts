@@ -11,13 +11,15 @@ import type {
   VariantCameraPreset,
   VariantLabelSettings,
   BeatSyncSettings,
+  PresentationMode,
 } from '../types/studio'
 import { garmentVariantPresets } from './garmentVariants'
 import type { ProfessionalRecordingFrame } from './professionalRecording'
 import { defaultCollectionMotionIds, defaultCollectionTransitionIds, evaluateGarmentMotion, placementFacing } from './garmentMotions'
 import { cueDuration, hasBeatMap, rhythmicProgress } from '../utils/beatSync'
+import { buildPresentationPlan } from '../utils/presentationPlanner'
 
-export const ADVANCED_SCHEMA_VERSION = 4
+export const ADVANCED_SCHEMA_VERSION = 5
 export const directorDefinitions: { id: DirectorId; name: string; description: string; duration: number }[] = [
   { id: 'cinematic', name: 'Presentación cinematográfica', description: 'Variantes, toma hero y acercamientos dirigidos.', duration: 24 },
   { id: 'grid2x2', name: 'Comparativa 2 × 2', description: 'Las cuatro variantes giran simultáneamente.', duration: 12 },
@@ -127,33 +129,37 @@ export const COLLECTION_GRID_DURATION = 8
 export const COLLECTION_ITEM_DURATION = 4
 
 export const isCompleteCollectionItem = (item: CollectionItem) => Boolean(item.asset.name && item.companionAsset.name)
-export const isValidCollectionSize = (count: number) => count >= 2 && (count <= 4 || count % 4 === 0)
+export const isValidCollectionSize = (count: number) => count >= 2
 
-export function createCollectionProject(items: CollectionItem[], overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, motions: GarmentMotionId[] = defaultCollectionMotionIds, transitions: LayerTransition[] = defaultCollectionTransitionIds, previous?: DirectorProject, beatSync?: BeatSyncSettings): DirectorProject {
+export function createCollectionProject(items: CollectionItem[], overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, motions: GarmentMotionId[] = defaultCollectionMotionIds, transitions: LayerTransition[] = defaultCollectionTransitionIds, previous?: DirectorProject, beatSync?: BeatSyncSettings, presentationMode: PresentationMode = 'mixed'): DirectorProject {
   const enabledMotions = motions.length ? motions : defaultCollectionMotionIds.slice(0, 1)
   const transitionAt = (index: number) => transitions.length ? transitions[index % transitions.length] : 'none' as const
   const directorClips: TimelineClip[] = []
-  const labelTracks: TimelineTrack[] = []
+  const labelClips = new Map<string, TimelineClip[]>()
+  const plan = buildPresentationPlan(items.map((item) => item.id), presentationMode)
   let cursor = 0
-  for (let batchIndex = 0; batchIndex < Math.ceil(items.length / 4); batchIndex += 1) {
-    const batch = items.slice(batchIndex * 4, batchIndex * 4 + 4)
+  plan.scenes.forEach((scene, sceneIndex) => {
     const rhythmicCue = beatSync && hasBeatMap(beatSync) ? cueDuration(beatSync) : null
-    const gridDuration = rhythmicCue ? rhythmicCue * 2 + (batchIndex === 0 ? beatSync!.offset : 0) : COLLECTION_GRID_DURATION
-    const itemDuration = rhythmicCue ?? COLLECTION_ITEM_DURATION
-    const gridTransition = transitionAt(directorClips.length)
-    directorClips.push(clip({ type: 'gridScene', name: `Colección ${batchIndex + 1} · ${batch.length} diseños`, start: cursor, duration: gridDuration, batchIndex, sceneTransition: gridTransition, fadeIn: 0, fadeOut: 0 }))
-    const gridStart = cursor; cursor += gridDuration
-    batch.forEach((item) => {
-      const individualStart = cursor
-      const itemIndex = batchIndex * 4 + batch.indexOf(item)
-      directorClips.push(clip({ type: 'directorShot', name: item.name, start: individualStart, duration: itemDuration, collectionItemId: item.id, batchIndex, shotKind: 'showcase', garmentMotion: enabledMotions[itemIndex % enabledMotions.length], sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
-      labelTracks.push({ id: `collection-label-${item.id}`, name: item.name, type: 'label', locked: false, hidden: false, clips: [
-        clip({ type: 'variantLabel', name: item.name, start: gridStart, duration: gridDuration, collectionItemId: item.id, batchIndex }),
-        clip({ type: 'variantLabel', name: item.name, start: individualStart, duration: itemDuration, collectionItemId: item.id, batchIndex }),
-      ] })
-      cursor += itemDuration
+    const duration = rhythmicCue ? rhythmicCue * scene.rhythmicUnits + (sceneIndex === 0 ? beatSync!.offset : 0) : scene.kind === 'group' ? COLLECTION_GRID_DURATION : COLLECTION_ITEM_DURATION
+    const sceneItems = scene.itemIds.map((id) => items.find((item) => item.id === id)).filter((item): item is CollectionItem => Boolean(item))
+    if (scene.kind === 'group') {
+      const groupNumber = plan.groups.findIndex((group) => group[0] === scene.itemIds[0]) + 1
+      directorClips.push(clip({ type: 'gridScene', name: `Colección ${groupNumber} · ${sceneItems.length} diseños`, start: cursor, duration, sceneId: scene.id, itemIds: scene.itemIds, sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
+    } else {
+      const item = sceneItems[0]
+      if (item) {
+        const itemIndex = items.findIndex((candidate) => candidate.id === item.id)
+        directorClips.push(clip({ type: 'directorShot', name: item.name, start: cursor, duration, collectionItemId: item.id, sceneId: scene.id, itemIds: scene.itemIds, shotKind: 'showcase', garmentMotion: enabledMotions[itemIndex % enabledMotions.length], sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
+      }
+    }
+    sceneItems.forEach((item) => {
+      const clips = labelClips.get(item.id) ?? []
+      clips.push(clip({ type: 'variantLabel', name: item.name, start: cursor, duration, collectionItemId: item.id, sceneId: scene.id, itemIds: scene.itemIds }))
+      labelClips.set(item.id, clips)
     })
-  }
+    cursor += duration
+  })
+  const labelTracks: TimelineTrack[] = items.map((item) => ({ id: `collection-label-${item.id}`, name: item.name, type: 'label', locked: false, hidden: false, clips: labelClips.get(item.id) ?? [] }))
   const duration = Math.max(1, cursor)
   const preservedTracks = previous?.tracks.filter((track) => ['image', 'text', 'music', 'backgroundAudio'].includes(track.type)).map((track) => (track.type === 'music' || track.type === 'backgroundAudio') ? { ...track, clips: track.clips.map((item) => item.start === 0 && Math.abs(item.duration - previous.duration) < .01 ? { ...item, duration } : item) } : track) ?? []
   const tracks: TimelineTrack[] = [
@@ -172,7 +178,7 @@ export function createCollectionProject(items: CollectionItem[], overlays: Stage
     id: 'collection', name: 'Colección de diseños', duration, playhead: Math.min(previous?.playhead ?? 0, duration), zoom: previous?.zoom ?? 1,
     cameras: previous?.cameras ?? Object.fromEntries(garmentVariantPresets.map((variant) => [variant.id, createDefaultCamera(variant.id)])) as Record<GarmentVariantId, VariantCameraPreset>,
     labels: previous?.labels ?? Object.fromEntries(garmentVariantPresets.map((variant) => [variant.id, createDefaultLabel(variant.id)])) as Record<GarmentVariantId, VariantLabelSettings>,
-    tracks, selectedClipId: directorClips[0]?.id ?? null, initialized: true,
+    tracks, selectedClipId: directorClips[0]?.id ?? null, initialized: true, presentationPlan: plan,
   }
 }
 

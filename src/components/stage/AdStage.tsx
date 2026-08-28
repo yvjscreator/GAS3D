@@ -89,9 +89,9 @@ export function AdStage({ format, background, viewer, onCanvasReady, mediaRef, o
   const stageBackground = advancedProject ? { ...background, videoPaused: background.videoPaused || (recordingStatus !== 'recording' && !advancedPlaying), videoAudioEnabled: background.videoAudioEnabled && backgroundAudioClips.length > 0, videoVolume: background.videoVolume * (backgroundAudioClips.length ? Math.max(...backgroundAudioClips.map((item) => clipOpacity(item, time))) : 0) } : background
   const labelPosition = (variantId: GarmentVariantId | undefined, collectionItemId: string | undefined, x: number, y: number) => {
     if (!gridActive) return { x, y }
-    const batch = collectionItemId ? collectionItems.slice((directorClip?.batchIndex ?? 0) * 4, (directorClip?.batchIndex ?? 0) * 4 + 4) : []
-    const index = collectionItemId ? batch.findIndex((item) => item.id === collectionItemId) : garmentVariantPresets.findIndex((variant) => variant.id === variantId)
-    const count = collectionItemId ? batch.length : 4; const cell = getGridLayout(count)[Math.max(0, index)]
+    const sceneItems = collectionItemId ? (directorClip?.itemIds ?? []).map((id) => collectionItems.find((item) => item.id === id)).filter((item): item is CollectionItem => Boolean(item)) : []
+    const index = collectionItemId ? sceneItems.findIndex((item) => item.id === collectionItemId) : garmentVariantPresets.findIndex((variant) => variant.id === variantId)
+    const count = collectionItemId ? sceneItems.length : 4; const cell = getGridLayout(count)[Math.max(0, index)]
     return { x: (cell.x + x / 100 * cell.width) * 100, y: (1 - cell.y - cell.height + y / 100 * cell.height) * 100 }
   }
   return <section className="preview-shell">

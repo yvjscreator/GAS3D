@@ -129,7 +129,7 @@ export function useRecording() {
       layerOrder.forEach((id) => { if (id === 'garment') drawGarment(seconds); else { const layer = overlayLayers.find((item) => item.id === id); if (layer) drawOverlay(layer, seconds) } })
       const directorItem = advancedProject ? activeClip(advancedProject, 'director', seconds) : null
       if (directorItem?.type === 'gridScene') {
-        const count = advancedProject?.id === 'collection' ? collectionItems.slice((directorItem.batchIndex ?? 0) * 4, (directorItem.batchIndex ?? 0) * 4 + 4).length : 4
+        const count = advancedProject?.id === 'collection' ? directorItem.itemIds?.length ?? 0 : 4
         context.save(); context.strokeStyle = 'rgba(160,190,220,.22)'; context.lineWidth = Math.max(1, outputWidth / 900); getGridLayout(count).forEach((cell) => context.strokeRect(cell.x * outputWidth, (1 - cell.y - cell.height) * outputHeight, cell.width * outputWidth, cell.height * outputHeight)); context.restore()
       }
       if (advancedProject) activeLabelClips(advancedProject, seconds).forEach((item) => {
@@ -138,9 +138,9 @@ export function useRecording() {
         const settings: VariantLabelSettings = collectionItem?.label ?? advancedProject.labels[item.variantId!]; const transition = evaluateLayerFrame({ start: item.start, duration: item.duration, enter: settings.enter, exit: settings.exit }, seconds)
         let xPercent = settings.x + transition.translateX; let yPercent = settings.y + transition.translateY
         if (directorItem?.type === 'gridScene') {
-          const batch = collectionItem ? collectionItems.slice((directorItem.batchIndex ?? 0) * 4, (directorItem.batchIndex ?? 0) * 4 + 4) : []
-          const index = collectionItem ? batch.findIndex((candidate) => candidate.id === collectionItem.id) : garmentVariantPresets.findIndex((variant) => variant.id === item.variantId)
-          const cell = getGridLayout(collectionItem ? batch.length : 4)[Math.max(0, index)]; xPercent = (cell.x + xPercent / 100 * cell.width) * 100; yPercent = (1 - cell.y - cell.height + yPercent / 100 * cell.height) * 100
+          const sceneItems = collectionItem ? (directorItem.itemIds ?? []).map((id) => collectionItems.find((candidate) => candidate.id === id)).filter((candidate): candidate is CollectionItem => Boolean(candidate)) : []
+          const index = collectionItem ? sceneItems.findIndex((candidate) => candidate.id === collectionItem.id) : garmentVariantPresets.findIndex((variant) => variant.id === item.variantId)
+          const cell = getGridLayout(collectionItem ? sceneItems.length : 4)[Math.max(0, index)]; xPercent = (cell.x + xPercent / 100 * cell.width) * 100; yPercent = (1 - cell.y - cell.height + yPercent / 100 * cell.height) * 100
         }
         const fontSize = composition.width * settings.fontSize / 100; context.save(); context.globalAlpha = clipOpacity(item, seconds) * transition.opacity; context.font = `700 ${fontSize}px ${settings.fontFamily}, sans-serif`; context.textAlign = 'center'; context.textBaseline = 'middle'
         const metrics = context.measureText(settings.text); const paddingX = fontSize * .7; const paddingY = fontSize * .42; const x = composition.width * xPercent / 100; const y = composition.height * yPercent / 100

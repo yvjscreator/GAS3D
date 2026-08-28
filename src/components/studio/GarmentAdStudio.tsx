@@ -25,6 +25,7 @@ import { activeAssetClips, activeClip, clipOpacity, createDefaultCamera, getAdva
 import type { VariantCameraPreset } from '../../types/studio'
 import { ChevronDown } from '../icons'
 import { beatDuration, hasBeatMap } from '../../utils/beatSync'
+import { buildPresentationGroups } from '../../utils/presentationPlanner'
 
 const placementRotation: Record<PrintPlacement, number> = { frontCenter: 0, frontChest: 0, backCenter: Math.PI, leftSleeve: Math.PI / 2, rightSleeve: -Math.PI / 2 }
 const collectionPrints = (item: CollectionItem | null, template: Record<PrintPlacement, PrintSettings>) => {
@@ -198,7 +199,7 @@ export function GarmentAdStudio() {
   const record = () => {
     const validCollectionItems = studio.collectionItems.filter(isCompleteCollectionItem)
     if (studio.campaignMode === 'collection' && !isValidCollectionSize(validCollectionItems.length)) {
-      studio.setRecording('error', 0, 'Completa 2, 3 o 4 pares de artes; para colecciones mayores usa 8, 12, 16…')
+      studio.setRecording('error', 0, 'Completa al menos 2 pares de artes para grabar la colección.')
       return
     }
     const output = getExportResolution(studio.format, studio.exportQuality)
@@ -269,9 +270,10 @@ export function GarmentAdStudio() {
     else studio.setPrintZoneAdjustment(placement, value)
   }
   const directorClip = stageUsesProject ? activeClip(advancedProject, 'director', advancedTime) : null
-  const batchIndex = directorClip?.batchIndex ?? 0
+  const sceneItemIds = directorClip?.itemIds ?? []
+  const sceneItems = sceneItemIds.map((id) => completeCollectionItems.find((item) => item.id === id)).filter((item): item is CollectionItem => Boolean(item))
   const gridViews = collectionMode
-    ? completeCollectionItems.slice(batchIndex * 4, batchIndex * 4 + 4).map((item, index) => ({ id: item.id, prints: collectionPrints(item, variantTemplate), zones: collectionZones(item, zoneTemplate), camera: item.camera, garmentColor: item.garmentColor, baseRotation: placementRotation[item.placement], primaryPlacement: item.placement, companionPlacement: item.companionPlacement, motion: studio.collectionMotionIds.length ? studio.collectionMotionIds[(batchIndex * 4 + index) % studio.collectionMotionIds.length] : 'turntableRight' as const, beatDelay: hasBeatMap(studio.beatSync) && studio.beatSync.stagger ? index * beatDuration(studio.beatSync) : 0, beatStyle: hasBeatMap(studio.beatSync) ? studio.beatSync.style : undefined }))
+    ? sceneItems.map((item, index) => ({ id: item.id, prints: collectionPrints(item, variantTemplate), zones: collectionZones(item, zoneTemplate), camera: item.camera, garmentColor: item.garmentColor, baseRotation: placementRotation[item.placement], primaryPlacement: item.placement, companionPlacement: item.companionPlacement, motion: studio.collectionMotionIds.length ? studio.collectionMotionIds[Math.max(0, completeCollectionItems.findIndex((candidate) => candidate.id === item.id)) % studio.collectionMotionIds.length] : 'turntableRight' as const, beatDelay: hasBeatMap(studio.beatSync) && studio.beatSync.stagger ? index * beatDuration(studio.beatSync) : 0, beatStyle: hasBeatMap(studio.beatSync) ? studio.beatSync.style : undefined }))
     : garmentVariantPresets.map((variant, index) => ({ id: variant.id, prints: createVariantPrints(studio.variantPrintSettings[variant.id], studio.variantAssets, variant.id), zones: studio.variantZoneAdjustments[variant.id], camera: advancedProject.cameras[variant.id], baseRotation: placementRotation[variant.largePlacement], beatDelay: hasBeatMap(studio.beatSync) && studio.beatSync.stagger ? index * beatDuration(studio.beatSync) : 0, beatStyle: hasBeatMap(studio.beatSync) ? studio.beatSync.style : undefined }))
   const viewerCamera = studio.studioMode === 'advanced' ? cameraDraft : studio.cameraView
   const resetFraming = () => {
@@ -317,7 +319,7 @@ export function GarmentAdStudio() {
       <section className={`editor-column${studio.studioMode === 'advanced' ? timelineCollapsed ? ' timeline-collapsed' : ' has-editor-timeline' : ' basic-editor'}`}>
         <EditorHeader mode={studio.studioMode} onModeChange={changeMode} canUndo={studio.canUndo} canRedo={studio.canRedo} onUndo={studio.undo} onRedo={studio.redo} renderLayers={(close) => <LayersDrawer embedded onRequestClose={close} />} layerCount={studio.layerOrder.length + (studio.music.url ? 1 : 0)} playing={statusPlaying} recording={studio.recordingStatus === 'recording'} previewDisabled={studio.recordingStatus === 'recording' || !collectionReady} recordDisabled={studio.recordingStatus === 'recording' || !collectionReady} onPreview={statusPlaying ? pauseAdvanced : play} onRecord={record} />
         <aside className="control-drawer">
-        <div className="drawer-intro"><span>{studio.studioMode === 'advanced' ? 'Editor avanzado' : 'Flujo de trabajo'}</span><strong>{collectionMode ? `${completeCollectionItems.length} pares · ${Math.ceil(completeCollectionItems.length / 4)} grupos` : studio.studioMode === 'advanced' ? advancedProject.name : variantLibraryEnabled ? activeVariant.label : 'Configura tu producto'}</strong></div>
+        <div className="drawer-intro"><span>{studio.studioMode === 'advanced' ? 'Editor avanzado' : 'Flujo de trabajo'}</span><strong>{collectionMode ? `${completeCollectionItems.length} pares · ${buildPresentationGroups(completeCollectionItems).length} grupos · ${studio.presentationMode}` : studio.studioMode === 'advanced' ? advancedProject.name : variantLibraryEnabled ? activeVariant.label : 'Configura tu producto'}</strong></div>
         <div className="drawer-group"><p>01 · Producto</p><AccordionSection id="garment" title="Prenda" active={activePanel === 'garment'} onChange={setActivePanel}><GarmentPanel /></AccordionSection></div>
         <div className="drawer-group"><p>02 · Artes</p><AccordionSection id="variants" title="Tipo de campaña y diseños" active={activePanel === 'variants'} onChange={setActivePanel}><CampaignPanel /></AccordionSection>{!collectionMode && <AccordionSection id="designs" title="Ajustar estampados y zonas" active={activePanel === 'designs'} onChange={setActivePanel}><DesignPanel /></AccordionSection>}</div>
         <div className="drawer-group"><p>03 · Escena</p><AccordionSection id="background" title="Fondo e iluminación" active={activePanel === 'background'} onChange={setActivePanel}><BackgroundPanel /></AccordionSection><AccordionSection id="format" title="Formato del lienzo" active={activePanel === 'format'} onChange={setActivePanel}><FormatSelector /></AccordionSection></div>

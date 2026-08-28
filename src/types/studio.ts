@@ -14,6 +14,8 @@ export type LayerTransition = 'none' | 'fade' | 'slideLeft' | 'slideRight' | 'sl
 export type SystemLayerId = 'background' | 'garment'
 export type StudioMode = 'basic' | 'advanced'
 export type CampaignMode = 'variants' | 'collection'
+export type PresentationMode = 'grouped' | 'sequential' | 'mixed'
+export type PresentationSceneKind = 'group' | 'item'
 export type BeatSyncSource = 'music' | 'background'
 export type BeatSyncStyle = 'elegant' | 'dynamic' | 'impact'
 export type CollectionAssetRole = 'main' | 'companion'
@@ -22,6 +24,21 @@ export type TimelineTrackType = 'background' | 'director' | 'label' | 'image' | 
 export type TimelineClipType = 'background' | 'directorShot' | 'gridScene' | 'variantLabel' | 'image' | 'text' | 'music' | 'backgroundAudio'
 export type GarmentMotionId = 'turntableRight' | 'turntableLeft' | 'whipCompanion' | 'heroArc' | 'detailPush' | 'companionReveal'
 export type DirectorShotKind = 'showcase' | 'hero' | 'detailLarge' | 'detailSmall'
+
+export interface PresentationScene {
+  id: string
+  kind: PresentationSceneKind
+  itemIds: string[]
+  order: number
+  rhythmicUnits: number
+}
+
+export interface PresentationPlan {
+  mode: PresentationMode
+  itemIds: string[]
+  groups: string[][]
+  scenes: PresentationScene[]
+}
 
 export interface BeatSyncSettings {
   enabled: boolean
@@ -112,7 +129,8 @@ export interface TimelineClip {
   assetId?: string
   variantId?: GarmentVariantId
   collectionItemId?: string
-  batchIndex?: number
+  sceneId?: string
+  itemIds?: string[]
   shotKind?: DirectorShotKind
   garmentMotion?: GarmentMotionId
   sceneTransition?: LayerTransition
@@ -140,6 +158,7 @@ export interface DirectorProject {
   tracks: TimelineTrack[]
   selectedClipId: string | null
   initialized: boolean
+  presentationPlan?: PresentationPlan
 }
 
 export interface SharedAsset {

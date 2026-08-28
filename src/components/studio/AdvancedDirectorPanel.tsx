@@ -1,9 +1,9 @@
 import { directorDefinitions } from '../../config/advancedDirectors'
 import { garmentVariantPresets } from '../../config/garmentVariants'
 import { useStudioStore } from '../../store/studioStore'
-import type { CameraViewSettings, LayerTransition, VariantCameraPreset } from '../../types/studio'
-import { Aperture, Frame, Grid2X2, Rotate3D, RotateCcw, Save } from '../icons'
-import { MasterDetailLayout, ResponsiveOptionGrid } from '../ui'
+import type { CameraViewSettings, LayerTransition, PresentationMode, VariantCameraPreset } from '../../types/studio'
+import { Aperture, Frame, Grid2X2, Repeat2, Rotate3D, RotateCcw, Save, Split } from '../icons'
+import { MasterDetailLayout, ResponsiveOptionGrid, SegmentedControl } from '../ui'
 
 const alignmentPoints: [number, number][] = [[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
 const transitions: { id: LayerTransition; label: string }[] = [{ id: 'none', label: 'Sin transición' }, { id: 'fade', label: 'Fundido' }, { id: 'slideLeft', label: 'Desde izquierda' }, { id: 'slideRight', label: 'Desde derecha' }, { id: 'slideUp', label: 'Desde abajo' }, { id: 'zoom', label: 'Zoom suave' }]
@@ -27,7 +27,7 @@ export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancel
     else studio.updateVariantLabel(studio.activeVariantId, value)
   }
   const directionMaster = <div className="direction-master"><div className="advanced-section-title"><Rotate3D size={14} /><span>Tipo de director</span></div>
-    {collectionMode ? <div className="collection-director-card"><Grid2X2 size={16} /><span><strong>Colección automática</strong><small>Cada grupo se presenta en cuadrícula y luego sus diseños giran uno por uno.</small></span></div> : <ResponsiveOptionGrid minWidth={180} className="director-type-grid">{directorDefinitions.map((definition) => <button key={definition.id} className={studio.activeDirectorId === definition.id ? 'active' : ''} onClick={() => studio.setActiveDirectorId(definition.id)}>
+    {collectionMode ? <><SegmentedControl label="Modo de presentación" value={studio.presentationMode} onChange={(value: PresentationMode) => studio.setPresentationMode(value)} options={[{ value: 'grouped', label: 'Agrupado', icon: Grid2X2 }, { value: 'sequential', label: 'Secuencial', icon: Split }, { value: 'mixed', label: 'Mixto', icon: Repeat2 }]} /><div className="collection-director-card"><Grid2X2 size={16} /><span><strong>Planificador automático</strong><small>{studio.presentationMode === 'grouped' ? 'Presenta grupos equilibrados de hasta cuatro prendas.' : studio.presentationMode === 'sequential' ? 'Presenta cada diseño individualmente y en orden.' : 'Combina grupos equilibrados y tomas individuales.'}</small></span></div></> : <ResponsiveOptionGrid minWidth={180} className="director-type-grid">{directorDefinitions.map((definition) => <button key={definition.id} className={studio.activeDirectorId === definition.id ? 'active' : ''} onClick={() => studio.setActiveDirectorId(definition.id)}>
       {definition.id === 'grid2x2' ? <Grid2X2 size={15} /> : <Aperture size={15} />}<span><strong>{definition.name}</strong><small>{definition.description}</small></span>
     </button>)}</ResponsiveOptionGrid>}
     <div className="advanced-section-title"><Frame size={14} /><span>{collectionMode ? 'Diseños' : 'Variantes'}</span></div>
