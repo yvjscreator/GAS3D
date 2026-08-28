@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react'
-import type { AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CollectionItem, DirectorProject, GarmentVariantId, LayerTiming, StageLayerId, StageOverlayLayer, SystemLayerId, VariantLabelSettings } from '../types/studio'
+import type { AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CollectionItem, DirectorProject, DirectorShotKind, GarmentVariantId, LayerTiming, StageLayerId, StageOverlayLayer, SystemLayerId, VariantLabelSettings } from '../types/studio'
 import { evaluateLayerFrame, type LayerFrame } from '../utils/stageTimeline'
 import { getProfessionalRecordingFrame } from '../config/professionalRecording'
 import { getMusicGain } from '../utils/audioTimeline'
@@ -13,6 +13,7 @@ type Args = {
   background: BackgroundSettings
   music: AudioTrackSettings
   beatSync: BeatSyncSettings
+  enabledShotTypes: DirectorShotKind[]
   overlayLayers: StageOverlayLayer[]
   layerOrder: StageLayerId[]
   systemLayerTimings: Record<SystemLayerId, LayerTiming>
@@ -50,7 +51,7 @@ function drawCover(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
 export function useRecording() {
   const stopRef = useRef<(() => void) | null>(null)
   const start = useCallback((args: Args) => {
-    const { renderCanvas, media, background, music, beatSync, overlayLayers, layerOrder, systemLayerTimings, professionalHeroVariantId, advancedProject = null, collectionItems = [], duration, width: outputWidth, height: outputHeight, bitrate, onProgress, onFinish, onError } = args
+    const { renderCanvas, media, background, music, beatSync, enabledShotTypes, overlayLayers, layerOrder, systemLayerTimings, professionalHeroVariantId, advancedProject = null, collectionItems = [], duration, width: outputWidth, height: outputHeight, bitrate, onProgress, onFinish, onError } = args
     if (!renderCanvas || !renderCanvas.captureStream) { onError('Este navegador no permite capturar el canvas.'); return }
     const composition = document.createElement('canvas'); composition.width = outputWidth; composition.height = outputHeight
     if (!composition.width || !composition.height) { onError('El preview aún no está listo.'); return }
@@ -65,7 +66,7 @@ export function useRecording() {
     })
     const drawGarment = (seconds: number) => {
       const directorItem = advancedProject ? activeClip(advancedProject, 'director', seconds) : null
-      const professionalOpacity = directorItem ? clipOpacity(directorItem, seconds) : advancedProject ? 0 : professionalHeroVariantId ? getProfessionalRecordingFrame(seconds, duration, professionalHeroVariantId, undefined, beatSync).garmentOpacity : 1
+      const professionalOpacity = directorItem ? clipOpacity(directorItem, seconds) : advancedProject ? 0 : professionalHeroVariantId ? getProfessionalRecordingFrame(seconds, duration, professionalHeroVariantId, undefined, beatSync, enabledShotTypes).garmentOpacity : 1
       const transition = directorItem ? evaluateLayerFrame({ start: directorItem.start, duration: directorItem.duration, enter: directorItem.sceneTransition ?? 'none', exit: directorItem.sceneTransition ?? 'none' }, seconds) : null
       const advancedFrame = { visible: professionalOpacity > 0 && Boolean(transition?.visible ?? true), opacity: professionalOpacity * (transition?.opacity ?? 1), translateX: transition?.translateX ?? 0, translateY: transition?.translateY ?? 0, scale: transition?.scale ?? 1 }
       withFrame(context, composition, advancedProject ? advancedFrame : evaluateLayerFrame(systemLayerTimings.garment, seconds), () => context.drawImage(renderCanvas, 0, 0, composition.width, composition.height), advancedProject ? 1 : professionalOpacity)

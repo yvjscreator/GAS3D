@@ -215,7 +215,7 @@ const initialLayerOrder = (persisted.layerOrder ?? ['garment']).filter((id, inde
 if (!initialLayerOrder.includes('garment')) initialLayerOrder.unshift('garment')
 const persistedProjects = persisted.advancedProjects
 const createSeededProject = (id: DirectorId) => {
-  const project = createDirectorProject(id, initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialEnabledShotTypes)
+  const project = applyBeatSyncToProject(createDirectorProject(id, initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialEnabledShotTypes), initialBeatSync)
   if (!persisted.cameraView) return project
   return { ...project, cameras: Object.fromEntries(variantIds.map((variant) => [variant, { ...project.cameras[variant], position: [...persisted.cameraView!.position], target: [...persisted.cameraView!.target] }])) as Record<GarmentVariantId, VariantCameraPreset> }
 }
@@ -258,7 +258,7 @@ export const useStudioStore = create<StudioState>((set) => ({
     const enabledShotTypes = state.enabledShotTypes.includes(kind) ? state.enabledShotTypes.filter((item) => item !== kind) : [...state.enabledShotTypes, kind]
     const rebuildDirector = (id: 'cinematic' | 'grid2x2') => {
       const current = state.advancedProjects[id]
-      const next = createDirectorProject(id, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), enabledShotTypes)
+      const next = applyBeatSyncToProject(createDirectorProject(id, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), enabledShotTypes), state.beatSync)
       return { ...next, cameras: current.cameras, labels: current.labels, zoom: current.zoom, playhead: Math.min(current.playhead, next.duration) }
     }
     return { enabledShotTypes, advancedProjects: { cinematic: rebuildDirector('cinematic'), grid2x2: rebuildDirector('grid2x2'), collection: rebuildCollectionProject(state, state.collectionItems, state.collectionMotionIds, state.collectionTransitionIds, state.beatSync, state.presentationMode, enabledShotTypes) } }

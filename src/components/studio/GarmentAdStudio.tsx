@@ -179,11 +179,11 @@ export function GarmentAdStudio() {
     }
     restartBackgroundVideo()
     const professional = Boolean(studio.variantAssets.large.url && studio.variantAssets.small.url)
-    const totalDuration = professional ? getProfessionalDuration(studio.duration, studio.beatSync) : studio.duration
+    const totalDuration = professional ? getProfessionalDuration(studio.duration, studio.beatSync, studio.enabledShotTypes) : studio.duration
     const selectedHero = professionalPreviewing ? heroVariantId : studio.activeVariantId; setHeroVariantId(selectedHero); const started = performance.now(); setProfessionalPreviewElapsed(0); setProfessionalPreviewing(true); studio.play()
     const tick = () => {
       const elapsed = Math.min(totalDuration, (performance.now() - started) / 1000); syncPreviewMusic(elapsed)
-      if (professional) { const state = useStudioStore.getState(); const directed = getProfessionalRecordingFrame(elapsed, totalDuration, selectedHero, state.cameraView, state.beatSync); setProfessionalPreviewElapsed(elapsed); if (state.activeVariantId !== directed.variantId) state.setActiveVariantId(directed.variantId) }
+      if (professional) { const state = useStudioStore.getState(); const directed = getProfessionalRecordingFrame(elapsed, totalDuration, selectedHero, state.cameraView, state.beatSync, state.enabledShotTypes); setProfessionalPreviewElapsed(elapsed); if (state.activeVariantId !== directed.variantId) state.setActiveVariantId(directed.variantId) }
       if (elapsed < totalDuration) previewFrame.current = requestAnimationFrame(tick)
       else { musicMedia.current?.pause(); setProfessionalPreviewing(false); if (professional) useStudioStore.getState().setActiveVariantId(selectedHero) }
     }
@@ -208,12 +208,12 @@ export function GarmentAdStudio() {
     const sequenceReady = Boolean(studio.variantAssets.large.url && studio.variantAssets.small.url)
     const originalVariant = professionalPreviewing ? heroVariantId : studio.activeVariantId
     const originalCollectionItemId = studio.activeCollectionItemId
-    const totalDuration = usesDirector ? project.duration : sequenceReady ? getProfessionalDuration(studio.duration, studio.beatSync) : studio.duration
+    const totalDuration = usesDirector ? project.duration : sequenceReady ? getProfessionalDuration(studio.duration, studio.beatSync, studio.enabledShotTypes) : studio.duration
     cancelAnimationFrame(previewFrame.current); musicMedia.current?.pause(); setProfessionalPreviewing(false); setAdvancedPlaying(false); setHeroVariantId(originalVariant)
     if (sequenceReady || isAdvanced) studio.setActiveVariantId(garmentVariantPresets[0].id)
     if (isCollection && validCollectionItems[0]) studio.setActiveCollectionItemId(validCollectionItems[0].id)
     studio.setRecording('recording', 0, 'Preparando render de alta resolución…')
-    const begin = () => { restartBackgroundVideo(); studio.play(); const current = useStudioStore.getState(); start({ renderCanvas: canvas, media: media.current, background: current.background, music: current.music, beatSync: current.beatSync, overlayLayers: current.overlayLayers, layerOrder: current.layerOrder, systemLayerTimings: current.systemLayerTimings, professionalHeroVariantId: !usesDirector && sequenceReady ? originalVariant : null, advancedProject: usesDirector ? current.advancedProjects[current.activeDirectorId] : null, collectionItems: current.collectionItems.filter(isCompleteCollectionItem), duration: totalDuration, width: output.width, height: output.height, bitrate,
+    const begin = () => { restartBackgroundVideo(); studio.play(); const current = useStudioStore.getState(); start({ renderCanvas: canvas, media: media.current, background: current.background, music: current.music, beatSync: current.beatSync, enabledShotTypes: current.enabledShotTypes, overlayLayers: current.overlayLayers, layerOrder: current.layerOrder, systemLayerTimings: current.systemLayerTimings, professionalHeroVariantId: !usesDirector && sequenceReady ? originalVariant : null, advancedProject: usesDirector ? current.advancedProjects[current.activeDirectorId] : null, collectionItems: current.collectionItems.filter(isCompleteCollectionItem), duration: totalDuration, width: output.width, height: output.height, bitrate,
       onProgress: (seconds) => {
         if (usesDirector) {
           const state = useStudioStore.getState(); state.setAdvancedPlayhead(seconds)
@@ -221,7 +221,7 @@ export function GarmentAdStudio() {
           if (directed?.collectionItemId) state.setActiveCollectionItemId(directed.collectionItemId)
           else if (directed && state.activeVariantId !== directed.variantId) state.setActiveVariantId(directed.variantId)
         } else if (sequenceReady) {
-          const state = useStudioStore.getState(); const directed = getProfessionalRecordingFrame(seconds, totalDuration, originalVariant, state.cameraView, state.beatSync)
+          const state = useStudioStore.getState(); const directed = getProfessionalRecordingFrame(seconds, totalDuration, originalVariant, state.cameraView, state.beatSync, state.enabledShotTypes)
           if (useStudioStore.getState().activeVariantId !== directed.variantId) useStudioStore.getState().setActiveVariantId(directed.variantId)
         }
         studio.setRecording('recording', seconds)
@@ -241,7 +241,7 @@ export function GarmentAdStudio() {
   const variantLibraryEnabled = hasVariantLibrary(studio.variantAssets)
   const activeVariant = getGarmentVariantPreset(studio.activeVariantId)
   const collectionMode = studio.campaignMode === 'collection'
-  const basicProfessionalDuration = variantLibraryEnabled ? getProfessionalDuration(studio.duration, studio.beatSync) : studio.duration
+  const basicProfessionalDuration = variantLibraryEnabled ? getProfessionalDuration(studio.duration, studio.beatSync, studio.enabledShotTypes) : studio.duration
   const directedMode = studio.studioMode === 'advanced' || collectionMode
   const collectionReady = !collectionMode || isValidCollectionSize(completeCollectionItems.length)
   const collectionDirecting = collectionMode && (studio.studioMode === 'advanced' || advancedPlaying || studio.recordingStatus === 'recording')
@@ -250,8 +250,8 @@ export function GarmentAdStudio() {
   const professionalFrame = stageUsesProject
     ? directorFrameAt(advancedProject, advancedTime, studio.collectionItems, studio.beatSync)
     : variantLibraryEnabled && studio.recordingStatus === 'recording'
-    ? getProfessionalRecordingFrame(studio.recordingElapsed, basicProfessionalDuration, heroVariantId, studio.cameraView, studio.beatSync)
-    : variantLibraryEnabled && professionalPreviewing ? getProfessionalRecordingFrame(professionalPreviewElapsed, basicProfessionalDuration, heroVariantId, studio.cameraView, studio.beatSync) : null
+    ? getProfessionalRecordingFrame(studio.recordingElapsed, basicProfessionalDuration, heroVariantId, studio.cameraView, studio.beatSync, studio.enabledShotTypes)
+    : variantLibraryEnabled && professionalPreviewing ? getProfessionalRecordingFrame(professionalPreviewElapsed, basicProfessionalDuration, heroVariantId, studio.cameraView, studio.beatSync, studio.enabledShotTypes) : null
   const variantTemplate = studio.variantPrintSettings.frontLeftSleeve
   const zoneTemplate = studio.variantZoneAdjustments.frontLeftSleeve
   const editingCompanion = collectionMode && studio.activeCollectionAssetRole === 'companion'

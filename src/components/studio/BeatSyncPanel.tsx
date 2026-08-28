@@ -22,7 +22,7 @@ export function BeatSyncPanel() {
   const sourceName = studio.beatSync.source === 'music' ? studio.music.name : studio.background.name
   const estimatedDuration = useMemo(() => studio.campaignMode === 'collection'
     ? studio.advancedProjects.collection.duration
-    : getProfessionalDuration(studio.duration, studio.beatSync), [studio.advancedProjects.collection.duration, studio.beatSync, studio.campaignMode, studio.duration])
+    : getProfessionalDuration(studio.duration, studio.beatSync, studio.enabledShotTypes), [studio.advancedProjects.collection.duration, studio.beatSync, studio.campaignMode, studio.duration, studio.enabledShotTypes])
 
   const selectSource = (source: BeatSyncSource) => {
     studio.setBeatSync({ source, analyzedAssetName: null, confidence: 0, beats: [] })
