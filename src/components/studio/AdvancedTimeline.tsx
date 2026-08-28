@@ -66,7 +66,7 @@ export function AdvancedTimeline({ playing, onTogglePlay, onSeek, embedded = fal
   return <section className={`advanced-timeline${embedded ? ' embedded' : ''}${collapsed ? ' collapsed' : ''}`} style={embedded ? undefined : { height: collapsed ? 42 : height }}>
     {!embedded && !collapsed && <button className="timeline-resizer" onPointerDown={resizeDock} aria-label="Redimensionar línea de tiempo" />}
     <div className="timeline-toolbar">
-      <button onClick={toggleCollapsed} aria-label={collapsed ? 'Abrir timeline' : 'Contraer timeline'}>{collapsed ? 'Timeline' : '—'}</button>
+      <button onClick={toggleCollapsed} aria-label={collapsed ? 'Abrir timeline' : 'Contraer timeline'}>{collapsed ? <><ChevronUp size={13} /> Timeline</> : <ChevronDown size={13} />}</button>
       <button onClick={() => onSeek(0)} aria-label="Volver al inicio"><SkipBack size={14} /></button>
       <button className="timeline-play" onClick={onTogglePlay} aria-label={playing ? 'Pausar' : 'Reproducir'}>{playing ? <Pause size={14} /> : <Play size={14} />}</button>
       <strong>{project.playhead.toFixed(1)}s <span>/ {project.duration.toFixed(1)}s</span></strong>

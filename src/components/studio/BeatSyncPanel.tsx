@@ -5,6 +5,7 @@ import type { BeatSyncSource, BeatSyncStyle } from '../../types/studio'
 import { analyzeBeatBlob, beatDuration, cueDuration, hasBeatMap } from '../../utils/beatSync'
 import { backgroundMediaKey, loadMedia, musicMediaKey } from '../../utils/mediaStorage'
 import { AudioLines, RefreshCw } from '../icons'
+import { ResponsiveOptionGrid } from '../ui'
 
 const styleLabels: Record<BeatSyncStyle, { name: string; description: string }> = {
   elegant: { name: 'Elegante', description: 'Movimientos largos y suaves entre compases.' },
@@ -53,7 +54,7 @@ export function BeatSyncPanel() {
     {message && <p className={message.startsWith('Ritmo') ? 'success' : 'error'}>{message}</p>}
     <div className="layer-inline beat-numbers"><label>BPM manual<input type="number" min="40" max="240" step=".1" value={studio.beatSync.bpm} onChange={(event) => studio.setBeatSync({ bpm: Math.min(240, Math.max(40, Number(event.target.value))), beats: [], confidence: 0, analyzedAssetName: null })} /></label><label>Primer golpe<input type="number" min="0" max="10" step=".01" value={studio.beatSync.offset} onChange={(event) => studio.setBeatSync({ offset: Math.max(0, Number(event.target.value)), beats: [], analyzedAssetName: null })} /><span>s</span></label></div>
     <label className="select-row">Cambio de toma cada<select value={studio.beatSync.barsPerChange} onChange={(event) => studio.setBeatSync({ barsPerChange: Number(event.target.value) as 1 | 2 | 4 | 8 })}>{[1, 2, 4, 8].map((bars) => <option key={bars} value={bars}>{bars} {bars === 1 ? 'compás' : 'compases'}</option>)}</select></label>
-    <div className="beat-style-grid">{(Object.keys(styleLabels) as BeatSyncStyle[]).map((style) => <button key={style} className={studio.beatSync.style === style ? 'active' : ''} onClick={() => studio.setBeatSync({ style })}><strong>{styleLabels[style].name}</strong><small>{styleLabels[style].description}</small></button>)}</div>
+    <ResponsiveOptionGrid minWidth={120} className="beat-style-grid">{(Object.keys(styleLabels) as BeatSyncStyle[]).map((style) => <button key={style} className={studio.beatSync.style === style ? 'active' : ''} onClick={() => studio.setBeatSync({ style })}><strong>{styleLabels[style].name}</strong><small>{styleLabels[style].description}</small></button>)}</ResponsiveOptionGrid>
     <label className="range-row">Sensibilidad<output>{studio.beatSync.sensitivity}%</output><input type="range" min="10" max="95" value={studio.beatSync.sensitivity} onChange={(event) => studio.setBeatSync({ sensitivity: Number(event.target.value) })} /></label>
     {studio.campaignMode === 'collection' && <label className="toggle-row beat-stagger"><input type="checkbox" checked={studio.beatSync.stagger} onChange={(event) => studio.setBeatSync({ stagger: event.target.checked })} /><span><strong>Entrada escalonada</strong><small>Cada remera aparece en el siguiente golpe.</small></span></label>}
     {hasBeatMap(studio.beatSync) && <p className="beat-summary"><strong>{studio.beatSync.bpm.toFixed(1)} BPM</strong><span>Golpe cada {beatDuration(studio.beatSync).toFixed(2)}s</span><span>Toma cada {cueDuration(studio.beatSync).toFixed(2)}s</span><span>Video estimado {estimatedDuration.toFixed(1)}s</span></p>}

@@ -61,7 +61,7 @@ export function getProfessionalRecordingFrame(seconds: number, duration: number,
         cameraPosition: [camera.position[0] + Math.sin(local * Math.PI * 2) * .16, camera.position[1], camera.position[2]],
         cameraTarget: camera.target,
         garmentOpacity: cutOpacity(cue.local, beatSync.style === 'impact' ? .06 : .12),
-        shotLabel: `♪ VARIANTE ${cue.index + 1}/4 · ${preset.label.toUpperCase()}`,
+        shotLabel: `VARIANTE ${cue.index + 1}/4 · ${preset.label.toUpperCase()}`,
         shotIndex: cue.index,
         shotCount: PROFESSIONAL_CUE_COUNT,
       }
@@ -69,7 +69,7 @@ export function getProfessionalRecordingFrame(seconds: number, duration: number,
     const hero = getGarmentVariantPreset(heroVariantId)
     if (cue.index === 4) {
       const camera = placementCamera(hero.largePlacement, local, true, savedView)
-      return { variantId: hero.id, rotation: cameraAzimuth + facingRotation[hero.largePlacement] - .32 + Math.sin(local * Math.PI) * .09, cameraPosition: camera.position, cameraTarget: camera.target, garmentOpacity: cutOpacity(cue.local, .14), shotLabel: `♪ HERO · ${hero.label.toUpperCase()}`, shotIndex: 4, shotCount: PROFESSIONAL_CUE_COUNT }
+      return { variantId: hero.id, rotation: cameraAzimuth + facingRotation[hero.largePlacement] - .32 + Math.sin(local * Math.PI) * .09, cameraPosition: camera.position, cameraTarget: camera.target, garmentOpacity: cutOpacity(cue.local, .14), shotLabel: `HERO · ${hero.label.toUpperCase()}`, shotIndex: 4, shotCount: PROFESSIONAL_CUE_COUNT }
     }
     const detailIndex = cue.index - 5
     const placement = detailIndex === 0 ? hero.largePlacement : hero.smallPlacement
@@ -80,7 +80,7 @@ export function getProfessionalRecordingFrame(seconds: number, duration: number,
       cameraPosition: camera.position,
       cameraTarget: camera.target,
       garmentOpacity: cutOpacity(cue.local, .1),
-      shotLabel: detailIndex === 0 ? `♪ ACERCAMIENTO · ${placementLabels[placement].toUpperCase()}` : `♪ DETALLE · ${placementLabels[placement].toUpperCase()}`,
+      shotLabel: detailIndex === 0 ? `ACERCAMIENTO · ${placementLabels[placement].toUpperCase()}` : `DETALLE · ${placementLabels[placement].toUpperCase()}`,
       shotIndex: cue.index,
       shotCount: PROFESSIONAL_CUE_COUNT,
     }

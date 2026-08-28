@@ -23,7 +23,7 @@ type Props = {
 export function EditorStatusBar({ mode, campaign, selection, activity, currentTime, duration, playing, recordingStatus, recordingMessage, shot, output }: Props) {
   const tone = recordingStatus === 'recording' ? 'recording' : recordingStatus === 'error' ? 'error' : playing ? 'playing' : recordingStatus === 'ready' ? 'ready' : 'neutral'
   const preparing = recordingStatus === 'recording' && Boolean(recordingMessage?.toLowerCase().includes('prepar'))
-  const state = preparing ? 'Preparando' : recordingStatus === 'recording' ? '● Grabando' : recordingStatus === 'error' ? 'Error' : playing ? '▶ Reproduciendo' : recordingStatus === 'ready' ? 'Listo' : 'Preparado'
+  const state = preparing ? 'Preparando' : recordingStatus === 'recording' ? 'Grabando' : recordingStatus === 'error' ? 'Error' : playing ? 'Reproduciendo' : recordingStatus === 'ready' ? 'Listo' : 'Preparado'
   const detail = recordingMessage ?? shot ?? activity
   return <StatusBar tone={tone} className="editor-status-bar">
     <StatusItem value={mode === 'advanced' ? 'Avanzado' : 'Básico'} strong />

@@ -3,6 +3,8 @@ import { garmentVariantPresets } from '../../config/garmentVariants'
 import { useStudioStore } from '../../store/studioStore'
 import type { VariantAssetRole } from '../../types/studio'
 import { removeMedia, storeMedia, variantMediaKey } from '../../utils/mediaStorage'
+import { ArrowRight, ImagePlus, Trash2 } from '../icons'
+import { ResponsiveOptionGrid } from '../ui'
 
 async function inspectImage(file: File) {
   const bitmap = await createImageBitmap(file)
@@ -47,10 +49,10 @@ export function VariantsPanel() {
   return <section className="panel variants-panel"><h2>Variantes</h2>
     <input ref={input} hidden multiple type="file" accept="image/png,image/webp" onChange={(event) => { void choose(event.target.files); event.target.value = '' }} />
     <p className="muted">Carga dos artes. La de mayor resolución se asignará como principal.</p>
-    <button className="upload-button" onClick={() => input.current?.click()}>{ready ? 'Reemplazar las 2 imágenes' : '＋ Cargar 2 imágenes'}</button>
+    <button className="upload-button" onClick={() => input.current?.click()}><ImagePlus size={14} /> {ready ? 'Reemplazar las 2 imágenes' : 'Cargar 2 imágenes'}</button>
     {(variantAssets.large.name || variantAssets.small.name) && <div className="variant-assets">{(['large', 'small'] as VariantAssetRole[]).map((role) => <div key={role} className="variant-asset">{variantAssets[role].url && <img src={variantAssets[role].url!} alt="" />}<span><b>{role === 'large' ? 'Principal' : 'Secundaria'}</b><small>{variantAssets[role].width} × {variantAssets[role].height}</small></span></div>)}</div>}
-    <div className="variant-presets">{garmentVariantPresets.map((preset, index) => <button key={preset.id} disabled={!ready} className={activeVariantId === preset.id && ready ? 'variant-preset active' : 'variant-preset'} onClick={() => selectPreset(preset)}><i>{index + 1}</i><span>{preset.label}</span><small>{ready ? 'Lista' : 'Esperando imágenes'}</small></button>)}</div>
-    {ready && <><p className="variant-sequence-note">Al grabar: 1 → 2 → 3 → 4</p><button className="text-button" onClick={clear}>Vaciar biblioteca</button></>}
+    <ResponsiveOptionGrid minWidth={170} className="variant-presets">{garmentVariantPresets.map((preset, index) => <button key={preset.id} disabled={!ready} className={activeVariantId === preset.id && ready ? 'variant-preset active' : 'variant-preset'} onClick={() => selectPreset(preset)}><i>{index + 1}</i><span>{preset.label}</span><small>{ready ? 'Lista' : 'Esperando imágenes'}</small></button>)}</ResponsiveOptionGrid>
+    {ready && <div className="variant-ready-actions"><p className="variant-sequence-note"><span>1</span><ArrowRight size={12} /><span>2</span><ArrowRight size={12} /><span>3</span><ArrowRight size={12} /><span>4</span></p><button className="text-button" onClick={clear}><Trash2 size={12} /> Vaciar biblioteca</button></div>}
     {error && <p className="error">{error}</p>}
   </section>
 }

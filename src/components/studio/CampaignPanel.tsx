@@ -1,16 +1,19 @@
-import { useState, type ChangeEvent, type DragEvent } from 'react'
+import { useRef, useState, type DragEvent } from 'react'
 import { createDefaultCamera, createDefaultLabel, isCompleteCollectionItem, isValidCollectionSize } from '../../config/advancedDirectors'
 import { collectionTransitionDefinitions, garmentMotionDefinitions, placementFacing } from '../../config/garmentMotions'
 import { useStudioStore } from '../../store/studioStore'
-import type { CollectionAssetRole, CollectionItem, PrintPlacement, VariantAsset } from '../../types/studio'
+import type { CampaignMode, CollectionAssetRole, CollectionItem, PrintPlacement, VariantAsset } from '../../types/studio'
 import { collectionMediaKey, removeMedia, storeMedia } from '../../utils/mediaStorage'
-import { ChevronDown, ChevronUp, GripVertical, Images, Plus, Trash2 } from '../icons'
+import { ArrowLeft, ArrowRight, ArrowUp, Blend, ChevronDown, ChevronUp, Grid2X2, GripVertical, ImagePlus, Images, Orbit, Plus, Repeat2, RotateCcw, RotateCw, Search, Split, Trash2, Zap, ZoomIn } from '../icons'
+import { IconButton, InspectorSection, MasterDetailLayout, ResponsiveOptionGrid, SegmentedControl } from '../ui'
 import { VariantsPanel } from './VariantsPanel'
 
 const placements: { id: PrintPlacement; label: string }[] = [
   { id: 'frontCenter', label: 'Frente' }, { id: 'backCenter', label: 'Espalda' }, { id: 'frontChest', label: 'Pecho' },
   { id: 'leftSleeve', label: 'Manga izquierda' }, { id: 'rightSleeve', label: 'Manga derecha' },
 ]
+const transitionIcons = { fade: Blend, slideLeft: ArrowLeft, slideRight: ArrowRight, slideUp: ArrowUp, zoom: ZoomIn }
+const motionIcons = { turntableRight: RotateCw, turntableLeft: RotateCcw, whipCompanion: Zap, heroArc: Orbit, detailPush: Search, companionReveal: Repeat2 }
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `collection-${Date.now()}-${Math.random().toString(16).slice(2)}`
 const cleanName = (name: string) => name.replace(/\.[^.]+$/, '')
 const emptyAsset = (): VariantAsset => ({ url: null, name: null, width: 0, height: 0 })
@@ -19,8 +22,13 @@ const emptyPrint = (placement: PrintPlacement, scale: number) => ({ url: null, n
 
 export function CampaignPanel() {
   const studio = useStudioStore(); const [error, setError] = useState<string | null>(null); const [draggingId, setDraggingId] = useState<string | null>(null)
+  const uploadInput = useRef<HTMLInputElement>(null); const pendingUpload = useRef<{ item: CollectionItem; role: CollectionAssetRole } | null>(null)
   const active = studio.collectionItems.find((item) => item.id === studio.activeCollectionItemId) ?? null
   const completeItems = studio.collectionItems.filter(isCompleteCollectionItem); const validSize = isValidCollectionSize(completeItems.length)
+  const selectItem = (item: CollectionItem, role: CollectionAssetRole = 'main') => {
+    const placement = role === 'main' ? item.placement : item.companionPlacement
+    studio.setActiveCollectionItemId(item.id); studio.setActiveCollectionAssetRole(role); studio.setActivePrintPlacement(placement); studio.setTargetRotation(placementFacing[placement])
+  }
   const addPair = () => {
     const id = newId(); const name = `Diseño ${studio.collectionItems.length + 1}`
     const item: CollectionItem = {
@@ -30,8 +38,7 @@ export function CampaignPanel() {
     }
     studio.addCollectionItem(item); studio.setActiveCollectionAssetRole('main'); studio.setActivePrintPlacement('frontCenter'); studio.setTargetRotation(0); setError(null)
   }
-  const uploadAsset = (item: CollectionItem, role: CollectionAssetRole, event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; event.target.value = ''
+  const uploadAsset = (item: CollectionItem, role: CollectionAssetRole, file?: File) => {
     if (!file) return
     if (!['image/png', 'image/webp'].includes(file.type)) { setError('Cada estampado debe ser PNG o WebP con transparencia.'); return }
     const url = URL.createObjectURL(file); const image = new window.Image()
@@ -45,15 +52,12 @@ export function CampaignPanel() {
         if (item.companionAsset.url) URL.revokeObjectURL(item.companionAsset.url)
         studio.updateCollectionItem(item.id, { companionAsset: asset, companionPrint: { ...item.companionPrint, url, name: file.name } })
       }
-      studio.setActiveCollectionItemId(item.id); studio.setActiveCollectionAssetRole(role); setError(null)
+      selectItem(item, role); setError(null)
       void storeMedia(collectionMediaKey(item.id, role), file).catch(() => setError('No se pudo guardar una de las imágenes del par.'))
     }
     image.onerror = () => { URL.revokeObjectURL(url); setError(`No se pudo leer ${file.name}.`) }; image.src = url
   }
-  const selectItem = (item: CollectionItem, role: CollectionAssetRole = 'main') => {
-    const placement = role === 'main' ? item.placement : item.companionPlacement
-    studio.setActiveCollectionItemId(item.id); studio.setActiveCollectionAssetRole(role); studio.setActivePrintPlacement(placement); studio.setTargetRotation(placementFacing[placement])
-  }
+  const requestUpload = (item: CollectionItem, role: CollectionAssetRole) => { selectItem(item, role); pendingUpload.current = { item, role }; uploadInput.current?.click() }
   const removeItem = (item: CollectionItem) => {
     if (item.asset.url) URL.revokeObjectURL(item.asset.url); if (item.companionAsset.url) URL.revokeObjectURL(item.companionAsset.url)
     void removeMedia(collectionMediaKey(item.id, 'main')); void removeMedia(collectionMediaKey(item.id, 'companion')); studio.removeCollectionItem(item.id)
@@ -62,6 +66,7 @@ export function CampaignPanel() {
   const role = studio.activeCollectionAssetRole
   const activePrint = active ? role === 'main' ? active.print : active.companionPrint : null
   const activePlacement = active ? role === 'main' ? active.placement : active.companionPlacement : null
+  const activeAsset = active ? role === 'main' ? active.asset : active.companionAsset : null
   const updatePrint = (value: Partial<NonNullable<typeof activePrint>>) => { if (!active || !activePrint) return; studio.updateCollectionItem(active.id, role === 'main' ? { print: { ...active.print, ...value } } : { companionPrint: { ...active.companionPrint, ...value } }) }
   const updatePlacement = (placement: PrintPlacement) => {
     if (!active) return
@@ -70,19 +75,28 @@ export function CampaignPanel() {
     studio.setActivePrintPlacement(placement); studio.setTargetRotation(placementFacing[placement])
   }
   return <section className="panel campaign-panel"><h2>Tipo de campaña</h2>
-    <div className="campaign-mode-selector"><button className={studio.campaignMode === 'variants' ? 'active' : ''} onClick={() => studio.setCampaignMode('variants')}><span>01</span><strong>Variantes de un diseño</strong><small>El flujo actual de zonas y combinaciones.</small></button><button className={studio.campaignMode === 'collection' ? 'active' : ''} onClick={() => studio.setCampaignMode('collection')}><Images size={15} /><strong>Colección de diseños</strong><small>Productos formados por estampado + companion.</small></button></div>
+    <SegmentedControl label="Tipo de campaña" value={studio.campaignMode} onChange={(value: CampaignMode) => studio.setCampaignMode(value)} options={[{ value: 'variants', label: 'Variantes', icon: Split }, { value: 'collection', label: 'Colección', icon: Images }]} />
     {studio.campaignMode === 'variants' ? <div className="campaign-variants"><VariantsPanel /></div> : <>
-      <div className={validSize ? 'collection-summary valid' : 'collection-summary'}><span>{completeItems.length} pares completos</span><strong>{Math.ceil(completeItems.length / 4)} grupos</strong></div>
-      <button className="upload-button collection-add" onClick={addPair}><Plus size={13} /> Agregar par de artes</button>
-      <p className={validSize ? 'collection-rule valid' : 'collection-rule'}>{validSize ? 'Colección lista para previsualizar y grabar.' : 'El video requiere 2, 3 o 4 pares; después, 8, 12, 16…'}</p>
+      <input ref={uploadInput} hidden type="file" accept="image/png,image/webp" onChange={(event) => { const target = pendingUpload.current; if (target) uploadAsset(target.item, target.role, event.target.files?.[0]); pendingUpload.current = null; event.currentTarget.value = '' }} />
+      <div className="collection-toolbar"><div className={validSize ? 'collection-summary valid' : 'collection-summary'}><span>{completeItems.length} pares completos</span><strong>{Math.ceil(completeItems.length / 4)} grupos</strong></div><button className="upload-button collection-add" onClick={addPair}><Plus size={14} /> Agregar par</button></div>
+      <p className={validSize ? 'collection-rule valid' : 'collection-rule'}>{validSize ? 'Colección lista para previsualizar y grabar.' : 'El video requiere 2, 3 o 4 pares; después, 8, 12, 16.'}</p>
       {error && <p className="error">{error}</p>}
-      {!studio.collectionItems.length && <p className="collection-empty">Cada remera necesita un estampado principal y un companion icon. Agrega al menos dos pares completos.</p>}
-      <div className="collection-list">{studio.collectionItems.map((item, index) => <article key={item.id} draggable onDragStart={() => setDraggingId(item.id)} onDragEnd={() => setDraggingId(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOn(event, item.id)} className={item.id === studio.activeCollectionItemId ? 'collection-card active' : 'collection-card'} onClick={() => selectItem(item)}>
-        <GripVertical size={13} /><span className="collection-index">{index + 1}</span><span className="collection-pair-thumbs"><button className={item.asset.name ? 'ready' : ''} onClick={(event) => { event.stopPropagation(); selectItem(item, 'main') }} title="Estampado principal">{item.asset.url ? <img src={item.asset.url} alt="" /> : <b>P</b>}</button><button className={item.companionAsset.name ? 'ready' : ''} onClick={(event) => { event.stopPropagation(); selectItem(item, 'companion') }} title="Companion icon">{item.companionAsset.url ? <img src={item.companionAsset.url} alt="" /> : <b>C</b>}</button></span><span className="collection-card-copy"><strong>{item.name}</strong><small>{isCompleteCollectionItem(item) ? `Grupo ${Math.floor(completeItems.indexOf(item) / 4) + 1} · Par completo` : 'Falta completar el par'}</small></span><span className="collection-card-actions"><button onClick={(event) => { event.stopPropagation(); studio.moveCollectionItem(item.id, -1) }} aria-label="Subir diseño"><ChevronUp size={12} /></button><button onClick={(event) => { event.stopPropagation(); studio.moveCollectionItem(item.id, 1) }} aria-label="Bajar diseño"><ChevronDown size={12} /></button><button className="danger" onClick={(event) => { event.stopPropagation(); removeItem(item) }} aria-label="Eliminar diseño"><Trash2 size={12} /></button></span>
-      </article>)}</div>
-      {active && activePrint && activePlacement && <div className="collection-item-options"><p>Configuración del par</p><div className="collection-art-tabs"><button className={role === 'main' ? 'active' : ''} onClick={() => selectItem(active, 'main')}>Estampado principal</button><button className={role === 'companion' ? 'active' : ''} onClick={() => selectItem(active, 'companion')}>Companion icon</button></div><label className={role === 'main' ? 'collection-upload-slot main' : 'collection-upload-slot companion'}><input hidden type="file" accept="image/png,image/webp" onChange={(event) => uploadAsset(active, role, event)} /><span>{role === 'main' ? active.asset.name ?? 'Cargar estampado principal' : active.companionAsset.name ?? 'Cargar companion icon'}</span><small>PNG o WebP transparente · clic para reemplazar</small></label><div className="collection-edit-mode"><button className={studio.editorMode === 'design' ? 'active' : ''} onClick={() => studio.setEditorMode('design')}>Mover estampado</button><button className={studio.editorMode === 'zone' ? 'active' : ''} onClick={() => studio.setEditorMode('zone')}>Configurar zona</button></div><label className="layer-field">Nombre del producto<input value={active.name} onChange={(event) => studio.updateCollectionItem(active.id, { name: event.target.value, label: { ...active.label, text: event.target.value } })} /></label><label className="select-row">Zona de esta arte<select value={activePlacement} onChange={(event) => updatePlacement(event.target.value as PrintPlacement)}>{placements.map((placement) => <option key={placement.id} value={placement.id} disabled={role === 'main' ? placement.id === active.companionPlacement : placement.id === active.placement}>{placement.label}</option>)}</select></label><label className="color-picker block"><input type="color" value={active.garmentColor} onChange={(event) => studio.updateCollectionItem(active.id, { garmentColor: event.target.value })} />Color de esta remera</label><label className="range-row">Tamaño<output>{activePrint.scale.toFixed(2)}×</output><input type="range" min=".2" max="2.5" step=".01" value={activePrint.scale} onChange={(event) => updatePrint({ scale: Number(event.target.value) })} /></label><div className="layer-inline"><label>Horizontal<input type="number" step=".01" value={activePrint.x} onChange={(event) => updatePrint({ x: Number(event.target.value) })} /></label><label>Vertical<input type="number" step=".01" value={activePrint.y} onChange={(event) => updatePrint({ y: Number(event.target.value) })} /></label></div></div>}
-      <div className="collection-motion-options"><p>Transiciones entre tomas</p><small>Marca cuáles puede utilizar el montaje final.</small>{collectionTransitionDefinitions.map((transition) => <label key={transition.id}><input type="checkbox" checked={studio.collectionTransitionIds.includes(transition.id)} onChange={() => studio.toggleCollectionTransition(transition.id)} /><span><strong>{transition.name}</strong><small>{transition.description}</small></span></label>)}{!studio.collectionTransitionIds.length && <em>Sin efectos: el director utilizará cortes limpios.</em>}</div>
-      <div className="collection-motion-options"><p>Movimientos 3D de la remera</p><small>El director alternará solamente los estilos marcados.</small>{garmentMotionDefinitions.map((motion) => <label key={motion.id}><input type="checkbox" checked={studio.collectionMotionIds.includes(motion.id)} onChange={() => studio.toggleCollectionMotion(motion.id)} /><span><strong>{motion.name}</strong><small>{motion.description}</small></span></label>)}{!studio.collectionMotionIds.length && <em>Marca al menos uno; mientras tanto se usará el turntable derecho.</em>}</div>
+      <MasterDetailLayout className="collection-workspace" master={<>
+        <div className="collection-pane-title"><span>Colección</span><b>{studio.collectionItems.length}</b></div>
+        {!studio.collectionItems.length && <p className="collection-empty">Agrega prendas y carga un estampado principal junto con su companion.</p>}
+        <div className="collection-list">{studio.collectionItems.map((item, index) => <article key={item.id} draggable onDragStart={() => setDraggingId(item.id)} onDragEnd={() => setDraggingId(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOn(event, item.id)} className={item.id === studio.activeCollectionItemId ? 'collection-card active' : 'collection-card'} onClick={() => selectItem(item)}>
+          <GripVertical size={14} /><span className="collection-index">{index + 1}</span><span className="collection-pair-thumbs"><button className={item.asset.name ? 'ready' : ''} onClick={(event) => { event.stopPropagation(); requestUpload(item, 'main') }} aria-label={item.asset.name ? 'Reemplazar estampado principal' : 'Cargar estampado principal'}>{item.asset.url ? <img src={item.asset.url} alt="" /> : <ImagePlus size={14} />}<b>P</b></button><button className={item.companionAsset.name ? 'ready' : ''} onClick={(event) => { event.stopPropagation(); requestUpload(item, 'companion') }} aria-label={item.companionAsset.name ? 'Reemplazar companion' : 'Cargar companion'}>{item.companionAsset.url ? <img src={item.companionAsset.url} alt="" /> : <ImagePlus size={14} />}<b>C</b></button></span><span className="collection-card-copy"><strong>{item.name}</strong><small>{isCompleteCollectionItem(item) ? `Grupo ${Math.floor(completeItems.indexOf(item) / 4) + 1} · Par completo` : 'Falta completar el par'}</small></span><span className="collection-card-actions"><IconButton icon={ChevronUp} label="Subir diseño" onClick={(event) => { event.stopPropagation(); studio.moveCollectionItem(item.id, -1) }} /><IconButton icon={ChevronDown} label="Bajar diseño" onClick={(event) => { event.stopPropagation(); studio.moveCollectionItem(item.id, 1) }} /><IconButton icon={Trash2} label="Eliminar diseño" className="danger" onClick={(event) => { event.stopPropagation(); removeItem(item) }} /></span>
+        </article>)}</div>
+      </>} detail={active && activePrint && activePlacement && activeAsset ? <div className="collection-inspector">
+        <div className="collection-pane-title"><span>Diseño seleccionado</span><strong>{active.name}</strong></div>
+        <SegmentedControl label="Arte del par" value={role} onChange={(value: CollectionAssetRole) => selectItem(active, value)} options={[{ value: 'main', label: 'Principal', icon: ImagePlus }, { value: 'companion', label: 'Companion', icon: Grid2X2 }]} />
+        <button className={`collection-upload-slot ${role}`} onClick={() => requestUpload(active, role)}>{activeAsset.url ? <img src={activeAsset.url} alt="" /> : <ImagePlus size={24} />}<span><strong>{activeAsset.name ?? (role === 'main' ? 'Cargar estampado principal' : 'Cargar companion')}</strong><small>PNG o WebP transparente · clic para {activeAsset.name ? 'reemplazar' : 'cargar'}</small></span></button>
+        <SegmentedControl label="Modo de edición" value={studio.editorMode} onChange={studio.setEditorMode} options={[{ value: 'design', label: 'Mover diseño', icon: ImagePlus }, { value: 'zone', label: 'Configurar zona', icon: Grid2X2 }]} />
+        <div className="collection-inspector-fields"><label className="layer-field collection-name-field">Nombre del producto<input value={active.name} onChange={(event) => studio.updateCollectionItem(active.id, { name: event.target.value, label: { ...active.label, text: event.target.value } })} /></label><label className="select-row">Zona de esta arte<select value={activePlacement} onChange={(event) => updatePlacement(event.target.value as PrintPlacement)}>{placements.map((placement) => <option key={placement.id} value={placement.id} disabled={role === 'main' ? placement.id === active.companionPlacement : placement.id === active.placement}>{placement.label}</option>)}</select></label><label className="collection-color-field">Color de la remera<input type="color" value={active.garmentColor} onChange={(event) => studio.updateCollectionItem(active.id, { garmentColor: event.target.value })} /></label></div>
+        <label className="range-row collection-scale-field">Tamaño<output>{activePrint.scale.toFixed(2)}×</output><input type="range" min=".2" max="2.5" step=".01" value={activePrint.scale} onChange={(event) => updatePrint({ scale: Number(event.target.value) })} /></label><div className="layer-inline"><label>Horizontal<input type="number" step=".01" value={activePrint.x} onChange={(event) => updatePrint({ x: Number(event.target.value) })} /></label><label>Vertical<input type="number" step=".01" value={activePrint.y} onChange={(event) => updatePrint({ y: Number(event.target.value) })} /></label></div>
+      </div> : <div className="collection-inspector-empty"><Images size={28} /><strong>Selecciona una prenda</strong><span>Su configuración aparecerá aquí.</span></div>} />
+      <div className="collection-director-options"><InspectorSection title="Transiciones entre tomas"><p>Selecciona cuáles puede utilizar el montaje final.</p><ResponsiveOptionGrid minWidth={150}>{collectionTransitionDefinitions.map((transition) => { const Icon = transitionIcons[transition.id]; return <label key={transition.id} className="collection-option-card"><input type="checkbox" checked={studio.collectionTransitionIds.includes(transition.id)} onChange={() => studio.toggleCollectionTransition(transition.id)} /><Icon size={17} /><span><strong>{transition.name}</strong><small>{transition.description}</small></span></label> })}</ResponsiveOptionGrid>{!studio.collectionTransitionIds.length && <em>El director utilizará cortes limpios.</em>}</InspectorSection>
+      <InspectorSection title="Movimientos 3D"><p>El director alternará solamente los estilos seleccionados.</p><ResponsiveOptionGrid minWidth={175}>{garmentMotionDefinitions.map((motion) => { const Icon = motionIcons[motion.id]; return <label key={motion.id} className="collection-option-card"><input type="checkbox" checked={studio.collectionMotionIds.includes(motion.id)} onChange={() => studio.toggleCollectionMotion(motion.id)} /><Icon size={17} /><span><strong>{motion.name}</strong><small>{motion.description}</small></span></label> })}</ResponsiveOptionGrid>{!studio.collectionMotionIds.length && <em>Se utilizará el turntable derecho como respaldo.</em>}</InspectorSection></div>
     </>}
   </section>
 }
