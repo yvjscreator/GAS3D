@@ -274,6 +274,9 @@ h2 { font-size:var(--font-ui-section); }
 .secondary.small { width:max-content; }
 .quick-views button { flex:1; }
 .audio-layer-name { display:flex; align-items:center; gap:6px; }
+.render-lab-panel h2 { display:flex; align-items:center; gap:7px; }
+.render-lab-grid .ui-selectable-card { min-height:82px; display:flex; flex-direction:column; align-items:flex-start; gap:5px; padding:10px; text-align:left; }
+.render-lab-grid .ui-selectable-card small { color:var(--muted); line-height:1.35; }
 
 @container (max-width:700px) {
   .design-adjustment-grid,.zone-slider-grid { grid-template-columns:1fr; }

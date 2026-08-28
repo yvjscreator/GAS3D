@@ -27,6 +27,7 @@ import type { VariantCameraPreset } from '../../types/studio'
 import { ChevronDown } from '../icons'
 import { beatDuration, hasBeatMap } from '../../utils/beatSync'
 import { buildPresentationGroups } from '../../utils/presentationPlanner'
+import { RenderLabPanel } from './RenderLabPanel'
 
 const placementRotation: Record<PrintPlacement, number> = { frontCenter: 0, frontChest: 0, backCenter: Math.PI, leftSleeve: Math.PI / 2, rightSleeve: -Math.PI / 2 }
 const collectionPrints = (item: CollectionItem | null, template: Record<PrintPlacement, PrintSettings>) => {
@@ -48,7 +49,7 @@ const savedTimelineHeight = () => {
   return Number.isFinite(value) && value > 0 ? clampTimelineHeight(value) : 35
 }
 
-type ControlPanelId = 'garment' | 'variants' | 'designs' | 'background' | 'format' | 'beat' | 'animation' | 'director' | 'export'
+type ControlPanelId = 'garment' | 'variants' | 'designs' | 'background' | 'format' | 'beat' | 'animation' | 'director' | 'renderLab' | 'export'
 
 function AccordionSection({ id, title, children, active, onChange }: { id: ControlPanelId; title: string; children: ReactNode; active: boolean; onChange: (id: ControlPanelId | null) => void }) {
   return <details className="control-accordion" open={active}><summary onClick={(event) => { event.preventDefault(); onChange(active ? null : id) }}><span>{title}</span><b><ChevronDown size={13} /></b></summary><div className="accordion-body">{children}</div></details>
@@ -328,7 +329,8 @@ export function GarmentAdStudio() {
         <div className="drawer-group"><p>03 · Escena</p><AccordionSection id="background" title="Fondo e iluminación" active={activePanel === 'background'} onChange={setActivePanel}><BackgroundPanel /></AccordionSection><AccordionSection id="format" title="Formato del lienzo" active={activePanel === 'format'} onChange={setActivePanel}><FormatSelector /></AccordionSection></div>
         <div className="drawer-group"><p>04 · Ritmo</p><AccordionSection id="beat" title="Sincronización musical" active={activePanel === 'beat'} onChange={setActivePanel}><BeatSyncPanel /></AccordionSection></div>
         {studio.studioMode === 'advanced' ? <div className="drawer-group"><p>05 · Dirección</p><AccordionSection id="director" title="Director y cámaras" active={activePanel === 'director'} onChange={setActivePanel}><AdvancedDirectorPanel framing={framingMode} draft={cameraDraft} onBeginFraming={() => { pauseAdvanced(); setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : advancedProject.cameras[studio.activeVariantId]); setFramingMode(true) }} onCancelFraming={() => { setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : advancedProject.cameras[studio.activeVariantId]); setFramingMode(false) }} onSaveFraming={() => { if (collectionMode && activeCollectionItem) studio.updateCollectionItem(activeCollectionItem.id, { camera: { ...cameraDraft, saved: true } }); else studio.updateAdvancedCamera(studio.activeVariantId, { ...cameraDraft, saved: true }); setFramingMode(false) }} onResetFraming={resetFraming} onDraftFov={(fov) => setCameraDraft((current) => ({ ...current, fov }))} onDraftComposition={(composition) => setCameraDraft((current) => ({ ...current, composition }))} /></AccordionSection></div> : <div className="drawer-group"><p>05 · Movimiento</p><AccordionSection id="animation" title="Movimiento" active={activePanel === 'animation'} onChange={setActivePanel}><AnimationPanel /></AccordionSection></div>}
-        <div className="drawer-group"><p>06 · Salida</p><AccordionSection id="export" title="Exportar video" active={activePanel === 'export'} onChange={setActivePanel}><ExportPanel /></AccordionSection></div>
+        <div className="drawer-group"><p>06 · Laboratorio</p><AccordionSection id="renderLab" title="Calidad y transparencia" active={activePanel === 'renderLab'} onChange={setActivePanel}><RenderLabPanel /></AccordionSection></div>
+        <div className="drawer-group"><p>07 · Salida</p><AccordionSection id="export" title="Exportar video" active={activePanel === 'export'} onChange={setActivePanel}><ExportPanel /></AccordionSection></div>
         </aside>
         {studio.studioMode === 'advanced' && <>
           <button className="editor-split-resizer" onPointerDown={resizeTimeline} aria-label="Cambiar altura de la línea de tiempo" title="Arrastra para cambiar la altura de la línea de tiempo" />

@@ -24,7 +24,7 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
     if (!['image/png', 'image/webp'].includes(file.type)) { setError('Carga un PNG o WebP con transparencia.'); return }
     const id = newId()
     try {
-      const prepared = await prepareVideoAsset(file)
+      const prepared = await prepareVideoAsset(file, { profile: studio.assetQualityProfile, alphaMode: studio.alphaPipelineMode })
       const url = URL.createObjectURL(prepared.renderBlob)
       const layer: StageOverlayLayer = { id, type: 'image', name: file.name, sourceName: file.name, url, naturalWidth: prepared.metadata.proxyWidth, naturalHeight: prepared.metadata.proxyHeight, x: 50, y: 50, width: 28, rotation: 0, opacity: 100, timing: defaultTiming(studio.duration) }
       studio.addOverlayLayer(layer); setOpen(true); setError(null)

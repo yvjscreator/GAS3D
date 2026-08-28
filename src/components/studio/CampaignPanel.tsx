@@ -44,7 +44,7 @@ export function CampaignPanel() {
     if (!file) return
     if (!['image/png', 'image/webp'].includes(file.type)) { setError('Cada estampado debe ser PNG o WebP con transparencia.'); return }
     try {
-      const prepared = await prepareVideoAsset(file)
+      const prepared = await prepareVideoAsset(file, { profile: studio.assetQualityProfile, alphaMode: studio.alphaPipelineMode })
       const url = URL.createObjectURL(prepared.renderBlob); const thumbnailUrl = URL.createObjectURL(prepared.thumbnailBlob)
       const asset = { url, thumbnailUrl, name: file.name, width: prepared.metadata.proxyWidth, height: prepared.metadata.proxyHeight, originalWidth: prepared.metadata.originalWidth, originalHeight: prepared.metadata.originalHeight, originalBytes: prepared.metadata.originalBytes, renderBytes: prepared.metadata.renderBytes, profile: prepared.metadata.profile }
       if (role === 'main') {

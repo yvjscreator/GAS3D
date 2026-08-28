@@ -10,14 +10,14 @@ import { ResponsiveOptionGrid } from '../ui'
 export function VariantsPanel() {
   const input = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
-  const { variantAssets, setVariantAsset, activeVariantId, setActiveVariantId, setActivePrintPlacement, setTargetRotation } = useStudioStore()
+  const { variantAssets, setVariantAsset, activeVariantId, setActiveVariantId, setActivePrintPlacement, setTargetRotation, assetQualityProfile, alphaPipelineMode } = useStudioStore()
   const ready = Boolean(variantAssets.large.url && variantAssets.small.url)
   const choose = async (files?: FileList | null) => {
     if (!files || files.length !== 2) { setError('Selecciona exactamente dos imágenes.'); return }
     const candidates = Array.from(files)
     if (candidates.some((file) => !['image/png', 'image/webp'].includes(file.type))) { setError('Ambas imágenes deben ser PNG o WebP.'); return }
     try {
-      const inspected = await Promise.all(candidates.map(async (file) => ({ file, prepared: await prepareVideoAsset(file) })))
+      const inspected = await Promise.all(candidates.map(async (file) => ({ file, prepared: await prepareVideoAsset(file, { profile: assetQualityProfile, alphaMode: alphaPipelineMode }) })))
       inspected.sort((a, b) => b.prepared.metadata.originalWidth * b.prepared.metadata.originalHeight - a.prepared.metadata.originalWidth * a.prepared.metadata.originalHeight)
       const assignments: [VariantAssetRole, typeof inspected[number]][] = [['large', inspected[0]], ['small', inspected[1]]]
       await Promise.all(assignments.map(async ([role, item]) => {

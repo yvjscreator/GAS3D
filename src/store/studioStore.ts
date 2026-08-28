@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AnimationPreset, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, StudioMode, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
+import type { AlphaPipelineMode, AnimationPreset, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, StudioMode, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
 import { ADVANCED_SCHEMA_VERSION, applyBeatSyncToProject, createCollectionProject, createDirectorProject, getProjectDuration, isCompleteCollectionItem } from '../config/advancedDirectors'
 import { defaultCollectionMotionIds, defaultCollectionTransitionIds } from '../config/garmentMotions'
 import { defaultBeatSyncSettings } from '../utils/beatSync'
@@ -11,6 +11,8 @@ type StudioState = {
   campaignMode: CampaignMode; setCampaignMode: (mode: CampaignMode) => void
   presentationMode: PresentationMode; setPresentationMode: (mode: PresentationMode) => void
   enabledShotTypes: DirectorShotKind[]; toggleShotType: (kind: DirectorShotKind) => void
+  assetQualityProfile: AssetQualityProfile; setAssetQualityProfile: (profile: AssetQualityProfile) => void
+  alphaPipelineMode: AlphaPipelineMode; setAlphaPipelineMode: (mode: AlphaPipelineMode) => void
   collectionItems: CollectionItem[]; activeCollectionItemId: string | null
   activeCollectionAssetRole: CollectionAssetRole; setActiveCollectionAssetRole: (role: CollectionAssetRole) => void
   collectionMotionIds: GarmentMotionId[]; toggleCollectionMotion: (id: GarmentMotionId) => void
@@ -76,7 +78,7 @@ type StudioState = {
 }
 
 type HistorySnapshot = Pick<StudioState,
-  'presentationMode' | 'enabledShotTypes' | 'collectionItems' | 'collectionMotionIds' | 'collectionTransitionIds' | 'advancedProjects' |
+  'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'collectionMotionIds' | 'collectionTransitionIds' | 'advancedProjects' |
   'garmentColor' | 'prints' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' |
   'variantAssets' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' |
   'systemLayerTimings' | 'format' | 'exportQuality' | 'animation' | 'duration'
@@ -95,6 +97,8 @@ const cloneHistory = <T,>(value: T): T => typeof structuredClone === 'function' 
 const captureHistory = (state: StudioState): HistorySnapshot => cloneHistory({
   presentationMode: state.presentationMode,
   enabledShotTypes: state.enabledShotTypes,
+  assetQualityProfile: state.assetQualityProfile,
+  alphaPipelineMode: state.alphaPipelineMode,
   collectionItems: state.collectionItems,
   collectionMotionIds: state.collectionMotionIds,
   collectionTransitionIds: state.collectionTransitionIds,
@@ -179,7 +183,7 @@ const defaultVariantAssets: Record<VariantAssetRole, VariantAsset> = { large: em
 const variantIds: GarmentVariantId[] = ['frontLeftSleeve', 'frontBack', 'backRightSleeve', 'backChest']
 const STORAGE_KEY = 'garment-ad-studio:settings:v1'
 const defaultLayerTiming = (duration = 8): LayerTiming => ({ start: 0, duration, enter: 'none', exit: 'none' })
-type PersistedState = Pick<StudioState, 'studioMode' | 'campaignMode' | 'presentationMode' | 'enabledShotTypes' | 'collectionItems' | 'activeCollectionItemId' | 'activeCollectionAssetRole' | 'collectionMotionIds' | 'collectionTransitionIds' | 'activeDirectorId' | 'advancedProjects' | 'garmentColor' | 'activePrintPlacement' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' | 'editorMode' | 'variantAssets' | 'activeVariantId' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' | 'selectedLayerId' | 'systemLayerTimings' | 'format' | 'exportQuality' | 'animation' | 'duration' | 'targetRotation'> & {
+type PersistedState = Pick<StudioState, 'studioMode' | 'campaignMode' | 'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'activeCollectionItemId' | 'activeCollectionAssetRole' | 'collectionMotionIds' | 'collectionTransitionIds' | 'activeDirectorId' | 'advancedProjects' | 'garmentColor' | 'activePrintPlacement' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' | 'editorMode' | 'variantAssets' | 'activeVariantId' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' | 'selectedLayerId' | 'systemLayerTimings' | 'format' | 'exportQuality' | 'animation' | 'duration' | 'targetRotation'> & {
   schemaVersion: number
   prints: Record<PrintPlacement, PrintSettings>
   /** Compatibility with sessions saved before explicit editor modes existed. */
@@ -263,6 +267,10 @@ export const useStudioStore = create<StudioState>((set) => ({
     }
     return { enabledShotTypes, advancedProjects: { cinematic: rebuildDirector('cinematic'), grid2x2: rebuildDirector('grid2x2'), collection: rebuildCollectionProject(state, state.collectionItems, state.collectionMotionIds, state.collectionTransitionIds, state.beatSync, state.presentationMode, enabledShotTypes) } }
   }),
+  assetQualityProfile: persisted.assetQualityProfile ?? 'automatic',
+  setAssetQualityProfile: (assetQualityProfile) => set({ assetQualityProfile }),
+  alphaPipelineMode: persisted.alphaPipelineMode ?? 'pngCurrent',
+  setAlphaPipelineMode: (alphaPipelineMode) => set({ alphaPipelineMode }),
   collectionItems: initialCollectionItems,
   activeCollectionItemId: persisted.activeCollectionItemId && initialCollectionItems.some((item) => item.id === persisted.activeCollectionItemId) ? persisted.activeCollectionItemId : initialCollectionItems[0]?.id ?? null,
   activeCollectionAssetRole: persisted.activeCollectionAssetRole ?? 'main',
@@ -480,7 +488,7 @@ useStudioStore.subscribe((state) => {
     const prints = Object.fromEntries(Object.entries(state.prints).map(([placement, print]) => [placement, { ...print, url: null }])) as Record<PrintPlacement, PrintSettings>
     const variantPrintSettings = Object.fromEntries(variantIds.map((variant) => [variant, Object.fromEntries(Object.entries(state.variantPrintSettings[variant]).map(([placement, print]) => [placement, { ...print, url: null }]))])) as Record<GarmentVariantId, Record<PrintPlacement, PrintSettings>>
     const snapshot: PersistedState = {
-      schemaVersion: ADVANCED_SCHEMA_VERSION, studioMode: state.studioMode, campaignMode: state.campaignMode, presentationMode: state.presentationMode, enabledShotTypes: state.enabledShotTypes, collectionItems: state.collectionItems.map((item) => ({ ...item, asset: { ...item.asset, url: null, thumbnailUrl: null }, print: { ...item.print, url: null }, companionAsset: { ...item.companionAsset, url: null, thumbnailUrl: null }, companionPrint: { ...item.companionPrint, url: null } })), activeCollectionItemId: state.activeCollectionItemId, activeCollectionAssetRole: state.activeCollectionAssetRole, collectionMotionIds: state.collectionMotionIds, collectionTransitionIds: state.collectionTransitionIds, activeDirectorId: state.activeDirectorId, advancedProjects: state.advancedProjects,
+      schemaVersion: ADVANCED_SCHEMA_VERSION, studioMode: state.studioMode, campaignMode: state.campaignMode, presentationMode: state.presentationMode, enabledShotTypes: state.enabledShotTypes, assetQualityProfile: state.assetQualityProfile, alphaPipelineMode: state.alphaPipelineMode, collectionItems: state.collectionItems.map((item) => ({ ...item, asset: { ...item.asset, url: null, thumbnailUrl: null }, print: { ...item.print, url: null }, companionAsset: { ...item.companionAsset, url: null, thumbnailUrl: null }, companionPrint: { ...item.companionPrint, url: null } })), activeCollectionItemId: state.activeCollectionItemId, activeCollectionAssetRole: state.activeCollectionAssetRole, collectionMotionIds: state.collectionMotionIds, collectionTransitionIds: state.collectionTransitionIds, activeDirectorId: state.activeDirectorId, advancedProjects: state.advancedProjects,
       garmentColor: state.garmentColor, prints, activePrintPlacement: state.activePrintPlacement,
       printZoneAdjustments: state.printZoneAdjustments, variantPrintSettings, variantZoneAdjustments: state.variantZoneAdjustments, editorMode: state.editorMode,
       variantAssets: { large: { ...state.variantAssets.large, url: null, thumbnailUrl: null }, small: { ...state.variantAssets.small, url: null, thumbnailUrl: null } }, activeVariantId: state.activeVariantId,

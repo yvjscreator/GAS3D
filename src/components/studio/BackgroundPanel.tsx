@@ -13,7 +13,7 @@ export function BackgroundPanel() {
       let renderBlob: Blob = file
       if (isVideo) { await removePreparedMedia(backgroundMediaKey); await storeMedia(backgroundMediaKey, file) }
       else {
-        const prepared = await prepareVideoAsset(file, { mimeType: file.type === 'image/jpeg' ? 'image/webp' : 'image/png' })
+        const prepared = await prepareVideoAsset(file, { profile: useStudioStore.getState().assetQualityProfile, alphaMode: useStudioStore.getState().alphaPipelineMode, mimeType: file.type === 'image/jpeg' ? 'image/webp' : undefined })
         renderBlob = prepared.renderBlob
         await storePreparedMedia(backgroundMediaKey, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata)
       }

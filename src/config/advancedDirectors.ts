@@ -21,7 +21,7 @@ import { cueDuration, hasBeatMap, rhythmicProgress } from '../utils/beatSync'
 import { buildPresentationPlan } from '../utils/presentationPlanner'
 import { defaultEnabledShotTypes } from './directorShots'
 
-export const ADVANCED_SCHEMA_VERSION = 6
+export const ADVANCED_SCHEMA_VERSION = 7
 export const directorDefinitions: { id: DirectorId; name: string; description: string; duration: number }[] = [
   { id: 'cinematic', name: 'Presentación cinematográfica', description: 'Variantes, toma hero y acercamientos dirigidos.', duration: 24 },
   { id: 'grid2x2', name: 'Comparativa 2 × 2', description: 'Las cuatro variantes giran simultáneamente.', duration: 12 },
