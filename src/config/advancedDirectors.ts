@@ -21,7 +21,7 @@ import { cueDuration, hasBeatMap, rhythmicProgress } from '../utils/beatSync'
 import { buildPresentationPlan } from '../utils/presentationPlanner'
 import { defaultEnabledShotTypes } from './directorShots'
 
-export const ADVANCED_SCHEMA_VERSION = 7
+export const ADVANCED_SCHEMA_VERSION = 8
 export const directorDefinitions: { id: DirectorId; name: string; description: string; duration: number }[] = [
   { id: 'cinematic', name: 'Presentación cinematográfica', description: 'Variantes, toma hero y acercamientos dirigidos.', duration: 24 },
   { id: 'grid2x2', name: 'Comparativa 2 × 2', description: 'Las cuatro variantes giran simultáneamente.', duration: 12 },
@@ -70,46 +70,43 @@ const clip = (value: Omit<TimelineClip, 'id' | 'sourceStart' | 'fadeIn' | 'fadeO
   id: ids(), sourceStart: 0, fadeIn: .35, fadeOut: .35, ...value,
 })
 
-function cinematicTracks(enabledShotTypes: readonly DirectorShotKind[]): TimelineTrack[] {
-  const enabled = new Set(enabledShotTypes)
-  const showcaseDuration = 3.4
+function variantTracks(presentationMode: PresentationMode, enabledShotTypes: readonly DirectorShotKind[]) {
+  const variantIds = garmentVariantPresets.map((variant) => variant.id)
+  const rawPlan = buildPresentationPlan(variantIds, presentationMode, enabledShotTypes)
+  const heroId = garmentVariantPresets[0].id
+  const plan = { ...rawPlan, scenes: rawPlan.scenes.filter((scene) => scene.kind === 'groupShowcase' || scene.kind === 'itemShowcase' || scene.itemIds[0] === heroId) }
+  const directorClips: TimelineClip[] = []
+  const labelClips = new Map<GarmentVariantId, TimelineClip[]>()
   let cursor = 0
-  const clips: TimelineClip[] = enabled.has('itemShowcase') ? garmentVariantPresets.map((variant, index) => {
-    const item = clip({ type: 'directorShot', name: `Variante ${index + 1}`, start: cursor, duration: showcaseDuration, variantId: variant.id, shotKind: 'itemShowcase' })
-    cursor += showcaseDuration
-    return item
-  }) : []
-  const hero = garmentVariantPresets[0]
-  if (enabled.has('hero')) { clips.push(clip({ type: 'directorShot', name: 'Toma hero', start: cursor, duration: 4.4, variantId: hero.id, shotKind: 'hero' })); cursor += 4.4 }
-  if (enabled.has('detailLarge')) { clips.push(clip({ type: 'directorShot', name: 'Acercamiento principal', start: cursor, duration: 3, variantId: hero.id, shotKind: 'detailLarge' })); cursor += 3 }
-  if (enabled.has('detailSmall')) { clips.push(clip({ type: 'directorShot', name: 'Detalle secundario', start: cursor, duration: 3, variantId: hero.id, shotKind: 'detailSmall' })); cursor += 3 }
+  plan.scenes.forEach((scene) => {
+    const duration = scene.kind === 'groupShowcase' ? 8 : scene.kind === 'itemShowcase' ? 3.4 : scene.kind === 'hero' ? 4.4 : 3
+    if (scene.kind === 'groupShowcase') directorClips.push(clip({ type: 'gridScene', name: 'Cuatro variantes', start: cursor, duration, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, fadeIn: .5, fadeOut: .5 }))
+    else {
+      const variantId = scene.itemIds[0] as GarmentVariantId
+      const names: Record<Exclude<DirectorShotKind, 'groupShowcase'>, string> = { itemShowcase: `Variante ${variantIds.indexOf(variantId) + 1}`, hero: 'Toma hero', detailLarge: 'Acercamiento principal', detailSmall: 'Detalle secundario' }
+      directorClips.push(clip({ type: 'directorShot', name: names[scene.kind], start: cursor, duration, variantId, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds }))
+    }
+    scene.itemIds.forEach((id) => {
+      const variantId = id as GarmentVariantId; const labels = labelClips.get(variantId) ?? []
+      labels.push(clip({ type: 'variantLabel', name: variantLabelDefaults[variantId], start: cursor, duration, variantId, sceneId: scene.id, itemIds: scene.itemIds }))
+      labelClips.set(variantId, labels)
+    })
+    cursor += duration
+  })
   const duration = Math.max(.1, cursor)
-  return [
+  const tracks: TimelineTrack[] = [
     { id: 'background', name: 'Fondo obligatorio', type: 'background', locked: true, hidden: false, clips: [clip({ type: 'background', name: 'Fondo', start: 0, duration, fadeIn: 0, fadeOut: 0 })] },
-    { id: 'director', name: 'Director 3D', type: 'director', locked: false, hidden: false, clips },
-    ...garmentVariantPresets.map((variant, index) => ({
-      id: `label-${variant.id}`, name: `Etiqueta ${index + 1}`, type: 'label' as const, locked: false, hidden: false,
-      clips: enabled.has('itemShowcase') ? [clip({ type: 'variantLabel', name: variantLabelDefaults[variant.id], start: index * showcaseDuration, duration: showcaseDuration, variantId: variant.id })] : [],
-    })),
+    { id: 'director', name: 'Director 3D', type: 'director', locked: false, hidden: false, clips: directorClips },
+    ...garmentVariantPresets.map((variant, index) => ({ id: `label-${variant.id}`, name: `Etiqueta ${index + 1}`, type: 'label' as const, locked: false, hidden: false, clips: labelClips.get(variant.id) ?? [] })),
   ]
+  return { tracks, plan }
 }
 
-function gridTracks(enabledShotTypes: readonly DirectorShotKind[]): TimelineTrack[] {
-  const enabled = enabledShotTypes.includes('groupShowcase')
-  return [
-    { id: 'background', name: 'Fondo obligatorio', type: 'background', locked: true, hidden: false, clips: [clip({ type: 'background', name: 'Fondo', start: 0, duration: 12, fadeIn: 0, fadeOut: 0 })] },
-    { id: 'director', name: 'Comparativa 2 × 2', type: 'director', locked: false, hidden: false, clips: enabled ? [clip({ type: 'gridScene', name: 'Cuatro variantes', start: 0, duration: 12, fadeIn: .5, fadeOut: .5, shotKind: 'groupShowcase' })] : [] },
-    ...garmentVariantPresets.map((variant, index) => ({
-      id: `label-${variant.id}`, name: `Etiqueta ${index + 1}`, type: 'label' as const, locked: false, hidden: false,
-      clips: enabled ? [clip({ type: 'variantLabel', name: variantLabelDefaults[variant.id], start: 0, duration: 12, variantId: variant.id })] : [],
-    })),
-  ]
-}
-
-export function createDirectorProject(id: DirectorId, overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes): DirectorProject {
+export function createDirectorProject(id: DirectorId, overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes, presentationMode: PresentationMode = 'mixed'): DirectorProject {
   if (id === 'collection') return createCollectionProject([], overlays, musicAvailable, backgroundAudio)
   const definition = directorDefinitions.find((item) => item.id === id)!
-  const tracks = id === 'grid2x2' ? gridTracks(enabledShotTypes) : cinematicTracks(enabledShotTypes)
+  const variantPlan = variantTracks(id === 'grid2x2' ? 'grouped' : presentationMode, enabledShotTypes)
+  const tracks = variantPlan.tracks
   overlays.forEach((layer) => tracks.push({
     id: `asset-${layer.id}`, name: layer.name, type: layer.type, locked: false, hidden: false,
     clips: [clip({ type: layer.type, name: layer.name, start: layer.timing.start, duration: layer.timing.duration, assetId: layer.id })],
@@ -130,6 +127,7 @@ export function createDirectorProject(id: DirectorId, overlays: StageOverlayLaye
     tracks,
     selectedClipId: tracks.find((track) => track.type === 'director')?.clips[0]?.id ?? null,
     initialized: true,
+    presentationPlan: variantPlan.plan,
   }
 }
 
@@ -226,7 +224,9 @@ export function applyBeatSyncToProject(project: DirectorProject, beatSync: BeatS
     return { ...item, unsyncedStart: item.unsyncedStart ?? item.start, unsyncedDuration: item.unsyncedDuration ?? item.duration, ...next }
   })
   const alignedByVariant = new Map<GarmentVariantId, TimelineClip>()
+  const alignedByScene = new Map<string, TimelineClip>()
   alignedDirector.forEach((item) => { if (item.variantId && !alignedByVariant.has(item.variantId)) alignedByVariant.set(item.variantId, item) })
+  alignedDirector.forEach((item) => { if (item.sceneId) alignedByScene.set(item.sceneId, item) })
   const grid = alignedDirector.find((item) => item.type === 'gridScene')
   const directorEnd = alignedDirector.reduce((end, item) => Math.max(end, item.start + item.duration), 0)
   let tracks = project.tracks.map((track) => {
@@ -234,7 +234,7 @@ export function applyBeatSyncToProject(project: DirectorProject, beatSync: BeatS
     if (track.type === 'music' || track.type === 'backgroundAudio') return { ...track, clips: track.clips.map((item) => item.start === 0 && (item.unsyncedDuration !== undefined || Math.abs(item.duration - project.duration) < .01) ? { ...item, unsyncedStart: item.unsyncedStart ?? item.start, unsyncedDuration: item.unsyncedDuration ?? item.duration, duration: directorEnd } : item) }
     if (track.type !== 'label') return track
     return { ...track, clips: track.clips.map((item) => {
-      const target = item.variantId ? alignedByVariant.get(item.variantId) : grid
+      const target = item.sceneId ? alignedByScene.get(item.sceneId) : item.variantId ? alignedByVariant.get(item.variantId) : grid
       if (!target) return item
       return { ...item, unsyncedStart: item.unsyncedStart ?? item.start, unsyncedDuration: item.unsyncedDuration ?? item.duration, start: target.start, duration: target.duration }
     }) }

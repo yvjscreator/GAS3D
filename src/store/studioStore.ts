@@ -220,7 +220,15 @@ const initialLayerOrder = (persisted.layerOrder ?? ['garment']).filter((id, inde
 if (!initialLayerOrder.includes('garment')) initialLayerOrder.unshift('garment')
 const persistedProjects = persisted.advancedProjects
 const createSeededProject = (id: DirectorId) => {
-  const project = applyBeatSyncToProject(createDirectorProject(id, initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialEnabledShotTypes), initialBeatSync)
+  const project = applyBeatSyncToProject(createDirectorProject(id, initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialEnabledShotTypes, initialPresentationMode), initialBeatSync)
+  const previous = persistedProjects?.[id]
+  if (previous) return {
+    ...project,
+    cameras: Object.fromEntries(variantIds.map((variant) => [variant, { ...project.cameras[variant], ...previous.cameras?.[variant] }])) as Record<GarmentVariantId, VariantCameraPreset>,
+    labels: Object.fromEntries(variantIds.map((variant) => [variant, { ...project.labels[variant], ...previous.labels?.[variant] }])) as Record<GarmentVariantId, VariantLabelSettings>,
+    zoom: previous.zoom ?? project.zoom,
+    playhead: Math.min(previous.playhead ?? 0, project.duration),
+  }
   if (!persisted.cameraView) return project
   return { ...project, cameras: Object.fromEntries(variantIds.map((variant) => [variant, { ...project.cameras[variant], position: [...persisted.cameraView!.position], target: [...persisted.cameraView!.target] }])) as Record<GarmentVariantId, VariantCameraPreset> }
 }
@@ -229,7 +237,7 @@ const initialAdvancedProjects: Record<DirectorId, DirectorProject> = {
   grid2x2: persisted.schemaVersion === ADVANCED_SCHEMA_VERSION && persistedProjects?.grid2x2 ? persistedProjects.grid2x2 : createSeededProject('grid2x2'),
   collection: persisted.schemaVersion === ADVANCED_SCHEMA_VERSION && persistedProjects?.collection
     ? persistedProjects.collection
-    : createCollectionProject(initialCollectionItems.filter(isCompleteCollectionItem), initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialCollectionMotionIds, initialCollectionTransitionIds, undefined, initialBeatSync, initialPresentationMode, initialEnabledShotTypes),
+    : createCollectionProject(initialCollectionItems.filter(isCompleteCollectionItem), initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialCollectionMotionIds, initialCollectionTransitionIds, persistedProjects?.collection, initialBeatSync, initialPresentationMode, initialEnabledShotTypes),
 }
 const makeClipId = () => globalThis.crypto?.randomUUID?.() ?? `clip-${Date.now()}-${Math.random().toString(16).slice(2)}`
 const syncProjectAssets = (project: DirectorProject, overlays: StageOverlayLayer[], musicAvailable: boolean, backgroundAudio: boolean): DirectorProject => {
@@ -246,6 +254,11 @@ const syncProjectAssets = (project: DirectorProject, overlays: StageOverlayLayer
   return { ...project, tracks }
 }
 const rebuildCollectionProject = (state: StudioState, items: CollectionItem[], motions = state.collectionMotionIds, transitions = state.collectionTransitionIds, beatSync = state.beatSync, presentationMode = state.presentationMode, enabledShotTypes = state.enabledShotTypes) => createCollectionProject(items.filter(isCompleteCollectionItem), state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), motions, transitions, state.advancedProjects.collection, beatSync, presentationMode, enabledShotTypes)
+const rebuildVariantProject = (state: StudioState, id: 'cinematic' | 'grid2x2', enabledShotTypes = state.enabledShotTypes, presentationMode = state.presentationMode) => {
+  const current = state.advancedProjects[id]
+  const next = applyBeatSyncToProject(createDirectorProject(id, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), enabledShotTypes, presentationMode), state.beatSync)
+  return { ...next, cameras: current.cameras, labels: current.labels, zoom: current.zoom, playhead: Math.min(current.playhead, next.duration) }
+}
 export const useStudioStore = create<StudioState>((set) => ({
   canUndo: false, canRedo: false, undo: performUndo, redo: performRedo,
   studioMode: persisted.studioMode ?? 'basic',
@@ -255,18 +268,17 @@ export const useStudioStore = create<StudioState>((set) => ({
     return { studioMode, advancedProjects: { ...state.advancedProjects, [state.activeDirectorId]: project } }
   }),
   campaignMode: persisted.campaignMode ?? 'variants',
-  setCampaignMode: (campaignMode) => set((state) => ({ campaignMode, activeDirectorId: campaignMode === 'collection' ? 'collection' : state.activeDirectorId === 'collection' ? 'cinematic' : state.activeDirectorId })),
+  setCampaignMode: (campaignMode) => set({ campaignMode, activeDirectorId: campaignMode === 'collection' ? 'collection' : 'cinematic' }),
   presentationMode: initialPresentationMode,
-  setPresentationMode: (presentationMode) => set((state) => ({ presentationMode, advancedProjects: { ...state.advancedProjects, collection: rebuildCollectionProject(state, state.collectionItems, state.collectionMotionIds, state.collectionTransitionIds, state.beatSync, presentationMode) } })),
+  setPresentationMode: (presentationMode) => set((state) => ({ presentationMode, advancedProjects: {
+    cinematic: rebuildVariantProject(state, 'cinematic', state.enabledShotTypes, presentationMode),
+    grid2x2: rebuildVariantProject(state, 'grid2x2', state.enabledShotTypes, 'grouped'),
+    collection: rebuildCollectionProject(state, state.collectionItems, state.collectionMotionIds, state.collectionTransitionIds, state.beatSync, presentationMode),
+  } })),
   enabledShotTypes: initialEnabledShotTypes,
   toggleShotType: (kind) => set((state) => {
     const enabledShotTypes = state.enabledShotTypes.includes(kind) ? state.enabledShotTypes.filter((item) => item !== kind) : [...state.enabledShotTypes, kind]
-    const rebuildDirector = (id: 'cinematic' | 'grid2x2') => {
-      const current = state.advancedProjects[id]
-      const next = applyBeatSyncToProject(createDirectorProject(id, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), enabledShotTypes), state.beatSync)
-      return { ...next, cameras: current.cameras, labels: current.labels, zoom: current.zoom, playhead: Math.min(current.playhead, next.duration) }
-    }
-    return { enabledShotTypes, advancedProjects: { cinematic: rebuildDirector('cinematic'), grid2x2: rebuildDirector('grid2x2'), collection: rebuildCollectionProject(state, state.collectionItems, state.collectionMotionIds, state.collectionTransitionIds, state.beatSync, state.presentationMode, enabledShotTypes) } }
+    return { enabledShotTypes, advancedProjects: { cinematic: rebuildVariantProject(state, 'cinematic', enabledShotTypes), grid2x2: rebuildVariantProject(state, 'grid2x2', enabledShotTypes, 'grouped'), collection: rebuildCollectionProject(state, state.collectionItems, state.collectionMotionIds, state.collectionTransitionIds, state.beatSync, state.presentationMode, enabledShotTypes) } }
   }),
   assetQualityProfile: persisted.assetQualityProfile ?? 'automatic',
   setAssetQualityProfile: (assetQualityProfile) => set({ assetQualityProfile }),
@@ -315,7 +327,7 @@ export const useStudioStore = create<StudioState>((set) => ({
     return { collectionItems, advancedProjects: { ...state.advancedProjects, collection: rebuildCollectionProject(state, collectionItems) } }
   }),
   setActiveCollectionItemId: (activeCollectionItemId) => set({ activeCollectionItemId }),
-  activeDirectorId: persisted.campaignMode === 'collection' ? 'collection' : persisted.activeDirectorId === 'collection' ? 'cinematic' : persisted.activeDirectorId ?? 'cinematic',
+  activeDirectorId: persisted.campaignMode === 'collection' ? 'collection' : 'cinematic',
   setActiveDirectorId: (activeDirectorId) => set((state) => {
     if (state.campaignMode === 'collection' && activeDirectorId !== 'collection') return state
     const project = syncProjectAssets(state.advancedProjects[activeDirectorId], state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled))
@@ -325,7 +337,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   initializeAdvancedProject: (id) => set((state) => {
     const directorId = id ?? state.activeDirectorId
     if (state.advancedProjects[directorId]?.initialized) return state
-    return { advancedProjects: { ...state.advancedProjects, [directorId]: createDirectorProject(directorId, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), state.enabledShotTypes) } }
+    return { advancedProjects: { ...state.advancedProjects, [directorId]: createDirectorProject(directorId, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), state.enabledShotTypes, state.presentationMode) } }
   }),
   setAdvancedPlayhead: (time) => { historyApplying = true; set((state) => {
     const project = state.advancedProjects[state.activeDirectorId]

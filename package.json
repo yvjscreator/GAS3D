@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "qa:roadmap": "esbuild scripts/roadmap-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-roadmap-qa.mjs && node /tmp/gas3d-roadmap-qa.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

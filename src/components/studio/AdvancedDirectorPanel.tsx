@@ -1,4 +1,3 @@
-import { directorDefinitions } from '../../config/advancedDirectors'
 import { directorShotDefinitions } from '../../config/directorShots'
 import { garmentVariantPresets } from '../../config/garmentVariants'
 import { useStudioStore } from '../../store/studioStore'
@@ -29,9 +28,8 @@ export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancel
     else studio.updateVariantLabel(studio.activeVariantId, value)
   }
   const directionMaster = <div className="direction-master"><div className="advanced-section-title"><Rotate3D size={14} /><span>Tipo de director</span></div>
-    {collectionMode ? <><SegmentedControl label="Modo de presentación" value={studio.presentationMode} onChange={(value: PresentationMode) => studio.setPresentationMode(value)} options={[{ value: 'grouped', label: 'Agrupado', icon: Grid2X2 }, { value: 'sequential', label: 'Secuencial', icon: Split }, { value: 'mixed', label: 'Mixto', icon: Repeat2 }]} /><div className="collection-director-card"><Grid2X2 size={16} /><span><strong>Planificador automático</strong><small>{studio.presentationMode === 'grouped' ? 'Presenta grupos equilibrados de hasta cuatro prendas.' : studio.presentationMode === 'sequential' ? 'Presenta cada diseño individualmente y en orden.' : 'Combina grupos equilibrados y tomas individuales.'}</small></span></div></> : <ResponsiveOptionGrid minWidth={180} className="director-type-grid">{directorDefinitions.map((definition) => <button key={definition.id} className={studio.activeDirectorId === definition.id ? 'active' : ''} onClick={() => studio.setActiveDirectorId(definition.id)}>
-      {definition.id === 'grid2x2' ? <Grid2X2 size={15} /> : <Aperture size={15} />}<span><strong>{definition.name}</strong><small>{definition.description}</small></span>
-    </button>)}</ResponsiveOptionGrid>}
+    <SegmentedControl label="Modo de presentación" value={studio.presentationMode} onChange={(value: PresentationMode) => studio.setPresentationMode(value)} options={[{ value: 'grouped', label: 'Agrupado', icon: Grid2X2 }, { value: 'sequential', label: 'Secuencial', icon: Split }, { value: 'mixed', label: 'Mixto', icon: Repeat2 }]} />
+    <div className="collection-director-card"><Grid2X2 size={16} /><span><strong>Planificador automático</strong><small>{studio.presentationMode === 'grouped' ? `Presenta ${collectionMode ? 'diseños' : 'variantes'} en grupos equilibrados de hasta cuatro prendas.` : studio.presentationMode === 'sequential' ? `Presenta cada ${collectionMode ? 'diseño' : 'variante'} individualmente y en orden.` : 'Combina la presentación agrupada con tomas individuales.'}</small></span></div>
     <div className="advanced-section-title"><Aperture size={14} /><span>Tomas incluidas</span></div>
     <ResponsiveOptionGrid minWidth={170} className="director-shot-grid">{directorShotDefinitions.map((shot) => { const Icon = shotIcons[shot.id]; return <label key={shot.id} className="collection-option-card"><input type="checkbox" checked={studio.enabledShotTypes.includes(shot.id)} onChange={() => studio.toggleShotType(shot.id)} /><Icon size={16} /><span><strong>{shot.name}</strong><small>{shot.description}</small></span></label> })}</ResponsiveOptionGrid>
     {!studio.enabledShotTypes.length && <p className="advanced-current-variant">Activa al menos una toma para construir la película.</p>}
