@@ -7,7 +7,7 @@ import { FormatSelector } from './FormatSelector'
 import { ExportPanel } from './ExportPanel'
 import { CampaignPanel } from './CampaignPanel'
 import { LayersDrawer } from './LayersDrawer'
-import { BeatSyncPanel } from './BeatSyncPanel'
+import { AudioPanel } from './AudioPanel'
 import { useStudioStore } from '../../store/studioStore'
 import { useRecording } from '../../hooks/useRecording'
 import { printPlacements, type BeatSyncSettings, type CollectionItem, type DirectorProject, type GarmentVariantId, type PrintPlacement, type PrintSettings, type PrintZoneAdjustment, type RecordingStatus, type VariantAssetRole } from '../../types/studio'
@@ -395,7 +395,7 @@ export function GarmentAdStudio() {
         <WorkspaceTabs value={workspace} tabs={workspaceTabs} onChange={setWorkspace} />
         <aside className="control-drawer workspace-drawer">
         <div className="drawer-intro"><span>{workspaceTabs.find((tab) => tab.id === workspace)?.label}</span><strong>{collectionMode ? `${completeCollectionItems.length} pares · ${buildPresentationGroups(completeCollectionItems).length} grupos · ${studio.presentationMode}` : variantLibraryEnabled ? activeVariant.label : 'Configura tu producto'}</strong></div>
-        <div className="workspace-content">{workspace === 'designs' ? <><CampaignPanel />{!collectionMode && <DesignPanel />}</> : workspace === 'scene' ? <BackgroundPanel /> : workspace === 'direction' ? <>{directorPanel}<AnimationPanel /></> : <BeatSyncPanel />}</div>
+        <div className="workspace-content">{workspace === 'designs' ? <><CampaignPanel />{!collectionMode && <DesignPanel />}</> : workspace === 'scene' ? <BackgroundPanel /> : workspace === 'direction' ? <>{directorPanel}<AnimationPanel /></> : <AudioPanel />}</div>
         </aside>
         <>
           <button className="editor-split-resizer" onPointerDown={resizeTimeline} aria-label="Cambiar altura de la línea de tiempo" title="Arrastra para cambiar la altura de la línea de tiempo" />

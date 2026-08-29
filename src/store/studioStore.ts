@@ -279,15 +279,15 @@ const initialAdvancedProjects: Record<DirectorId, DirectorProject> = {
     : createCollectionProject(initialCollectionItems.filter(isCompleteCollectionItem), initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialCollectionMotionIds, initialCollectionTransitionIds, persistedProjects?.collection, initialBeatSync, initialPresentationMode, initialEnabledShotTypes),
 }
 const makeClipId = () => globalThis.crypto?.randomUUID?.() ?? `clip-${Date.now()}-${Math.random().toString(16).slice(2)}`
-const syncProjectAssets = (project: DirectorProject, overlays: StageOverlayLayer[], musicAvailable: boolean, backgroundAudio: boolean): DirectorProject => {
+const syncProjectAssets = (project: DirectorProject, overlays: StageOverlayLayer[], music: AudioTrackSettings | null, backgroundAudio: boolean): DirectorProject => {
   const validOverlayIds = new Set(overlays.map((layer) => layer.id))
   let tracks = project.tracks.filter((track) => !track.id.startsWith('asset-') || validOverlayIds.has(track.id.slice(6)))
   overlays.forEach((layer) => {
     if (tracks.some((track) => track.id === `asset-${layer.id}`)) return
     tracks = [...tracks, { id: `asset-${layer.id}`, name: layer.name, type: layer.type, locked: false, hidden: false, clips: [{ id: makeClipId(), type: layer.type, name: layer.name, start: layer.timing.start, duration: layer.timing.duration, sourceStart: 0, fadeIn: .35, fadeOut: .35, assetId: layer.id }] }]
   })
-  if (musicAvailable && !tracks.some((track) => track.id === 'music')) tracks = [...tracks, { id: 'music', name: 'Música', type: 'music', locked: false, hidden: false, clips: [{ id: makeClipId(), type: 'music', name: 'Música', start: 0, duration: project.duration, sourceStart: 0, fadeIn: .5, fadeOut: .8, assetId: 'music' }] }]
-  if (!musicAvailable) tracks = tracks.filter((track) => track.id !== 'music')
+  if (music?.name && !tracks.some((track) => track.id === 'music')) tracks = [...tracks, { id: 'music', name: 'Música', type: 'music', locked: false, hidden: false, clips: [{ id: makeClipId(), type: 'music', name: music.name, start: Math.min(project.duration, music.start), duration: Math.min(music.duration, Math.max(.1, project.duration - music.start)), sourceStart: 0, fadeIn: music.fadeIn, fadeOut: music.fadeOut, assetId: 'music' }] }]
+  if (!music?.name) tracks = tracks.filter((track) => track.id !== 'music')
   if (backgroundAudio && !tracks.some((track) => track.id === 'background-audio')) tracks = [...tracks, { id: 'background-audio', name: 'Audio del fondo', type: 'backgroundAudio', locked: false, hidden: false, clips: [{ id: makeClipId(), type: 'backgroundAudio', name: 'Audio del fondo', start: 0, duration: project.duration, sourceStart: 0, fadeIn: 0, fadeOut: 0, assetId: 'background-audio' }] }]
   if (!backgroundAudio) tracks = tracks.filter((track) => track.id !== 'background-audio')
   return { ...project, tracks }
@@ -303,7 +303,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   studioMode: persisted.studioMode ?? 'basic',
   setStudioMode: (studioMode) => set((state) => {
     if (studioMode === 'basic') return { studioMode }
-    const project = syncProjectAssets(state.advancedProjects[state.activeDirectorId], state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled))
+    const project = syncProjectAssets(state.advancedProjects[state.activeDirectorId], state.overlayLayers, state.music, Boolean(state.background.videoAudioEnabled))
     return { studioMode, advancedProjects: { ...state.advancedProjects, [state.activeDirectorId]: project } }
   }),
   campaignMode: persisted.campaignMode ?? 'variants',
@@ -372,7 +372,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   activeDirectorId: persisted.campaignMode === 'collection' ? 'collection' : 'cinematic',
   setActiveDirectorId: (activeDirectorId) => set((state) => {
     if (state.campaignMode === 'collection' && activeDirectorId !== 'collection') return state
-    const project = syncProjectAssets(state.advancedProjects[activeDirectorId], state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled))
+    const project = syncProjectAssets(state.advancedProjects[activeDirectorId], state.overlayLayers, state.music, Boolean(state.background.videoAudioEnabled))
     return { activeDirectorId, advancedProjects: { ...state.advancedProjects, [activeDirectorId]: project } }
   }),
   advancedProjects: initialAdvancedProjects,
@@ -447,9 +447,9 @@ export const useStudioStore = create<StudioState>((set) => ({
     return { advancedProjects: { ...state.advancedProjects, [state.activeDirectorId]: { ...project, tracks } } }
   }),
   syncAdvancedAssets: () => set((state) => ({ advancedProjects: {
-    cinematic: syncProjectAssets(state.advancedProjects.cinematic, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled)),
-    grid2x2: syncProjectAssets(state.advancedProjects.grid2x2, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled)),
-    collection: syncProjectAssets(state.advancedProjects.collection, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled)),
+    cinematic: syncProjectAssets(state.advancedProjects.cinematic, state.overlayLayers, state.music, Boolean(state.background.videoAudioEnabled)),
+    grid2x2: syncProjectAssets(state.advancedProjects.grid2x2, state.overlayLayers, state.music, Boolean(state.background.videoAudioEnabled)),
+    collection: syncProjectAssets(state.advancedProjects.collection, state.overlayLayers, state.music, Boolean(state.background.videoAudioEnabled)),
   } })),
   garmentColor: persisted.garmentColor ?? '#050505', setGarmentColor: (garmentColor) => set({ garmentColor }),
   prints: initialPrints, activePrintPlacement: persisted.activePrintPlacement ?? 'frontCenter', setActivePrintPlacement: (activePrintPlacement) => set({ activePrintPlacement }),
@@ -514,7 +514,13 @@ export const useStudioStore = create<StudioState>((set) => ({
   setBackground: (value) => set((state) => ({ background: { ...state.background, ...value } })),
   cameraView: persisted.cameraView ?? { position: [0, .15, 12.35], target: [0, .15, 0] }, setCameraView: (cameraView) => set({ cameraView }),
   music: { name: null, volume: 80, start: 0, duration: persisted.duration ?? 8, sourceDuration: 0, fadeIn: .5, fadeOut: .8, ...persisted.music, url: null },
-  setMusic: (value) => set((state) => ({ music: { ...state.music, ...value } })),
+  setMusic: (value) => set((state) => {
+    const music = { ...state.music, ...value }
+    const timingChanged = value.start !== undefined || value.duration !== undefined || value.fadeIn !== undefined || value.fadeOut !== undefined
+    if (!timingChanged) return { music }
+    const updateProject = (project: DirectorProject): DirectorProject => ({ ...project, tracks: project.tracks.map((track) => track.type !== 'music' ? track : { ...track, clips: track.clips.map((item) => ({ ...item, ...(value.start !== undefined ? { start: Math.max(0, value.start) } : {}), ...(value.duration !== undefined ? { duration: Math.max(.1, value.duration) } : {}), ...(value.fadeIn !== undefined ? { fadeIn: Math.max(0, value.fadeIn) } : {}), ...(value.fadeOut !== undefined ? { fadeOut: Math.max(0, value.fadeOut) } : {}) })) }) })
+    return { music, advancedProjects: { cinematic: updateProject(state.advancedProjects.cinematic), grid2x2: updateProject(state.advancedProjects.grid2x2), collection: updateProject(state.advancedProjects.collection) } }
+  }),
   beatSync: initialBeatSync,
   setBeatSync: (value) => set((state) => {
     const beatSync = { ...state.beatSync, ...value }

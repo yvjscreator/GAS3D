@@ -141,6 +141,15 @@
 .label-batch-actions button { display:flex; align-items:center; gap:5px; min-height:30px; color:#9fb0c3; background:#171e27; border:1px solid #354251; border-radius:6px; font-size:var(--font-ui-caption); }
 .label-effect-toggles { padding:7px 9px; background:#141b23; border:1px solid #303b48; border-radius:7px; }
 .label-effect-toggles .inline-switch { flex:1; min-width:150px; }
+.audio-workspace { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.audio-workspace>.panel { min-width:0; margin:0; box-shadow:none; }
+.audio-workspace>.beat-sync-panel { grid-column:1/-1; }
+.audio-source-panel h2 { display:flex; align-items:center; gap:7px; }
+.audio-source-card { display:grid; grid-template-columns:28px minmax(0,1fr) auto; align-items:center; gap:9px; margin-bottom:10px; padding:9px; color:#8fc8ed; background:#142230; border:1px solid #355a78; border-radius:7px; }
+.audio-source-card>span { min-width:0; display:grid; gap:2px; }.audio-source-card strong,.audio-source-card small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.audio-source-card strong { color:#e1edf6; font-size:var(--font-ui-label); }.audio-source-card small { color:#8197aa; font-size:var(--font-ui-caption); }
+.audio-source-card button { display:flex; align-items:center; gap:5px; min-height:31px; color:#cce8fb; background:#1e425f; border:1px solid #477da5; border-radius:6px; }
+.audio-source-panel>.danger { margin-top:8px; color:#ee9da6; border-color:#75454d; }
+.audio-empty { display:flex; align-items:center; gap:8px; min-height:58px; padding:10px; color:#8291a4; background:#141a21; border:1px dashed #374351; border-radius:7px; font-size:var(--font-ui-caption); }
 
 @container (max-width:780px) {
   .collection-workspace,.director-workspace { grid-template-columns:1fr; }
@@ -148,6 +157,7 @@
   .collection-inspector-fields { grid-template-columns:1fr 1fr; }.collection-name-field { grid-column:1/-1; }
   .collection-placement-pair { grid-column:1/-1; }
   .collection-card-actions { flex-direction:column; }
+  .audio-workspace { grid-template-columns:1fr; }.audio-workspace>.beat-sync-panel { grid-column:auto; }
 }
 
 @container (max-width:520px) {
