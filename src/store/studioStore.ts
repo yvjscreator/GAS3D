@@ -212,7 +212,8 @@ const initialVariantPrintSettings = Object.fromEntries(variantIds.map((variant) 
 const initialVariantZones = Object.fromEntries(variantIds.map((variant) => [variant, Object.fromEntries(Object.entries(initialZones).map(([placement, value]) => [placement, { ...value, ...(persisted.variantZoneAdjustments?.[variant]?.[placement as PrintPlacement] ?? {}) }]))])) as Record<GarmentVariantId, Record<PrintPlacement, PrintZoneAdjustment>>
 const initialVariantAssets = Object.fromEntries(Object.entries(defaultVariantAssets).map(([role, value]) => [role, { ...value, ...(persisted.variantAssets?.[role as VariantAssetRole] ?? {}), url: null, thumbnailUrl: null }])) as Record<VariantAssetRole, VariantAsset>
 const initialCollectionItems = (persisted.collectionItems ?? []).map((item) => {
-  const companionPlacement = item.companionPlacement ?? (item.placement === 'leftSleeve' ? 'rightSleeve' : 'leftSleeve')
+  const requestedCompanion = item.companionPlacement ?? (item.placement === 'leftSleeve' ? 'rightSleeve' : 'leftSleeve')
+  const companionPlacement = requestedCompanion === item.placement ? (item.placement === 'frontCenter' ? 'backCenter' : 'frontCenter') : requestedCompanion
   return {
     ...item,
     asset: { ...item.asset, url: null, thumbnailUrl: null }, print: { ...item.print, url: null },
@@ -232,15 +233,19 @@ const initialLayerOrder = (persisted.layerOrder ?? ['garment']).filter((id, inde
 if (!initialLayerOrder.includes('garment')) initialLayerOrder.unshift('garment')
 const persistedProjects = persisted.advancedProjects
 const makeCombinationId = () => globalThis.crypto?.randomUUID?.() ?? `combination-${Date.now()}-${Math.random().toString(16).slice(2)}`
-const normalizeCombination = (combination: DesignCombination, index: number): DesignCombination => ({
-  ...combination,
-  order: index,
-  garmentColor: combination.garmentColor ?? persisted.garmentColor ?? '#050505',
-  printSettings: Object.fromEntries(Object.entries(initialPrints).map(([placement, value]) => [placement, { ...value, ...(combination.printSettings?.[placement as PrintPlacement] ?? {}), placement, url: null }])) as Record<PrintPlacement, PrintSettings>,
-  zoneAdjustments: Object.fromEntries(Object.entries(initialZones).map(([placement, value]) => [placement, { ...value, ...(combination.zoneAdjustments?.[placement as PrintPlacement] ?? {}) }])) as Record<PrintPlacement, PrintZoneAdjustment>,
-  camera: { ...createDefaultCamera(combination.presetId), ...(combination.camera ?? {}) },
-  label: { ...createDefaultLabel(combination.name), ...(combination.label ?? {}) },
-})
+const normalizeCombination = (combination: DesignCombination, index: number): DesignCombination => {
+  const companionPlacement = combination.companionPlacement === combination.mainPlacement ? (combination.mainPlacement === 'frontCenter' ? 'backCenter' : 'frontCenter') : combination.companionPlacement
+  return {
+    ...combination,
+    companionPlacement,
+    order: index,
+    garmentColor: combination.garmentColor ?? persisted.garmentColor ?? '#050505',
+    printSettings: Object.fromEntries(Object.entries(initialPrints).map(([placement, value]) => [placement, { ...value, ...(combination.printSettings?.[placement as PrintPlacement] ?? {}), placement, url: null }])) as Record<PrintPlacement, PrintSettings>,
+    zoneAdjustments: Object.fromEntries(Object.entries(initialZones).map(([placement, value]) => [placement, { ...value, ...(combination.zoneAdjustments?.[placement as PrintPlacement] ?? {}) }])) as Record<PrintPlacement, PrintZoneAdjustment>,
+    camera: { ...createDefaultCamera(combination.presetId), ...(combination.camera ?? {}) },
+    label: { ...createDefaultLabel(combination.name), ...(combination.label ?? {}) },
+  }
+}
 const migratedCombinations = garmentVariantPresets.map((preset, index) => normalizeCombination({
   id: preset.id,
   presetId: preset.id,
@@ -342,11 +347,13 @@ export const useStudioStore = create<StudioState>((set) => ({
     return { collectionTransitionIds, advancedProjects: { cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped'), collection: rebuildCollectionProject(nextState, state.collectionItems, state.collectionMotionIds, collectionTransitionIds) } }
   }),
   addCollectionItem: (item) => set((state) => {
+    if (item.placement === item.companionPlacement) return state
     const collectionItems = [...state.collectionItems, item]
     return { collectionItems, activeCollectionItemId: item.id, advancedProjects: { ...state.advancedProjects, collection: rebuildCollectionProject(state, collectionItems) } }
   }),
   updateCollectionItem: (id, value) => set((state) => {
     const previousItem = state.collectionItems.find((item) => item.id === id)
+    if (previousItem && (value.placement ?? previousItem.placement) === (value.companionPlacement ?? previousItem.companionPlacement)) return state
     const collectionItems = state.collectionItems.map((item) => item.id === id ? { ...item, ...value, asset: value.asset ? { ...item.asset, ...value.asset } : item.asset, print: value.print ? { ...item.print, ...value.print } : item.print, companionAsset: value.companionAsset ? { ...item.companionAsset, ...value.companionAsset } : item.companionAsset, companionPrint: value.companionPrint ? { ...item.companionPrint, ...value.companionPrint } : item.companionPrint, companionZoneAdjustment: value.companionZoneAdjustment ? { ...item.companionZoneAdjustment, ...value.companionZoneAdjustment } : item.companionZoneAdjustment, camera: value.camera ? { ...item.camera, ...value.camera } : item.camera, label: value.label ? { ...item.label, ...value.label } : item.label } : item)
     const nextItem = collectionItems.find((item) => item.id === id)
     let collectionProject = previousItem && nextItem && isCompleteCollectionItem(previousItem) !== isCompleteCollectionItem(nextItem) ? rebuildCollectionProject(state, collectionItems) : state.advancedProjects.collection
@@ -477,11 +484,14 @@ export const useStudioStore = create<StudioState>((set) => ({
     return { activeDesignCombinationId, ...(combination?.presetId ? { activeVariantId: combination.presetId } : {}), ...(combination ? { activePrintPlacement: combination.focusRole === 'main' ? combination.mainPlacement : combination.companionPlacement } : {}) }
   }),
   addDesignCombination: (combination) => set((state) => {
+    if (combination.mainPlacement === combination.companionPlacement) return state
     const designCombinations = [...state.designCombinations, normalizeCombination({ ...combination, id: combination.id || makeCombinationId() }, state.designCombinations.length)]
     const nextState = { ...state, designCombinations }
     return { designCombinations, activeDesignCombinationId: designCombinations.at(-1)!.id, advancedProjects: { ...state.advancedProjects, cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped') } }
   }),
   updateDesignCombination: (id, value) => set((state) => {
+    const previous = state.designCombinations.find((item) => item.id === id)
+    if (previous && (value.mainPlacement ?? previous.mainPlacement) === (value.companionPlacement ?? previous.companionPlacement)) return state
     const designCombinations = state.designCombinations.map((item) => item.id === id ? normalizeCombination({ ...item, ...value, printSettings: value.printSettings ?? item.printSettings, zoneAdjustments: value.zoneAdjustments ?? item.zoneAdjustments, camera: value.camera ? { ...item.camera, ...value.camera } : item.camera, label: value.label ? { ...item.label, ...value.label } : item.label }, item.order) : item)
     const activeDesignCombinationId = designCombinations.some((item) => item.id === state.activeDesignCombinationId && item.enabled) ? state.activeDesignCombinationId : designCombinations.find((item) => item.enabled)?.id ?? designCombinations[0]?.id ?? null
     const nextState = { ...state, designCombinations }

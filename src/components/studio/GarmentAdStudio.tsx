@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as R
 import { AdStage } from '../stage/AdStage'
 import { DesignPanel } from './DesignPanel'
 import { BackgroundPanel } from './BackgroundPanel'
-import { AnimationPanel } from './AnimationPanel'
 import { CampaignPanel } from './CampaignPanel'
 import { LayersDrawer } from './LayersDrawer'
 import { AudioPanel } from './AudioPanel'
@@ -21,7 +20,7 @@ import { EditorHeader } from './EditorHeader'
 import { EditorStatusBar } from './EditorStatusBar'
 import { activeAssetClips, activeClip, clipOpacity, createDefaultCamera, getAdvancedDirectorFrame, getCollectionDirectorFrame, isCompleteCollectionItem, isValidCollectionSize } from '../../config/advancedDirectors'
 import type { VariantCameraPreset } from '../../types/studio'
-import { AudioLines, Clapperboard, Image, Images } from '../icons'
+import { AlertTriangle, AudioLines, Clapperboard, Image, Images, RefreshCw, X } from '../icons'
 import { beatDuration, hasBeatMap } from '../../utils/beatSync'
 import { buildPresentationGroups } from '../../utils/presentationPlanner'
 import { SettingsPanel } from './SettingsPanel'
@@ -399,17 +398,18 @@ export function GarmentAdStudio() {
   return <main className="studio zen-studio advanced-mode unified-studio">
     <div className="zen-layout" style={layoutStyle}>
       <section className={`editor-column${timelineCollapsed ? ' timeline-collapsed' : ' has-editor-timeline'}`}>
-        <EditorHeader canUndo={studio.canUndo} canRedo={studio.canRedo} onUndo={studio.undo} onRedo={studio.redo} renderLayers={(close) => <LayersDrawer embedded onRequestClose={close} />} renderSettings={() => <SettingsPanel onRetry={() => { void record() }} onForce={() => { void record(true) }} onCancel={() => studio.setRecording('idle')} onTaskChange={setAssetTask} />} layerCount={studio.layerOrder.length + (studio.music.url ? 1 : 0)} playing={statusPlaying} recording={studio.recordingStatus === 'recording'} previewDisabled={recordingBusy || !collectionReady} recordDisabled={recordingBusy || !collectionReady} onPreview={statusPlaying ? pauseAdvanced : play} onRecord={() => { void record() }} />
+        <EditorHeader canUndo={studio.canUndo} canRedo={studio.canRedo} onUndo={studio.undo} onRedo={studio.redo} renderLayers={(close) => <LayersDrawer embedded onRequestClose={close} />} renderSettings={() => <SettingsPanel onTaskChange={setAssetTask} />} layerCount={studio.layerOrder.length} playing={statusPlaying} recording={studio.recordingStatus === 'recording'} previewDisabled={recordingBusy || !collectionReady} recordDisabled={recordingBusy || !collectionReady} onPreview={statusPlaying ? pauseAdvanced : play} onRecord={() => { void record() }} />
         <WorkspaceTabs value={workspace} tabs={workspaceTabs} onChange={setWorkspace} />
         <aside className="control-drawer workspace-drawer">
         <div className="drawer-intro"><span>{workspaceTabs.find((tab) => tab.id === workspace)?.label}</span><strong>{collectionMode ? `${completeCollectionItems.length} pares · ${buildPresentationGroups(completeCollectionItems).length} grupos · ${studio.presentationMode}` : variantLibraryEnabled ? activeVariant.label : 'Configura tu producto'}</strong></div>
-        <div className="workspace-content">{workspace === 'designs' ? <><CampaignPanel />{!collectionMode && <DesignPanel />}</> : workspace === 'scene' ? <BackgroundPanel /> : workspace === 'direction' ? <>{directorPanel}<AnimationPanel /></> : <AudioPanel />}</div>
+        <div className="workspace-content">{workspace === 'designs' ? <><CampaignPanel />{!collectionMode && <DesignPanel />}</> : workspace === 'scene' ? <BackgroundPanel /> : workspace === 'direction' ? directorPanel : <AudioPanel />}</div>
         </aside>
         <>
           <button className="editor-split-resizer" onPointerDown={resizeTimeline} aria-label="Cambiar altura de la línea de tiempo" title="Arrastra para cambiar la altura de la línea de tiempo" />
           <div className="timeline-slot"><AdvancedTimeline embedded collapsed={timelineCollapsed} onCollapsedChange={setTimelineVisibility} playing={advancedPlaying} onTogglePlay={advancedPlaying ? pauseAdvanced : play} onSeek={seekAdvanced} /></div>
         </>
         <EditorStatusBar mode={studio.studioMode} campaign={statusCampaign} selection={statusSelection} activity={statusActivity} currentTime={statusTime} duration={statusDuration} playing={statusPlaying} recordingStatus={studio.recordingStatus} recordingMessage={studio.recordingMessage} preparedResources={studio.recordingPreparedResources} totalResources={studio.recordingTotalResources} shot={professionalFrame?.shotLabel} output={`${outputResolution.width}×${outputResolution.height} · ${studio.exportFps} FPS`} />
+        {studio.recordingStatus === 'error' && <div className="preflight-status-banner" role="alert"><AlertTriangle size={15} /><span>{studio.recordingMessage}</span><button onClick={() => { void record() }}><RefreshCw size={13} /> Reintentar</button><button className="warning" onClick={() => { void record(true) }}><AlertTriangle size={13} /> Grabar igualmente</button><button onClick={() => studio.setRecording('idle')} aria-label="Cerrar aviso"><X size={13} /></button></div>}
       </section>
       <section className="zen-workspace">
         <audio ref={musicMedia} className="music-preview-media" src={studio.music.url ?? undefined} preload="auto" />
