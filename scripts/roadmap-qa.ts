@@ -129,5 +129,8 @@ const mediaStorageSource = readFileSync('src/utils/mediaStorage.ts', 'utf8')
 check(mediaStorageSource.includes(':source`'), 'IndexedDB no conserva una clave source para los originales')
 check(mediaStorageSource.includes('storeValues(values)'), 'El reemplazo de proxy dejó de usar una escritura agrupada segura')
 for (const file of ['src/components/studio/VariantsPanel.tsx', 'src/components/studio/CampaignPanel.tsx']) check(readFileSync(file, 'utf8').match(/storePreparedMedia\([^\n]+,\s*(item\.file|file)\)/), `${file} no entrega el original al almacenamiento frío`)
+const studioShellSource = readFileSync('src/components/studio/GarmentAdStudio.tsx', 'utf8')
+check(studioShellSource.includes('garment-ad-studio:timeline-height'), 'La altura de timeline dejó de persistirse')
+check(studioShellSource.includes('garment-ad-studio:timeline-collapsed'), 'El estado colapsado de timeline dejó de persistirse')
 
 console.log(`Roadmap QA completado: ${assertions} verificaciones.`)

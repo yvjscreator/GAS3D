@@ -375,6 +375,15 @@ export function GarmentAdStudio() {
     setTimelineCollapsed(collapsed)
     window.localStorage.setItem(timelineCollapsedKey, String(collapsed))
   }
+  useEffect(() => {
+    const toggleTimeline = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (event.key.toLowerCase() !== 't' || event.ctrlKey || event.metaKey || event.altKey || target?.matches('input, textarea, select, [contenteditable="true"]')) return
+      event.preventDefault(); setTimelineCollapsed((current) => { const next = !current; window.localStorage.setItem(timelineCollapsedKey, String(next)); return next })
+    }
+    window.addEventListener('keydown', toggleTimeline)
+    return () => window.removeEventListener('keydown', toggleTimeline)
+  }, [])
   const layoutStyle = {
     '--stage-width': `${exportPresets[studio.format].ratio * 100}dvh`,
     '--timeline-height': `${timelineHeight}%`,
