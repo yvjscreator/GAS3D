@@ -1,7 +1,8 @@
 export type BackgroundType = 'color' | 'image' | 'video'
 export type AnimationPreset = 'still' | 'spin180' | 'spin360'
 export type FormatId = 'reel' | 'feed' | 'square'
-export type ExportQualityId = 'high' | 'ultra'
+export type ExportQualityId = 'hd' | '2k' | '4k'
+export type ExportFps = 24 | 30 | 60
 export type AssetQualityProfile = 'performance' | 'automatic' | 'quality'
 export type AlphaPipelineMode = 'pngCurrent' | 'webpLossless' | 'webpHigh' | 'straightAlpha'
 export type RecordingStatus = 'idle' | 'preparing' | 'preloading' | 'warming' | 'ready' | 'recording' | 'finalizing' | 'done' | 'error'

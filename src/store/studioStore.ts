@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AlphaPipelineMode, AnimationPreset, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DesignCombination, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, StudioMode, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
+import type { AlphaPipelineMode, AnimationPreset, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DesignCombination, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportFps, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, StudioMode, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
 import { ADVANCED_SCHEMA_VERSION, applyBeatSyncToProject, createCollectionProject, createDefaultCamera, createDefaultLabel, createDirectorProject, getProjectDuration, isCompleteCollectionItem } from '../config/advancedDirectors'
 import { defaultCollectionMotionIds, defaultCollectionTransitionIds } from '../config/garmentMotions'
 import { defaultBeatSyncSettings } from '../utils/beatSync'
@@ -77,6 +77,7 @@ type StudioState = {
   setSystemLayerTiming: (id: SystemLayerId, value: Partial<LayerTiming>) => void
   format: FormatId; setFormat: (format: FormatId) => void
   exportQuality: ExportQualityId; setExportQuality: (quality: ExportQualityId) => void
+  exportFps: ExportFps; setExportFps: (fps: ExportFps) => void
   animation: AnimationPreset; setAnimation: (animation: AnimationPreset) => void
   duration: number; setDuration: (duration: number) => void
   targetRotation: number; setTargetRotation: (rotation: number) => void
@@ -90,7 +91,7 @@ type HistorySnapshot = Pick<StudioState,
   'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'collectionMotionIds' | 'collectionTransitionIds' | 'advancedProjects' |
   'garmentColor' | 'prints' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' |
   'variantAssets' | 'designCombinations' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' |
-  'systemLayerTimings' | 'format' | 'exportQuality' | 'animation' | 'duration'
+  'systemLayerTimings' | 'format' | 'exportQuality' | 'exportFps' | 'animation' | 'duration'
 >
 
 const HISTORY_LIMIT = 80
@@ -128,6 +129,7 @@ const captureHistory = (state: StudioState): HistorySnapshot => cloneHistory({
   systemLayerTimings: state.systemLayerTimings,
   format: state.format,
   exportQuality: state.exportQuality,
+  exportFps: state.exportFps,
   animation: state.animation,
   duration: state.duration,
 })
@@ -193,7 +195,7 @@ const defaultVariantAssets: Record<VariantAssetRole, VariantAsset> = { large: em
 const variantIds: GarmentVariantId[] = ['frontLeftSleeve', 'frontBack', 'backRightSleeve', 'backChest']
 const STORAGE_KEY = 'garment-ad-studio:settings:v1'
 const defaultLayerTiming = (duration = 8): LayerTiming => ({ start: 0, duration, enter: 'none', exit: 'none' })
-type PersistedState = Pick<StudioState, 'studioMode' | 'campaignMode' | 'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'activeCollectionItemId' | 'activeCollectionAssetRole' | 'collectionMotionIds' | 'collectionTransitionIds' | 'activeDirectorId' | 'advancedProjects' | 'garmentColor' | 'activePrintPlacement' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' | 'editorMode' | 'variantAssets' | 'designCombinations' | 'activeDesignCombinationId' | 'activeVariantId' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' | 'selectedLayerId' | 'systemLayerTimings' | 'format' | 'exportQuality' | 'animation' | 'duration' | 'targetRotation'> & {
+type PersistedState = Pick<StudioState, 'studioMode' | 'campaignMode' | 'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'activeCollectionItemId' | 'activeCollectionAssetRole' | 'collectionMotionIds' | 'collectionTransitionIds' | 'activeDirectorId' | 'advancedProjects' | 'garmentColor' | 'activePrintPlacement' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' | 'editorMode' | 'variantAssets' | 'designCombinations' | 'activeDesignCombinationId' | 'activeVariantId' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' | 'selectedLayerId' | 'systemLayerTimings' | 'format' | 'exportQuality' | 'exportFps' | 'animation' | 'duration' | 'targetRotation'> & {
   schemaVersion: number
   prints: Record<PrintPlacement, PrintSettings>
   /** Compatibility with sessions saved before explicit editor modes existed. */
@@ -549,7 +551,8 @@ export const useStudioStore = create<StudioState>((set) => ({
   selectLayer: (selectedLayerId) => set({ selectedLayerId }),
   setSystemLayerTiming: (id, value) => set((state) => ({ systemLayerTimings: { ...state.systemLayerTimings, [id]: { ...state.systemLayerTimings[id], ...value } } })),
   format: persisted.format ?? 'reel', setFormat: (format) => set({ format }), animation: persisted.animation ?? 'spin360', setAnimation: (animation) => set({ animation }),
-  exportQuality: persisted.exportQuality ?? 'ultra', setExportQuality: (exportQuality) => set({ exportQuality }),
+  exportQuality: (persisted.exportQuality as string) === 'high' ? 'hd' : (persisted.exportQuality as string) === 'ultra' ? '4k' : persisted.exportQuality ?? '4k', setExportQuality: (exportQuality) => set({ exportQuality }),
+  exportFps: persisted.exportFps ?? 30, setExportFps: (exportFps) => set({ exportFps }),
   duration: persisted.duration ?? 8, setDuration: (duration) => set((state) => ({
     duration,
     systemLayerTimings: {
@@ -597,7 +600,7 @@ useStudioStore.subscribe((state) => {
       background: { ...state.background, url: null }, cameraView: state.cameraView, music: { ...state.music, url: null }, beatSync: state.beatSync,
       overlayLayers: state.overlayLayers.map((layer) => layer.type === 'image' ? { ...layer, url: null } : layer), layerOrder: state.layerOrder,
       selectedLayerId: state.selectedLayerId, systemLayerTimings: state.systemLayerTimings,
-      format: state.format, exportQuality: state.exportQuality, animation: state.animation,
+      format: state.format, exportQuality: state.exportQuality, exportFps: state.exportFps, animation: state.animation,
       duration: state.duration, targetRotation: state.targetRotation,
     }
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot)) } catch { /* Storage may be disabled by the browser. */ }

@@ -6,6 +6,7 @@ import { buildProfessionalShotSequence, getProfessionalDuration } from '../src/c
 import { defaultBeatSyncSettings } from '../src/utils/beatSync'
 import { buildRecordingResourceManifest } from '../src/utils/recordingPreflight'
 import { evaluateBackgroundFrame, evaluateDirectorFrame } from '../src/utils/stageTimeline'
+import { getExportResolution } from '../src/config/exportPresets'
 import type { CollectionItem, DesignCombination, DirectorShotKind, PresentationMode } from '../src/types/studio'
 
 let assertions = 0
@@ -105,6 +106,10 @@ equal(manifest.length, 8, 'El manifiesto no deduplicó o perdió recursos de gra
 equal(manifest.filter((resource) => resource.url === '/a.png').length, 1, 'Una imagen duplicada se precargará más de una vez')
 check(manifest.some((resource) => resource.id === 'background-audio'), 'Falta el audio del video de fondo en el manifiesto')
 
+equal(getExportResolution('reel', 'hd'), { width: 1080, height: 1920 }, 'La salida HD vertical no es real')
+equal(getExportResolution('reel', '2k'), { width: 1440, height: 2560 }, 'La salida 2K vertical no es real')
+equal(getExportResolution('reel', '4k'), { width: 2160, height: 3840 }, 'La salida 4K vertical no es real')
+
 const sixtySecondProject = createDirectorProject('cinematic', [], false, false, allShots, 'mixed')
 sixtySecondProject.duration = 60
 const backgroundTrack = sixtySecondProject.tracks.find((track) => track.type === 'background')!
@@ -119,5 +124,6 @@ const sourceFiles = ['src/config/professionalRecording.ts', 'src/utils/presentat
 const combinedSource = sourceFiles.map((file) => readFileSync(file, 'utf8')).join('\n')
 check(!combinedSource.includes('PROFESSIONAL_CUE_COUNT'), 'Regresó el conteo fijo de cues profesionales')
 check(!combinedSource.match(/batchIndex\s*\*\s*4/), 'Regresó la indexación fija por lotes de cuatro')
+check(!readFileSync('src/hooks/useRecording.ts', 'utf8').includes('captureStream(30)'), 'La grabación volvió a fijar 30 FPS ignorando Configuración')
 
 console.log(`Roadmap QA completado: ${assertions} verificaciones.`)

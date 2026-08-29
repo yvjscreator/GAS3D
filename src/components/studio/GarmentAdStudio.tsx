@@ -3,8 +3,6 @@ import { AdStage } from '../stage/AdStage'
 import { DesignPanel } from './DesignPanel'
 import { BackgroundPanel } from './BackgroundPanel'
 import { AnimationPanel } from './AnimationPanel'
-import { FormatSelector } from './FormatSelector'
-import { ExportPanel } from './ExportPanel'
 import { CampaignPanel } from './CampaignPanel'
 import { LayersDrawer } from './LayersDrawer'
 import { AudioPanel } from './AudioPanel'
@@ -26,7 +24,7 @@ import type { VariantCameraPreset } from '../../types/studio'
 import { AudioLines, Clapperboard, Image, Images } from '../icons'
 import { beatDuration, hasBeatMap } from '../../utils/beatSync'
 import { buildPresentationGroups } from '../../utils/presentationPlanner'
-import { RenderLabPanel } from './RenderLabPanel'
+import { SettingsPanel } from './SettingsPanel'
 import { buildRecordingResourceManifest, runRecordingPreflight } from '../../utils/recordingPreflight'
 import { garmentModels } from '../../config/garmentModels'
 import { renderAssetManager } from '../../render/RenderAssetManager'
@@ -274,7 +272,7 @@ export function GarmentAdStudio() {
     const manifest = buildRecordingResourceManifest({ modelUrl: garmentModels[0]?.path ?? 'procedural-garment', images: [...printResources, ...overlayResources], background: { type: studio.background.type, url: studio.background.url, name: studio.background.name }, music: { url: studio.music.url, name: studio.music.name }, backgroundAudioEnabled: studio.background.videoAudioEnabled, fonts })
     renderAssetManager.beginRecordingSession(manifest.flatMap((resource) => resource.kind === 'image' && resource.url ? [resource.url] : []))
     studio.setRecording('preparing', 0, 'Construyendo manifiesto de grabación…', { completed: 0, total: manifest.length })
-    const begin = () => { restartBackgroundVideo(); studio.play(); const current = useStudioStore.getState(); start({ renderCanvas: canvas, media: media.current, background: current.background, music: current.music, beatSync: current.beatSync, enabledShotTypes: current.enabledShotTypes, overlayLayers: current.overlayLayers, layerOrder: current.layerOrder, systemLayerTimings: current.systemLayerTimings, professionalHeroVariantId: !usesDirector && sequenceReady ? originalVariant : null, advancedProject: usesDirector ? current.advancedProjects[current.activeDirectorId] : null, collectionItems: current.collectionItems.filter(isCompleteCollectionItem), designCombinations: current.designCombinations, duration: totalDuration, width: output.width, height: output.height, bitrate,
+    const begin = () => { restartBackgroundVideo(); studio.play(); const current = useStudioStore.getState(); start({ renderCanvas: canvas, media: media.current, background: current.background, music: current.music, beatSync: current.beatSync, enabledShotTypes: current.enabledShotTypes, overlayLayers: current.overlayLayers, layerOrder: current.layerOrder, systemLayerTimings: current.systemLayerTimings, professionalHeroVariantId: !usesDirector && sequenceReady ? originalVariant : null, advancedProject: usesDirector ? current.advancedProjects[current.activeDirectorId] : null, collectionItems: current.collectionItems.filter(isCompleteCollectionItem), designCombinations: current.designCombinations, duration: totalDuration, width: output.width, height: output.height, bitrate, fps: current.exportFps,
       onProgress: (seconds) => {
         if (usesDirector) {
           const state = useStudioStore.getState(); state.setAdvancedPlayhead(seconds)
@@ -391,7 +389,7 @@ export function GarmentAdStudio() {
   return <main className="studio zen-studio advanced-mode unified-studio">
     <div className="zen-layout" style={layoutStyle}>
       <section className={`editor-column${timelineCollapsed ? ' timeline-collapsed' : ' has-editor-timeline'}`}>
-        <EditorHeader canUndo={studio.canUndo} canRedo={studio.canRedo} onUndo={studio.undo} onRedo={studio.redo} renderLayers={(close) => <LayersDrawer embedded onRequestClose={close} />} renderSettings={() => <div className="settings-workspace"><FormatSelector /><RenderLabPanel /><ExportPanel onRetry={() => { void record() }} onForce={() => { void record(true) }} onCancel={() => studio.setRecording('idle')} /></div>} layerCount={studio.layerOrder.length + (studio.music.url ? 1 : 0)} playing={statusPlaying} recording={studio.recordingStatus === 'recording'} previewDisabled={recordingBusy || !collectionReady} recordDisabled={recordingBusy || !collectionReady} onPreview={statusPlaying ? pauseAdvanced : play} onRecord={() => { void record() }} />
+        <EditorHeader canUndo={studio.canUndo} canRedo={studio.canRedo} onUndo={studio.undo} onRedo={studio.redo} renderLayers={(close) => <LayersDrawer embedded onRequestClose={close} />} renderSettings={() => <SettingsPanel onRetry={() => { void record() }} onForce={() => { void record(true) }} onCancel={() => studio.setRecording('idle')} />} layerCount={studio.layerOrder.length + (studio.music.url ? 1 : 0)} playing={statusPlaying} recording={studio.recordingStatus === 'recording'} previewDisabled={recordingBusy || !collectionReady} recordDisabled={recordingBusy || !collectionReady} onPreview={statusPlaying ? pauseAdvanced : play} onRecord={() => { void record() }} />
         <WorkspaceTabs value={workspace} tabs={workspaceTabs} onChange={setWorkspace} />
         <aside className="control-drawer workspace-drawer">
         <div className="drawer-intro"><span>{workspaceTabs.find((tab) => tab.id === workspace)?.label}</span><strong>{collectionMode ? `${completeCollectionItems.length} pares · ${buildPresentationGroups(completeCollectionItems).length} grupos · ${studio.presentationMode}` : variantLibraryEnabled ? activeVariant.label : 'Configura tu producto'}</strong></div>
@@ -401,7 +399,7 @@ export function GarmentAdStudio() {
           <button className="editor-split-resizer" onPointerDown={resizeTimeline} aria-label="Cambiar altura de la línea de tiempo" title="Arrastra para cambiar la altura de la línea de tiempo" />
           <div className="timeline-slot"><AdvancedTimeline embedded collapsed={timelineCollapsed} onCollapsedChange={setTimelineVisibility} playing={advancedPlaying} onTogglePlay={advancedPlaying ? pauseAdvanced : play} onSeek={seekAdvanced} /></div>
         </>
-        <EditorStatusBar mode={studio.studioMode} campaign={statusCampaign} selection={statusSelection} activity={statusActivity} currentTime={statusTime} duration={statusDuration} playing={statusPlaying} recordingStatus={studio.recordingStatus} recordingMessage={studio.recordingMessage} preparedResources={studio.recordingPreparedResources} totalResources={studio.recordingTotalResources} shot={professionalFrame?.shotLabel} output={`${outputResolution.width}×${outputResolution.height} · 30 FPS`} />
+        <EditorStatusBar mode={studio.studioMode} campaign={statusCampaign} selection={statusSelection} activity={statusActivity} currentTime={statusTime} duration={statusDuration} playing={statusPlaying} recordingStatus={studio.recordingStatus} recordingMessage={studio.recordingMessage} preparedResources={studio.recordingPreparedResources} totalResources={studio.recordingTotalResources} shot={professionalFrame?.shotLabel} output={`${outputResolution.width}×${outputResolution.height} · ${studio.exportFps} FPS`} />
       </section>
       <section className="zen-workspace">
         <audio ref={musicMedia} className="music-preview-media" src={studio.music.url ?? undefined} preload="auto" />

@@ -24,6 +24,7 @@ type Args = {
   width: number
   height: number
   bitrate: number
+  fps: number
   onProgress: (seconds: number) => void
   onFinalizing: () => void
   onFinish: (message: string) => void
@@ -52,7 +53,7 @@ function drawCover(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
 export function useRecording() {
   const stopRef = useRef<(() => void) | null>(null)
   const start = useCallback((args: Args) => {
-    const { renderCanvas, media, background, music, beatSync, enabledShotTypes, overlayLayers, layerOrder, systemLayerTimings, professionalHeroVariantId, advancedProject = null, collectionItems = [], designCombinations = [], duration, width: outputWidth, height: outputHeight, bitrate, onProgress, onFinalizing, onFinish, onError } = args
+    const { renderCanvas, media, background, music, beatSync, enabledShotTypes, overlayLayers, layerOrder, systemLayerTimings, professionalHeroVariantId, advancedProject = null, collectionItems = [], designCombinations = [], duration, width: outputWidth, height: outputHeight, bitrate, fps, onProgress, onFinalizing, onFinish, onError } = args
     if (!renderCanvas || !renderCanvas.captureStream) { onError('Este navegador no permite capturar el canvas.'); return }
     const composition = document.createElement('canvas'); composition.width = outputWidth; composition.height = outputHeight
     if (!composition.width || !composition.height) { onError('El preview aún no está listo.'); return }
@@ -87,7 +88,7 @@ export function useRecording() {
       }
       context.restore()
     }
-    const videoStream = composition.captureStream(30); let audioContext: AudioContext | null = null; const audioElements: HTMLAudioElement[] = []
+    const videoStream = composition.captureStream(fps); let audioContext: AudioContext | null = null; const audioElements: HTMLAudioElement[] = []
     let musicElement: HTMLAudioElement | null = null; let musicGain: GainNode | null = null; let backgroundGain: GainNode | null = null; let backgroundElement: HTMLAudioElement | null = null
     let captureStream: MediaStream = videoStream
     const needsBackgroundAudio = background.type === 'video' && Boolean(background.url) && background.videoAudioEnabled
@@ -168,7 +169,7 @@ export function useRecording() {
       cancelAnimationFrame(frame); cleanupAudio()
       const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' }); const url = URL.createObjectURL(blob); const link = document.createElement('a')
       link.href = url; link.download = `garment-ad-${outputWidth}x${outputHeight}-${Date.now()}.webm`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
-      onFinish(`Video ${outputWidth} × ${outputHeight} exportado en WebM${needsBackgroundAudio || needsMusic ? ' con audio' : ''}.`)
+      onFinish(`Video ${outputWidth} × ${outputHeight} a ${fps} FPS exportado en WebM${needsBackgroundAudio || needsMusic ? ' con audio' : ''}.`)
     }
     updateAudio(0); draw(0); frame = requestAnimationFrame(loop); recorder.start(250)
     const timer = window.setTimeout(() => recorder.state !== 'inactive' && recorder.stop(), duration * 1000)

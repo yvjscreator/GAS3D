@@ -244,6 +244,7 @@ h2 { font-size:var(--font-ui-section); }
 .layers-popover .ui-popover { width:min(380px,calc(100cqw - 24px)); max-height:calc(100dvh - 104px); overflow:hidden; }
 .settings-popover .ui-popover { width:min(560px,calc(100cqw - 24px)); max-height:calc(100dvh - 80px); overflow:auto; }
 .settings-workspace { display:grid; gap:10px; padding:10px; }.settings-workspace>.panel { box-shadow:none; }
+.settings-heading { position:sticky; z-index:3; top:-10px; display:flex; align-items:center; gap:8px; min-height:48px; padding:0 4px; color:#8fc7ed; background:#10151df2; backdrop-filter:blur(14px); border-bottom:1px solid #303b48; }.settings-heading>span { display:grid; gap:2px; }.settings-heading strong { color:#e5edf6; font-size:var(--font-ui-label); }.settings-heading small { color:#7f8ea1; font-size:var(--font-ui-caption); }
 .ui-workspace-tabs { position:relative; z-index:70; min-width:0; height:44px; display:grid; grid-template-columns:repeat(4,1fr); background:#10151c; border-bottom:1px solid #303946; }
 .ui-workspace-tabs button { min-width:0; display:flex; align-items:center; justify-content:center; gap:7px; padding:0 9px; color:#78879a; background:transparent; border:0; border-bottom:2px solid transparent; border-radius:0; font-size:var(--font-ui-meta); font-weight:750; letter-spacing:.05em; text-transform:uppercase; }
 .ui-workspace-tabs button:hover { color:#d8e2ed; background:#171e27; }.ui-workspace-tabs button.active { color:#dff1ff; background:#172431; border-bottom-color:#62b4ef; }
@@ -289,6 +290,7 @@ h2 { font-size:var(--font-ui-section); }
 .render-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:6px; margin-top:10px; padding-top:10px; border-top:1px solid #2d3743; }
 .render-metrics span { display:flex; flex-direction:column; gap:2px; color:var(--muted); font-size:var(--font-ui-caption); }
 .render-metrics strong { color:#dce8f5; font-family:'DM Mono',monospace; }
+.render-diagnostics { margin-top:12px; padding-top:10px; border-top:1px solid #2d3743; }.render-diagnostics summary { color:#9cabbd; cursor:pointer; font-size:var(--font-ui-meta); font-weight:750; }.render-diagnostics .render-metrics { margin-top:9px; }
 
 @container (max-width:700px) {
   .design-adjustment-grid,.zone-slider-grid { grid-template-columns:1fr; }
