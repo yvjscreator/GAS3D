@@ -14,6 +14,7 @@ const defaultTiming = (duration: number): LayerTiming => ({ start: 0, duration, 
 
 export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: boolean; onRequestClose?: () => void }) {
   const studio = useStudioStore(); const input = useRef<HTMLInputElement>(null)
+  const projectDuration = studio.advancedProjects[studio.activeDirectorId].duration
   const [open, setOpen] = useState(false); const [optionsOpen, setOptionsOpen] = useState(true); const [error, setError] = useState<string | null>(null)
   const selectedOverlay = studio.overlayLayers.find((layer) => layer.id === studio.selectedLayerId)
   const selectedSystem = studio.selectedLayerId === 'background' || studio.selectedLayerId === 'garment' ? studio.selectedLayerId : null
@@ -25,13 +26,13 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
     try {
       const prepared = await prepareVideoAsset(file, { profile: studio.assetQualityProfile, alphaMode: studio.alphaPipelineMode })
       const url = URL.createObjectURL(prepared.renderBlob)
-      const layer: StageOverlayLayer = { id, type: 'image', name: file.name, sourceName: file.name, url, naturalWidth: prepared.metadata.proxyWidth, naturalHeight: prepared.metadata.proxyHeight, x: 50, y: 50, width: 28, rotation: 0, opacity: 100, timing: defaultTiming(studio.duration) }
+      const layer: StageOverlayLayer = { id, type: 'image', name: file.name, sourceName: file.name, url, naturalWidth: prepared.metadata.proxyWidth, naturalHeight: prepared.metadata.proxyHeight, x: 50, y: 50, width: 28, rotation: 0, opacity: 100, timing: defaultTiming(projectDuration) }
       studio.addOverlayLayer(layer); setOpen(true); setError(null)
       await storePreparedMedia(overlayMediaKey(id), prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
     } catch { setError('No se pudo procesar la imagen.') }
   }
   const addText = () => {
-    studio.addOverlayLayer({ id: newId(), type: 'text', name: 'Texto', text: 'Tu texto', color: '#ffffff', fontSize: 5.2, fontWeight: 700, x: 50, y: 18, width: 40, rotation: 0, opacity: 100, timing: defaultTiming(studio.duration) })
+    studio.addOverlayLayer({ id: newId(), type: 'text', name: 'Texto', text: 'Tu texto', color: '#ffffff', fontSize: 5.2, fontWeight: 700, x: 50, y: 18, width: 40, rotation: 0, opacity: 100, timing: defaultTiming(projectDuration) })
     setOpen(true)
   }
   const updateTiming = (value: Partial<LayerTiming>) => {
@@ -72,7 +73,7 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
             <label className="range-row">Opacidad<output>{selectedOverlay.opacity}%</output><input type="range" min="0" max="100" value={selectedOverlay.opacity} onChange={(event) => studio.updateOverlayLayer(selectedOverlay.id, { opacity: Number(event.target.value) })} /></label>
             <label className="range-row">Rotación<output>{selectedOverlay.rotation}°</output><input type="range" min="-180" max="180" value={selectedOverlay.rotation} onChange={(event) => studio.updateOverlayLayer(selectedOverlay.id, { rotation: Number(event.target.value) })} /></label>
           </>}
-          {selectedTiming && <><div className="layer-inline"><label>Inicio<input type="number" min="0" max={studio.duration} step="0.1" value={selectedTiming.start} onChange={(event) => updateTiming({ start: Number(event.target.value) })} /><span>s</span></label><label>Duración<input type="number" min="0.1" max={studio.duration} step="0.1" value={selectedTiming.duration} onChange={(event) => updateTiming({ duration: Number(event.target.value) })} /><span>s</span></label></div><div className="layer-inline"><label>Entrada<select value={selectedTiming.enter} onChange={(event) => updateTiming({ enter: event.target.value as LayerTransition })}>{transitions.map((transition) => <option key={transition} value={transition}>{transitionLabels[transition]}</option>)}</select></label><label>Salida<select value={selectedTiming.exit} onChange={(event) => updateTiming({ exit: event.target.value as LayerTransition })}>{transitions.map((transition) => <option key={transition} value={transition}>{transitionLabels[transition]}</option>)}</select></label></div></>}
+          {selectedTiming && <><div className="layer-inline"><label>Inicio<input type="number" min="0" max={projectDuration} step="0.1" value={selectedTiming.start} onChange={(event) => updateTiming({ start: Number(event.target.value) })} /><span>s</span></label><label>Duración<input type="number" min="0.1" max={projectDuration} step="0.1" value={selectedTiming.duration} onChange={(event) => updateTiming({ duration: Number(event.target.value) })} /><span>s</span></label></div><div className="layer-inline"><label>Entrada<select value={selectedTiming.enter} onChange={(event) => updateTiming({ enter: event.target.value as LayerTransition })}>{transitions.map((transition) => <option key={transition} value={transition}>{transitionLabels[transition]}</option>)}</select></label><label>Salida<select value={selectedTiming.exit} onChange={(event) => updateTiming({ exit: event.target.value as LayerTransition })}>{transitions.map((transition) => <option key={transition} value={transition}>{transitionLabels[transition]}</option>)}</select></label></div></>}
           <div className="layer-order-actions"><button disabled={selectedSystem === 'background'} onClick={() => studio.moveLayer(studio.selectedLayerId, 1)}>Subir capa</button><button disabled={selectedSystem === 'background'} onClick={() => studio.moveLayer(studio.selectedLayerId, -1)}>Bajar capa</button>{selectedOverlay && <button className="danger" onClick={removeSelected}>Eliminar</button>}</div>
         </div>}
       </div>}

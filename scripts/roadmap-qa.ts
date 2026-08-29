@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { buildPresentationGroups, buildPresentationPlan } from '../src/utils/presentationPlanner'
 import { applyBeatSyncToProject, createCollectionProject, createDefaultLabel, createDirectorProject } from '../src/config/advancedDirectors'
-import { buildProfessionalShotSequence, getProfessionalDuration } from '../src/config/professionalRecording'
 import { defaultBeatSyncSettings } from '../src/utils/beatSync'
 import { buildRecordingResourceManifest } from '../src/utils/recordingPreflight'
 import { evaluateBackgroundFrame, evaluateDirectorFrame } from '../src/utils/stageTimeline'
@@ -65,13 +64,7 @@ equal(dynamicProject.tracks.filter((track) => track.type === 'label').length, 2,
 check(dynamicDirectorClips.filter((item) => item.type === 'directorShot').every((item) => item.garmentMotion === 'turntableLeft'), 'El movimiento elegido no llegó a las tomas dinámicas')
 check(dynamicDirectorClips.every((item) => item.sceneTransition === 'slideRight'), 'La transición elegida no llegó a todo el montaje dinámico')
 
-equal(buildProfessionalShotSequence('frontLeftSleeve', allShots).length, 7, 'La secuencia básica predeterminada debe derivar siete tomas')
-equal(buildProfessionalShotSequence('frontLeftSleeve', withoutHero).length, 6, 'La secuencia básica no reaccionó al quitar Hero')
-equal(buildProfessionalShotSequence('frontLeftSleeve', ['itemShowcase']).length, 4, 'La secuencia individual debe contener cuatro variantes')
-
 const beatSync = { ...defaultBeatSyncSettings(), enabled: true, bpm: 120, barsPerChange: 1, offset: 0 }
-equal(getProfessionalDuration(24, beatSync, allShots), 14, 'Beat Sync no deriva la duración desde siete tomas reales')
-equal(getProfessionalDuration(24, beatSync, ['itemShowcase']), 8, 'Beat Sync no deriva la duración desde cuatro tomas reales')
 const synced = applyBeatSyncToProject(createDirectorProject('cinematic', [], true, false, allShots, 'mixed'), beatSync)
 equal(synced.duration, 18, 'El modo mixto no alineó una escena grupal y siete individuales al ritmo')
 const syncedDirector = synced.tracks.find((track) => track.type === 'director')?.clips ?? []
@@ -120,10 +113,11 @@ check(!evaluateBackgroundFrame(null, staleBackgroundTiming, 59.9).visible, 'La p
 check(evaluateDirectorFrame(sixtySecondProject, 59.9, 'editing').visible, 'El stage de edición oculta la prenda por un playhead sin clip')
 check(!evaluateDirectorFrame(sixtySecondProject, 59.9, 'recording').visible, 'Recording debe respetar la ausencia real de una toma en timeline')
 
-const sourceFiles = ['src/config/professionalRecording.ts', 'src/utils/presentationPlanner.ts']
+const sourceFiles = ['src/utils/presentationPlanner.ts', 'src/config/advancedDirectors.ts']
 const combinedSource = sourceFiles.map((file) => readFileSync(file, 'utf8')).join('\n')
 check(!combinedSource.includes('PROFESSIONAL_CUE_COUNT'), 'Regresó el conteo fijo de cues profesionales')
 check(!combinedSource.match(/batchIndex\s*\*\s*4/), 'Regresó la indexación fija por lotes de cuatro')
+check(!existsSync('src/config/professionalRecording.ts'), 'El camino de grabación profesional legacy volvió al proyecto')
 check(!readFileSync('src/hooks/useRecording.ts', 'utf8').includes('captureStream(30)'), 'La grabación volvió a fijar 30 FPS ignorando Configuración')
 const mediaStorageSource = readFileSync('src/utils/mediaStorage.ts', 'utf8')
 check(mediaStorageSource.includes(':source`'), 'IndexedDB no conserva una clave source para los originales')
@@ -133,6 +127,7 @@ const studioShellSource = readFileSync('src/components/studio/GarmentAdStudio.ts
 check(studioShellSource.includes('garment-ad-studio:timeline-height'), 'La altura de timeline dejó de persistirse')
 check(studioShellSource.includes('garment-ad-studio:timeline-collapsed'), 'El estado colapsado de timeline dejó de persistirse')
 check(!studioShellSource.includes('<AnimationPanel'), 'Animación legacy volvió a duplicar los controles de Dirección')
+check(!studioShellSource.includes('studioMode') && !studioShellSource.includes('getProfessional'), 'El shell volvió a bifurcarse entre Básico y Avanzado')
 const collectionPanelSource = readFileSync('src/components/studio/CampaignPanel.tsx', 'utf8')
 check(collectionPanelSource.includes('onDoubleClick') && collectionPanelSource.includes('.filter((placement)'), 'Colección perdió la selección P/C contextual o volvió a mostrar ubicaciones ocupadas')
 const variantsPanelSource = readFileSync('src/components/studio/VariantsPanel.tsx', 'utf8')

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AlphaPipelineMode, AnimationPreset, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DesignCombination, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportFps, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, StudioMode, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
+import type { AlphaPipelineMode, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DesignCombination, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportFps, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
 import { ADVANCED_SCHEMA_VERSION, applyBeatSyncToProject, createCollectionProject, createDefaultCamera, createDefaultLabel, createDirectorProject, getProjectDuration, isCompleteCollectionItem } from '../config/advancedDirectors'
 import { defaultCollectionMotionIds, defaultCollectionTransitionIds } from '../config/garmentMotions'
 import { defaultBeatSyncSettings } from '../utils/beatSync'
@@ -8,7 +8,6 @@ import { garmentVariantPresets } from '../config/garmentVariants'
 
 type StudioState = {
   canUndo: boolean; canRedo: boolean; undo: () => void; redo: () => void
-  studioMode: StudioMode; setStudioMode: (mode: StudioMode) => void
   campaignMode: CampaignMode; setCampaignMode: (mode: CampaignMode) => void
   presentationMode: PresentationMode; setPresentationMode: (mode: PresentationMode) => void
   enabledShotTypes: DirectorShotKind[]; toggleShotType: (kind: DirectorShotKind) => void
@@ -45,11 +44,6 @@ type StudioState = {
   printZoneAdjustments: Record<PrintPlacement, PrintZoneAdjustment>
   setPrintZoneAdjustment: (placement: PrintPlacement, value: Partial<PrintZoneAdjustment>) => void
   resetPrintZoneAdjustment: (placement: PrintPlacement) => void
-  variantPrintSettings: Record<GarmentVariantId, Record<PrintPlacement, PrintSettings>>
-  variantZoneAdjustments: Record<GarmentVariantId, Record<PrintPlacement, PrintZoneAdjustment>>
-  setVariantPrint: (variant: GarmentVariantId, placement: PrintPlacement, value: Partial<PrintSettings>) => void
-  setVariantZoneAdjustment: (variant: GarmentVariantId, placement: PrintPlacement, value: Partial<PrintZoneAdjustment>) => void
-  resetVariantZoneAdjustment: (variant: GarmentVariantId, placement: PrintPlacement) => void
   editorMode: EditorMode; setEditorMode: (mode: EditorMode) => void
   alignmentRequest: PrintAlignmentRequest | null; alignPrint: (placement: PrintPlacement, alignment: PrintAlignment, target: EditorMode) => void
   variantAssets: Record<VariantAssetRole, VariantAsset>; setVariantAsset: (role: VariantAssetRole, asset: VariantAsset) => void
@@ -60,9 +54,7 @@ type StudioState = {
   duplicateDesignCombination: (id: string) => void
   removeDesignCombination: (id: string) => void
   moveDesignCombination: (id: string, direction: -1 | 1) => void
-  activeVariantId: GarmentVariantId; setActiveVariantId: (id: GarmentVariantId) => void
   background: BackgroundSettings; setBackground: (value: Partial<BackgroundSettings>) => void
-  cameraView: CameraViewSettings; setCameraView: (value: CameraViewSettings) => void
   music: AudioTrackSettings; setMusic: (value: Partial<AudioTrackSettings>) => void
   beatSync: BeatSyncSettings; setBeatSync: (value: Partial<BeatSyncSettings>) => void
   overlayLayers: StageOverlayLayer[]
@@ -78,10 +70,7 @@ type StudioState = {
   format: FormatId; setFormat: (format: FormatId) => void
   exportQuality: ExportQualityId; setExportQuality: (quality: ExportQualityId) => void
   exportFps: ExportFps; setExportFps: (fps: ExportFps) => void
-  animation: AnimationPreset; setAnimation: (animation: AnimationPreset) => void
-  duration: number; setDuration: (duration: number) => void
   targetRotation: number; setTargetRotation: (rotation: number) => void
-  playbackKey: number; play: () => void
   recordingStatus: RecordingStatus; recordingElapsed: number; recordingMessage: string | null
   recordingPreparedResources: number; recordingTotalResources: number
   setRecording: (status: RecordingStatus, elapsed?: number, message?: string | null, resources?: { completed: number; total: number }) => void
@@ -89,9 +78,8 @@ type StudioState = {
 
 type HistorySnapshot = Pick<StudioState,
   'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'collectionMotionIds' | 'collectionTransitionIds' | 'advancedProjects' |
-  'garmentColor' | 'prints' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' |
-  'variantAssets' | 'designCombinations' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' |
-  'systemLayerTimings' | 'format' | 'exportQuality' | 'exportFps' | 'animation' | 'duration'
+  'garmentColor' | 'prints' | 'printZoneAdjustments' | 'variantAssets' | 'designCombinations' | 'background' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' |
+  'systemLayerTimings' | 'format' | 'exportQuality' | 'exportFps'
 >
 
 const HISTORY_LIMIT = 80
@@ -116,12 +104,9 @@ const captureHistory = (state: StudioState): HistorySnapshot => cloneHistory({
   garmentColor: state.garmentColor,
   prints: state.prints,
   printZoneAdjustments: state.printZoneAdjustments,
-  variantPrintSettings: state.variantPrintSettings,
-  variantZoneAdjustments: state.variantZoneAdjustments,
   variantAssets: state.variantAssets,
   designCombinations: state.designCombinations,
   background: state.background,
-  cameraView: state.cameraView,
   music: state.music,
   beatSync: state.beatSync,
   overlayLayers: state.overlayLayers,
@@ -130,8 +115,6 @@ const captureHistory = (state: StudioState): HistorySnapshot => cloneHistory({
   format: state.format,
   exportQuality: state.exportQuality,
   exportFps: state.exportFps,
-  animation: state.animation,
-  duration: state.duration,
 })
 const historySignature = (snapshot: HistorySnapshot) => JSON.stringify(snapshot)
 const setHistoryAvailability = () => {
@@ -195,9 +178,17 @@ const defaultVariantAssets: Record<VariantAssetRole, VariantAsset> = { large: em
 const variantIds: GarmentVariantId[] = ['frontLeftSleeve', 'frontBack', 'backRightSleeve', 'backChest']
 const STORAGE_KEY = 'garment-ad-studio:settings:v1'
 const defaultLayerTiming = (duration = 8): LayerTiming => ({ start: 0, duration, enter: 'none', exit: 'none' })
-type PersistedState = Pick<StudioState, 'studioMode' | 'campaignMode' | 'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'activeCollectionItemId' | 'activeCollectionAssetRole' | 'collectionMotionIds' | 'collectionTransitionIds' | 'activeDirectorId' | 'advancedProjects' | 'garmentColor' | 'activePrintPlacement' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' | 'editorMode' | 'variantAssets' | 'designCombinations' | 'activeDesignCombinationId' | 'activeVariantId' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' | 'selectedLayerId' | 'systemLayerTimings' | 'format' | 'exportQuality' | 'exportFps' | 'animation' | 'duration' | 'targetRotation'> & {
+type PersistedState = Pick<StudioState, 'campaignMode' | 'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'activeCollectionItemId' | 'activeCollectionAssetRole' | 'collectionMotionIds' | 'collectionTransitionIds' | 'activeDirectorId' | 'advancedProjects' | 'garmentColor' | 'activePrintPlacement' | 'printZoneAdjustments' | 'editorMode' | 'variantAssets' | 'designCombinations' | 'activeDesignCombinationId' | 'background' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' | 'selectedLayerId' | 'systemLayerTimings' | 'format' | 'exportQuality' | 'exportFps' | 'targetRotation'> & {
   schemaVersion: number
   prints: Record<PrintPlacement, PrintSettings>
+  /** Legacy fields used once to migrate sessions saved before the unified director. */
+  studioMode?: 'basic' | 'advanced'
+  duration?: number
+  cameraView?: CameraViewSettings
+  variantPrintSettings?: Record<GarmentVariantId, Record<PrintPlacement, PrintSettings>>
+  variantZoneAdjustments?: Record<GarmentVariantId, Record<PrintPlacement, PrintZoneAdjustment>>
+  activeVariantId?: GarmentVariantId
+  animation?: 'still' | 'spin180' | 'spin360'
   /** Compatibility with sessions saved before explicit editor modes existed. */
   zoneEditMode?: boolean
 }
@@ -307,12 +298,6 @@ const rebuildVariantProject = (state: StudioState, id: 'cinematic' | 'grid2x2', 
 }
 export const useStudioStore = create<StudioState>((set) => ({
   canUndo: false, canRedo: false, undo: performUndo, redo: performRedo,
-  studioMode: persisted.studioMode ?? 'basic',
-  setStudioMode: (studioMode) => set((state) => {
-    if (studioMode === 'basic') return { studioMode }
-    const project = syncProjectAssets(state.advancedProjects[state.activeDirectorId], state.overlayLayers, state.music, Boolean(state.background.videoAudioEnabled))
-    return { studioMode, advancedProjects: { ...state.advancedProjects, [state.activeDirectorId]: project } }
-  }),
   campaignMode: persisted.campaignMode ?? 'variants',
   setCampaignMode: (campaignMode) => set({ campaignMode, activeDirectorId: campaignMode === 'collection' ? 'collection' : 'cinematic' }),
   presentationMode: initialPresentationMode,
@@ -467,11 +452,6 @@ export const useStudioStore = create<StudioState>((set) => ({
   printZoneAdjustments: initialZones,
   setPrintZoneAdjustment: (placement, value) => set((state) => ({ printZoneAdjustments: { ...state.printZoneAdjustments, [placement]: { ...state.printZoneAdjustments[placement], ...value } } })),
   resetPrintZoneAdjustment: (placement) => set((state) => ({ printZoneAdjustments: { ...state.printZoneAdjustments, [placement]: createZoneAdjustment() } })),
-  variantPrintSettings: initialVariantPrintSettings,
-  variantZoneAdjustments: initialVariantZones,
-  setVariantPrint: (variant, placement, value) => set((state) => ({ variantPrintSettings: { ...state.variantPrintSettings, [variant]: { ...state.variantPrintSettings[variant], [placement]: { ...state.variantPrintSettings[variant][placement], ...value, placement } } } })),
-  setVariantZoneAdjustment: (variant, placement, value) => set((state) => ({ variantZoneAdjustments: { ...state.variantZoneAdjustments, [variant]: { ...state.variantZoneAdjustments[variant], [placement]: { ...state.variantZoneAdjustments[variant][placement], ...value } } } })),
-  resetVariantZoneAdjustment: (variant, placement) => set((state) => ({ variantZoneAdjustments: { ...state.variantZoneAdjustments, [variant]: { ...state.variantZoneAdjustments[variant], [placement]: createZoneAdjustment() } } })),
   editorMode: persisted.editorMode ?? (persisted.zoneEditMode ? 'zone' : 'design'), setEditorMode: (editorMode) => set({ editorMode }),
   alignmentRequest: null,
   alignPrint: (placement, alignment, target) => set((state) => ({ alignmentRequest: { placement, alignment, target, id: (state.alignmentRequest?.id ?? 0) + 1 } })),
@@ -481,7 +461,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   activeDesignCombinationId: initialActiveDesignCombinationId,
   setActiveDesignCombinationId: (activeDesignCombinationId) => set((state) => {
     const combination = state.designCombinations.find((item) => item.id === activeDesignCombinationId)
-    return { activeDesignCombinationId, ...(combination?.presetId ? { activeVariantId: combination.presetId } : {}), ...(combination ? { activePrintPlacement: combination.focusRole === 'main' ? combination.mainPlacement : combination.companionPlacement } : {}) }
+    return { activeDesignCombinationId, ...(combination ? { activePrintPlacement: combination.focusRole === 'main' ? combination.mainPlacement : combination.companionPlacement } : {}) }
   }),
   addDesignCombination: (combination) => set((state) => {
     if (combination.mainPlacement === combination.companionPlacement) return state
@@ -521,10 +501,8 @@ export const useStudioStore = create<StudioState>((set) => ({
     const ordered = designCombinations.map((item, order) => ({ ...item, order })); const nextState = { ...state, designCombinations: ordered }
     return { designCombinations: ordered, advancedProjects: { ...state.advancedProjects, cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped') } }
   }),
-  activeVariantId: persisted.activeVariantId ?? 'frontLeftSleeve', setActiveVariantId: (activeVariantId) => set({ activeVariantId }),
   background: { type: 'color', color: '#1b1d24', name: null, blur: 0, darkness: 15, ambilight: true, ambilightStrength: 70, ambilightReach: 55, videoPaused: false, videoAudioEnabled: false, videoVolume: 80, ...persisted.background, url: null },
   setBackground: (value) => set((state) => ({ background: { ...state.background, ...value } })),
-  cameraView: persisted.cameraView ?? { position: [0, .15, 12.35], target: [0, .15, 0] }, setCameraView: (cameraView) => set({ cameraView }),
   music: { name: null, volume: 80, start: 0, duration: persisted.duration ?? 8, sourceDuration: 0, fadeIn: .5, fadeOut: .8, ...persisted.music, url: null },
   setMusic: (value) => set((state) => {
     const music = { ...state.music, ...value }
@@ -560,19 +538,10 @@ export const useStudioStore = create<StudioState>((set) => ({
   }),
   selectLayer: (selectedLayerId) => set({ selectedLayerId }),
   setSystemLayerTiming: (id, value) => set((state) => ({ systemLayerTimings: { ...state.systemLayerTimings, [id]: { ...state.systemLayerTimings[id], ...value } } })),
-  format: persisted.format ?? 'reel', setFormat: (format) => set({ format }), animation: persisted.animation ?? 'spin360', setAnimation: (animation) => set({ animation }),
+  format: persisted.format ?? 'reel', setFormat: (format) => set({ format }),
   exportQuality: (persisted.exportQuality as string) === 'high' ? 'hd' : (persisted.exportQuality as string) === 'ultra' ? '4k' : persisted.exportQuality ?? '4k', setExportQuality: (exportQuality) => set({ exportQuality }),
   exportFps: persisted.exportFps ?? 30, setExportFps: (exportFps) => set({ exportFps }),
-  duration: persisted.duration ?? 8, setDuration: (duration) => set((state) => ({
-    duration,
-    systemLayerTimings: {
-      background: state.systemLayerTimings.background.start === 0 && state.systemLayerTimings.background.duration === state.duration ? { ...state.systemLayerTimings.background, duration } : state.systemLayerTimings.background,
-      garment: state.systemLayerTimings.garment.start === 0 && state.systemLayerTimings.garment.duration === state.duration ? { ...state.systemLayerTimings.garment, duration } : state.systemLayerTimings.garment,
-    },
-    overlayLayers: state.overlayLayers.map((layer) => layer.timing.start === 0 && layer.timing.duration === state.duration ? { ...layer, timing: { ...layer.timing, duration } } : layer),
-    music: state.music.start === 0 && state.music.duration === state.duration ? { ...state.music, duration } : state.music,
-  })), targetRotation: persisted.targetRotation ?? 0, setTargetRotation: (targetRotation) => set({ targetRotation }),
-  playbackKey: 0, play: () => set((state) => ({ playbackKey: state.playbackKey + 1, targetRotation: 0 })),
+  targetRotation: persisted.targetRotation ?? 0, setTargetRotation: (targetRotation) => set({ targetRotation }),
   recordingStatus: 'idle', recordingElapsed: 0, recordingMessage: null, recordingPreparedResources: 0, recordingTotalResources: 0,
   setRecording: (recordingStatus, recordingElapsed = 0, recordingMessage = null, resources) => set((state) => ({ recordingStatus, recordingElapsed, recordingMessage, recordingPreparedResources: resources?.completed ?? (recordingStatus === 'idle' ? 0 : state.recordingPreparedResources), recordingTotalResources: resources?.total ?? (recordingStatus === 'idle' ? 0 : state.recordingTotalResources) })),
 }))
@@ -601,17 +570,15 @@ useStudioStore.subscribe((state) => {
   window.clearTimeout(persistTimer)
   persistTimer = window.setTimeout(() => {
     const prints = Object.fromEntries(Object.entries(state.prints).map(([placement, print]) => [placement, { ...print, url: null }])) as Record<PrintPlacement, PrintSettings>
-    const variantPrintSettings = Object.fromEntries(variantIds.map((variant) => [variant, Object.fromEntries(Object.entries(state.variantPrintSettings[variant]).map(([placement, print]) => [placement, { ...print, url: null }]))])) as Record<GarmentVariantId, Record<PrintPlacement, PrintSettings>>
     const snapshot: PersistedState = {
-      schemaVersion: ADVANCED_SCHEMA_VERSION, studioMode: state.studioMode, campaignMode: state.campaignMode, presentationMode: state.presentationMode, enabledShotTypes: state.enabledShotTypes, assetQualityProfile: state.assetQualityProfile, alphaPipelineMode: state.alphaPipelineMode, collectionItems: state.collectionItems.map((item) => ({ ...item, asset: { ...item.asset, url: null, thumbnailUrl: null }, print: { ...item.print, url: null }, companionAsset: { ...item.companionAsset, url: null, thumbnailUrl: null }, companionPrint: { ...item.companionPrint, url: null } })), activeCollectionItemId: state.activeCollectionItemId, activeCollectionAssetRole: state.activeCollectionAssetRole, collectionMotionIds: state.collectionMotionIds, collectionTransitionIds: state.collectionTransitionIds, activeDirectorId: state.activeDirectorId, advancedProjects: state.advancedProjects,
+      schemaVersion: ADVANCED_SCHEMA_VERSION, campaignMode: state.campaignMode, presentationMode: state.presentationMode, enabledShotTypes: state.enabledShotTypes, assetQualityProfile: state.assetQualityProfile, alphaPipelineMode: state.alphaPipelineMode, collectionItems: state.collectionItems.map((item) => ({ ...item, asset: { ...item.asset, url: null, thumbnailUrl: null }, print: { ...item.print, url: null }, companionAsset: { ...item.companionAsset, url: null, thumbnailUrl: null }, companionPrint: { ...item.companionPrint, url: null } })), activeCollectionItemId: state.activeCollectionItemId, activeCollectionAssetRole: state.activeCollectionAssetRole, collectionMotionIds: state.collectionMotionIds, collectionTransitionIds: state.collectionTransitionIds, activeDirectorId: state.activeDirectorId, advancedProjects: state.advancedProjects,
       garmentColor: state.garmentColor, prints, activePrintPlacement: state.activePrintPlacement,
-      printZoneAdjustments: state.printZoneAdjustments, variantPrintSettings, variantZoneAdjustments: state.variantZoneAdjustments, editorMode: state.editorMode,
-      variantAssets: { large: { ...state.variantAssets.large, url: null, thumbnailUrl: null }, small: { ...state.variantAssets.small, url: null, thumbnailUrl: null } }, designCombinations: state.designCombinations.map((item) => ({ ...item, printSettings: Object.fromEntries(Object.entries(item.printSettings).map(([placement, print]) => [placement, { ...print, url: null }])) as Record<PrintPlacement, PrintSettings> })), activeDesignCombinationId: state.activeDesignCombinationId, activeVariantId: state.activeVariantId,
-      background: { ...state.background, url: null }, cameraView: state.cameraView, music: { ...state.music, url: null }, beatSync: state.beatSync,
+      printZoneAdjustments: state.printZoneAdjustments, editorMode: state.editorMode,
+      variantAssets: { large: { ...state.variantAssets.large, url: null, thumbnailUrl: null }, small: { ...state.variantAssets.small, url: null, thumbnailUrl: null } }, designCombinations: state.designCombinations.map((item) => ({ ...item, printSettings: Object.fromEntries(Object.entries(item.printSettings).map(([placement, print]) => [placement, { ...print, url: null }])) as Record<PrintPlacement, PrintSettings> })), activeDesignCombinationId: state.activeDesignCombinationId,
+      background: { ...state.background, url: null }, music: { ...state.music, url: null }, beatSync: state.beatSync,
       overlayLayers: state.overlayLayers.map((layer) => layer.type === 'image' ? { ...layer, url: null } : layer), layerOrder: state.layerOrder,
       selectedLayerId: state.selectedLayerId, systemLayerTimings: state.systemLayerTimings,
-      format: state.format, exportQuality: state.exportQuality, exportFps: state.exportFps, animation: state.animation,
-      duration: state.duration, targetRotation: state.targetRotation,
+      format: state.format, exportQuality: state.exportQuality, exportFps: state.exportFps, targetRotation: state.targetRotation,
     }
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot)) } catch { /* Storage may be disabled by the browser. */ }
   }, 180)

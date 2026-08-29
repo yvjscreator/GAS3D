@@ -14,9 +14,9 @@ import type {
   PresentationMode,
   DirectorShotKind,
   DesignCombination,
+  DirectorFrame,
 } from '../types/studio'
 import { garmentVariantPresets } from './garmentVariants'
-import type { ProfessionalRecordingFrame } from './professionalRecording'
 import { defaultCollectionMotionIds, defaultCollectionTransitionIds, evaluateGarmentMotion, placementFacing } from './garmentMotions'
 import { cueDuration, hasBeatMap, rhythmicProgress } from '../utils/beatSync'
 import { buildPresentationPlan } from '../utils/presentationPlanner'
@@ -272,7 +272,7 @@ export function clipOpacity(item: TimelineClip, time: number) {
   return Math.max(0, Math.min(fadeIn, fadeOut))
 }
 
-export function getAdvancedDirectorFrame(project: DirectorProject, time: number, beatSync?: BeatSyncSettings, combinations: readonly DesignCombination[] = []): ProfessionalRecordingFrame | null {
+export function getAdvancedDirectorFrame(project: DirectorProject, time: number, beatSync?: BeatSyncSettings, combinations: readonly DesignCombination[] = []): DirectorFrame | null {
   if (project.id !== 'cinematic') return null
   const track = project.tracks.find((item) => item.type === 'director' && !item.hidden)
   const item = track?.clips.find((candidate) => time >= candidate.start && time <= candidate.start + candidate.duration)
@@ -308,7 +308,7 @@ export function getAdvancedDirectorFrame(project: DirectorProject, time: number,
   }
 }
 
-export function getCollectionDirectorFrame(project: DirectorProject, time: number, items: CollectionItem[], beatSync?: BeatSyncSettings): ProfessionalRecordingFrame | null {
+export function getCollectionDirectorFrame(project: DirectorProject, time: number, items: CollectionItem[], beatSync?: BeatSyncSettings): DirectorFrame | null {
   if (project.id !== 'collection') return null
   const track = project.tracks.find((item) => item.type === 'director' && !item.hidden)
   const shot = track?.clips.find((candidate) => candidate.type === 'directorShot' && time >= candidate.start && time <= candidate.start + candidate.duration)

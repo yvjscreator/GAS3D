@@ -1,8 +1,6 @@
 import { useCallback, useRef } from 'react'
-import type { AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CollectionItem, DesignCombination, DirectorProject, DirectorShotKind, GarmentVariantId, LayerTiming, StageLayerId, StageOverlayLayer, SystemLayerId, VariantLabelSettings } from '../types/studio'
+import type { AudioTrackSettings, BackgroundSettings, CollectionItem, DesignCombination, DirectorProject, LayerTiming, StageLayerId, StageOverlayLayer, SystemLayerId, VariantLabelSettings } from '../types/studio'
 import { evaluateBackgroundFrame, evaluateDirectorFrame, evaluateLayerFrame, type LayerFrame } from '../utils/stageTimeline'
-import { getProfessionalRecordingFrame } from '../config/professionalRecording'
-import { getMusicGain } from '../utils/audioTimeline'
 import { activeAssetClips, activeClip, activeLabelClips, clipOpacity } from '../config/advancedDirectors'
 import { getGridLayout } from '../utils/gridLayout'
 
@@ -11,13 +9,10 @@ type Args = {
   media: HTMLImageElement | HTMLVideoElement | null
   background: BackgroundSettings
   music: AudioTrackSettings
-  beatSync: BeatSyncSettings
-  enabledShotTypes: DirectorShotKind[]
   overlayLayers: StageOverlayLayer[]
   layerOrder: StageLayerId[]
   systemLayerTimings: Record<SystemLayerId, LayerTiming>
-  professionalHeroVariantId?: GarmentVariantId | null
-  advancedProject?: DirectorProject | null
+  advancedProject: DirectorProject
   collectionItems?: CollectionItem[]
   designCombinations?: DesignCombination[]
   duration: number
@@ -53,7 +48,7 @@ function drawCover(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
 export function useRecording() {
   const stopRef = useRef<(() => void) | null>(null)
   const start = useCallback((args: Args) => {
-    const { renderCanvas, media, background, music, beatSync, enabledShotTypes, overlayLayers, layerOrder, systemLayerTimings, professionalHeroVariantId, advancedProject = null, collectionItems = [], designCombinations = [], duration, width: outputWidth, height: outputHeight, bitrate, fps, onProgress, onFinalizing, onFinish, onError } = args
+    const { renderCanvas, media, background, music, overlayLayers, layerOrder, systemLayerTimings, advancedProject, collectionItems = [], designCombinations = [], duration, width: outputWidth, height: outputHeight, bitrate, fps, onProgress, onFinalizing, onFinish, onError } = args
     if (!renderCanvas || !renderCanvas.captureStream) { onError('Este navegador no permite capturar el canvas.'); return }
     const composition = document.createElement('canvas'); composition.width = outputWidth; composition.height = outputHeight
     if (!composition.width || !composition.height) { onError('El preview aún no está listo.'); return }
@@ -67,13 +62,12 @@ export function useRecording() {
       if (background.darkness) { context.fillStyle = `rgba(0,0,0,${background.darkness / 100})`; context.fillRect(0, 0, composition.width, composition.height) }
     })
     const drawGarment = (seconds: number) => {
-      const professionalOpacity = professionalHeroVariantId ? getProfessionalRecordingFrame(seconds, duration, professionalHeroVariantId, undefined, beatSync, enabledShotTypes).garmentOpacity : 1
-      const advancedFrame = evaluateDirectorFrame(advancedProject, seconds, 'recording', professionalOpacity)
-      withFrame(context, composition, advancedProject ? advancedFrame : evaluateLayerFrame(systemLayerTimings.garment, seconds), () => context.drawImage(renderCanvas, 0, 0, composition.width, composition.height), advancedProject ? 1 : professionalOpacity)
+      const directedFrame = evaluateDirectorFrame(advancedProject, seconds, 'recording')
+      withFrame(context, composition, directedFrame, () => context.drawImage(renderCanvas, 0, 0, composition.width, composition.height))
     }
     const drawOverlay = (layer: StageOverlayLayer, seconds: number) => {
-      const clips = advancedProject ? activeAssetClips(advancedProject, layer.id, seconds) : []
-      const frame = advancedProject ? { visible: clips.length > 0, opacity: clips.length ? Math.max(...clips.map((item) => clipOpacity(item, seconds))) : 0, translateX: 0, translateY: 0, scale: 1 } : evaluateLayerFrame(layer.timing, seconds); if (!frame.visible || frame.opacity <= 0) return
+      const clips = activeAssetClips(advancedProject, layer.id, seconds)
+      const frame = { visible: clips.length > 0, opacity: clips.length ? Math.max(...clips.map((item) => clipOpacity(item, seconds))) : 0, translateX: 0, translateY: 0, scale: 1 }; if (!frame.visible || frame.opacity <= 0) return
       const centerX = composition.width * (layer.x + frame.translateX) / 100; const centerY = composition.height * (layer.y + frame.translateY) / 100
       const layerWidth = composition.width * layer.width / 100
       context.save(); context.globalAlpha = frame.opacity * layer.opacity / 100; context.translate(centerX, centerY); context.rotate(layer.rotation * Math.PI / 180); context.scale(frame.scale, frame.scale)
@@ -108,15 +102,15 @@ export function useRecording() {
       } catch { audioElements.forEach((element) => element.pause()); void audioContext?.close(); onError('El navegador no pudo crear la mezcla de audio.'); return }
     }
     const updateAudio = (seconds: number) => {
-      if (backgroundGain && backgroundElement && advancedProject) {
+      if (backgroundGain && backgroundElement) {
         const clips = activeAssetClips(advancedProject, 'background-audio', seconds); const gain = clips.length ? Math.max(...clips.map((item) => clipOpacity(item, seconds))) * background.videoVolume / 100 : 0
         backgroundGain.gain.value = gain
         if (gain > 0 && backgroundElement.paused) void backgroundElement.play().catch(() => undefined)
         if (gain <= 0 && !backgroundElement.paused) backgroundElement.pause()
       }
       if (!musicElement || !musicGain) return
-      const advancedMusic = advancedProject ? activeAssetClips(advancedProject, 'music', seconds)[0] : null
-      const gain = advancedProject ? (advancedMusic ? clipOpacity(advancedMusic, seconds) * music.volume / 100 : 0) : getMusicGain(music, seconds); const sourceTime = advancedMusic ? advancedMusic.sourceStart + seconds - advancedMusic.start : Math.max(0, seconds - music.start); musicGain.gain.value = gain
+      const advancedMusic = activeAssetClips(advancedProject, 'music', seconds)[0]
+      const gain = advancedMusic ? clipOpacity(advancedMusic, seconds) * music.volume / 100 : 0; const sourceTime = advancedMusic ? advancedMusic.sourceStart + seconds - advancedMusic.start : 0; musicGain.gain.value = gain
       if (gain > 0) {
         if (musicElement.readyState >= 1 && Math.abs(musicElement.currentTime - sourceTime) > .28) musicElement.currentTime = Math.min(sourceTime, Math.max(0, music.sourceDuration - .02))
         if (musicElement.paused) void musicElement.play().catch(() => undefined)
@@ -128,12 +122,12 @@ export function useRecording() {
       context.clearRect(0, 0, composition.width, composition.height); context.fillStyle = '#000'; context.fillRect(0, 0, composition.width, composition.height)
       drawBackground(seconds)
       layerOrder.forEach((id) => { if (id === 'garment') drawGarment(seconds); else { const layer = overlayLayers.find((item) => item.id === id); if (layer) drawOverlay(layer, seconds) } })
-      const directorItem = advancedProject ? activeClip(advancedProject, 'director', seconds) : null
+      const directorItem = activeClip(advancedProject, 'director', seconds)
       if (directorItem?.type === 'gridScene') {
-        const count = advancedProject?.id === 'collection' ? directorItem.itemIds?.length ?? 0 : 4
+        const count = advancedProject.id === 'collection' ? directorItem.itemIds?.length ?? 0 : directorItem.itemIds?.length ?? 0
         context.save(); context.strokeStyle = 'rgba(160,190,220,.22)'; context.lineWidth = Math.max(1, outputWidth / 900); getGridLayout(count).forEach((cell) => context.strokeRect(cell.x * outputWidth, (1 - cell.y - cell.height) * outputHeight, cell.width * outputWidth, cell.height * outputHeight)); context.restore()
       }
-      if (advancedProject) activeLabelClips(advancedProject, seconds).forEach((item) => {
+      activeLabelClips(advancedProject, seconds).forEach((item) => {
         const collectionItem = item.collectionItemId ? collectionItems.find((candidate) => candidate.id === item.collectionItemId) : null
         const combination = item.designCombinationId ? designCombinations.find((candidate) => candidate.id === item.designCombinationId) : null
         if (!item.variantId && !collectionItem && !combination) return

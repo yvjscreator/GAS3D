@@ -5,8 +5,7 @@ import { exportPresets } from '../../config/exportPresets'
 import type { BackgroundSettings, FormatId, LayerTiming, RecordingStatus, StageLayerId, StageOverlayLayer, SystemLayerId } from '../../types/studio'
 import type { GarmentViewerProps } from '../viewer/GarmentViewer'
 import { evaluateBackgroundFrame, evaluateDirectorFrame, evaluateLayerFrame, type StagePlaybackState } from '../../utils/stageTimeline'
-import type { ProfessionalRecordingFrame } from '../../config/professionalRecording'
-import type { CollectionItem, DesignCombination, DirectorProject, GarmentVariantId, VariantLabelSettings } from '../../types/studio'
+import type { CollectionItem, DesignCombination, DirectorFrame, DirectorProject, GarmentVariantId, VariantLabelSettings } from '../../types/studio'
 import { activeAssetClips, activeClip, activeLabelClips, clipOpacity } from '../../config/advancedDirectors'
 import { AdvancedGridViewer, type GridVariantView } from '../viewer/AdvancedGridViewer'
 import { getGridLayout } from '../../utils/gridLayout'
@@ -22,10 +21,9 @@ type Props = {
   selectedLayerId: StageLayerId
   systemLayerTimings: Record<SystemLayerId, LayerTiming>
   duration: number
-  playbackKey: number
   recordingStatus: RecordingStatus
   recordingElapsed: number
-  professionalFrame?: ProfessionalRecordingFrame | null
+  directorFrame?: DirectorFrame | null
   advancedProject?: DirectorProject | null
   advancedTime?: number
   advancedGridViews?: GridVariantView[] | null
@@ -41,18 +39,11 @@ const frameStyle = (timing: LayerTiming, time: number, zIndex: number, opacityMu
   return { zIndex, opacity: frame.opacity * opacityMultiplier, visibility: frame.visible ? 'visible' : 'hidden', transform: `translate(${frame.translateX}%, ${frame.translateY}%) scale(${frame.scale})` }
 }
 
-export function AdStage({ format, background, viewer, onCanvasReady, mediaRef, overlayLayers, layerOrder, selectedLayerId, systemLayerTimings, duration, playbackKey, recordingStatus, recordingElapsed, professionalFrame = null, advancedProject = null, advancedTime, advancedGridViews = null, playbackState = 'editing', collectionItems = [], designCombinations = [], onSelectLayer, onUpdateOverlay }: Props) {
+export function AdStage({ format, background, viewer, onCanvasReady, mediaRef, overlayLayers, layerOrder, selectedLayerId, systemLayerTimings, duration, recordingStatus, recordingElapsed, directorFrame = null, advancedProject = null, advancedTime, advancedGridViews = null, playbackState = 'editing', collectionItems = [], designCombinations = [], onSelectLayer, onUpdateOverlay }: Props) {
   const ratio = exportPresets[format].ratio; const frameRef = useRef<HTMLDivElement>(null)
-  const [previewTime, setPreviewTime] = useState(.72); const [playing, setPlaying] = useState(false)
+  const [previewTime, setPreviewTime] = useState(.72)
   const selectedTiming = selectedLayerId === 'background' || selectedLayerId === 'garment' ? systemLayerTimings[selectedLayerId] : overlayLayers.find((layer) => layer.id === selectedLayerId)?.timing
-  useEffect(() => { if (!playing && recordingStatus !== 'recording' && selectedTiming) setPreviewTime(selectedTiming.start + Math.min(.72, selectedTiming.duration * .45)) }, [playing, recordingStatus, selectedLayerId, selectedTiming])
-  useEffect(() => {
-    if (!playbackKey) return
-    let frame = 0; const started = performance.now(); setPlaying(true); setPreviewTime(0)
-    const loop = () => { const elapsed = (performance.now() - started) / 1000; setPreviewTime(Math.min(duration, elapsed)); if (elapsed < duration) frame = requestAnimationFrame(loop); else setPlaying(false) }
-    frame = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(frame)
-  }, [duration, playbackKey])
+  useEffect(() => { if (recordingStatus !== 'recording' && selectedTiming) setPreviewTime(selectedTiming.start + Math.min(.72, selectedTiming.duration * .45)) }, [recordingStatus, selectedLayerId, selectedTiming])
   const time = advancedProject && advancedTime !== undefined ? advancedTime : recordingStatus === 'recording' ? recordingElapsed : previewTime
   const zById = useMemo(() => new Map(layerOrder.map((id, index) => [id, index + 2])), [layerOrder])
   const beginDrag = (event: ReactPointerEvent<HTMLElement>, layer: StageOverlayLayer) => {
@@ -82,7 +73,7 @@ export function AdStage({ format, background, viewer, onCanvasReady, mediaRef, o
   }
   const directorClip = advancedProject && playbackState !== 'editing' ? activeClip(advancedProject, 'director', time) : null
   const gridActive = directorClip?.type === 'gridScene'
-  const directorFrame = evaluateDirectorFrame(advancedProject, time, playbackState, professionalFrame?.garmentOpacity ?? 1)
+  const directorLayerFrame = evaluateDirectorFrame(advancedProject, time, playbackState, directorFrame?.garmentOpacity ?? 1)
   const backgroundFrame = evaluateBackgroundFrame(advancedProject, systemLayerTimings.background, time)
   const labelClips = advancedProject && playbackState !== 'editing' ? activeLabelClips(advancedProject, time) : []
   const backgroundAudioClips = advancedProject ? activeAssetClips(advancedProject, 'background-audio', time) : []
@@ -98,7 +89,7 @@ export function AdStage({ format, background, viewer, onCanvasReady, mediaRef, o
   return <section className="preview-shell">
     <div ref={frameRef} className="preview-frame" style={{ aspectRatio: String(ratio), '--stage-ratio': ratio } as CSSProperties}>
       <div className="stage-layer background-stage-layer" style={{ zIndex: 0, opacity: backgroundFrame.opacity, visibility: backgroundFrame.visible ? 'visible' : 'hidden', transform: `translate(${backgroundFrame.translateX}%, ${backgroundFrame.translateY}%) scale(${backgroundFrame.scale})` }} onPointerDown={() => onSelectLayer('background')}><BackgroundLayer background={stageBackground} mediaRef={mediaRef} /><div className="background-shade" style={{ opacity: background.darkness / 100 }} /></div>
-      <div className="stage-layer viewer-layer" style={{ ...(advancedProject ? { zIndex: zById.get('garment') ?? 2, opacity: directorFrame.opacity, visibility: directorFrame.visible ? 'visible' : 'hidden' as const, transform: `translate(${directorFrame.translateX}%, ${directorFrame.translateY}%) scale(${directorFrame.scale})` } : frameStyle(systemLayerTimings.garment, time, zById.get('garment') ?? 2, professionalFrame?.garmentOpacity ?? 1)) }} onPointerDown={() => onSelectLayer('garment')}>
+      <div className="stage-layer viewer-layer" style={{ ...(advancedProject ? { zIndex: zById.get('garment') ?? 2, opacity: directorLayerFrame.opacity, visibility: directorLayerFrame.visible ? 'visible' : 'hidden' as const, transform: `translate(${directorLayerFrame.translateX}%, ${directorLayerFrame.translateY}%) scale(${directorLayerFrame.scale})` } : frameStyle(systemLayerTimings.garment, time, zById.get('garment') ?? 2, directorFrame?.garmentOpacity ?? 1)) }} onPointerDown={() => onSelectLayer('garment')}>
         {gridActive && advancedGridViews ? <AdvancedGridViewer views={advancedGridViews} garmentColor={viewer.garmentColor} time={time - (directorClip?.start ?? 0)} duration={directorClip?.duration ?? advancedProject?.duration ?? duration} background={background} backgroundMediaRef={mediaRef} renderResolution={viewer.renderResolution} onCanvasReady={onCanvasReady} /> : <GarmentViewer {...viewer} background={background} backgroundMediaRef={mediaRef} onCanvasReady={onCanvasReady} />}
         {gridActive && <div className="grid-cell-guides">{getGridLayout(advancedGridViews?.length ?? 4).map((cell, index) => <i key={index} style={{ left: `${cell.x * 100}%`, top: `${(1 - cell.y - cell.height) * 100}%`, width: `${cell.width * 100}%`, height: `${cell.height * 100}%` }} />)}</div>}
       </div>

@@ -1,4 +1,4 @@
-import type { RecordingStatus, StudioMode } from '../../types/studio'
+import type { RecordingStatus } from '../../types/studio'
 import { StatusBar, StatusItem } from '../ui'
 
 const timecode = (seconds: number) => {
@@ -7,7 +7,6 @@ const timecode = (seconds: number) => {
 }
 
 type Props = {
-  mode: StudioMode
   campaign: string
   selection: string
   activity: string
@@ -22,13 +21,13 @@ type Props = {
   output: string
 }
 
-export function EditorStatusBar({ mode, campaign, selection, activity, currentTime, duration, playing, recordingStatus, recordingMessage, preparedResources = 0, totalResources = 0, shot, output }: Props) {
+export function EditorStatusBar({ campaign, selection, activity, currentTime, duration, playing, recordingStatus, recordingMessage, preparedResources = 0, totalResources = 0, shot, output }: Props) {
   const tone = recordingStatus === 'recording' || recordingStatus === 'finalizing' ? 'recording' : recordingStatus === 'error' ? 'error' : playing ? 'playing' : recordingStatus === 'ready' || recordingStatus === 'done' ? 'ready' : 'neutral'
   const state = recordingStatus === 'preparing' ? 'Preparando' : recordingStatus === 'preloading' ? 'Precargando' : recordingStatus === 'warming' ? 'Calentando GPU' : recordingStatus === 'finalizing' ? 'Finalizando' : recordingStatus === 'recording' ? 'Grabando' : recordingStatus === 'error' ? 'Error' : playing ? 'Reproduciendo' : recordingStatus === 'ready' ? 'Listo para grabar' : recordingStatus === 'done' ? 'Completado' : 'Preparado'
   const progress = totalResources > 0 && ['preparing', 'preloading', 'warming', 'ready'].includes(recordingStatus) ? ` · Recursos ${preparedResources}/${totalResources}` : ''
   const detail = `${recordingMessage ?? shot ?? activity}${progress}`
   return <StatusBar tone={tone} className="editor-status-bar">
-    <StatusItem value={mode === 'advanced' ? 'Avanzado' : 'Básico'} strong />
+    <StatusItem value="Director" strong />
     <StatusItem value={campaign} />
     <StatusItem value={selection} />
     <StatusItem value={detail} grow />

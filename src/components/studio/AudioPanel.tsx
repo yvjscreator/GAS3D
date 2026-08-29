@@ -15,7 +15,7 @@ export function AudioPanel() {
     const url = URL.createObjectURL(file)
     const probe = new Audio()
     probe.onloadedmetadata = () => {
-      const sourceDuration = Number.isFinite(probe.duration) ? probe.duration : studio.duration
+      const sourceDuration = Number.isFinite(probe.duration) ? probe.duration : studio.advancedProjects[studio.activeDirectorId].duration
       if (studio.music.url) URL.revokeObjectURL(studio.music.url)
       studio.setMusic({ url, name: file.name, sourceDuration, start: 0, duration: sourceDuration, fadeIn: .5, fadeOut: .8 })
       if (studio.beatSync.source === 'music') studio.setBeatSync({ analyzedAssetName: null, beats: [], confidence: 0 })

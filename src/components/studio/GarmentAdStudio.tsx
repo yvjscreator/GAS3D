@@ -7,13 +7,11 @@ import { LayersDrawer } from './LayersDrawer'
 import { AudioPanel } from './AudioPanel'
 import { useStudioStore } from '../../store/studioStore'
 import { useRecording } from '../../hooks/useRecording'
-import { printPlacements, type BeatSyncSettings, type CollectionItem, type DirectorProject, type GarmentVariantId, type PrintPlacement, type PrintSettings, type PrintZoneAdjustment, type RecordingStatus, type VariantAssetRole } from '../../types/studio'
-import { createCombinationPrints, getGarmentVariantPreset, hasVariantLibrary } from '../../config/garmentVariants'
+import { printPlacements, type BeatSyncSettings, type CameraViewSettings, type CollectionItem, type DirectorProject, type PrintPlacement, type PrintSettings, type PrintZoneAdjustment, type RecordingStatus, type VariantAssetRole } from '../../types/studio'
+import { createCombinationPrints, hasVariantLibrary } from '../../config/garmentVariants'
 import { backgroundMediaKey, collectionMediaKey, loadMedia, loadPreparedMedia, musicMediaKey, overlayMediaKey, printMediaKey, variantMediaKey } from '../../utils/mediaStorage'
 import type { PreparedVideoAssetMetadata } from '../../utils/mediaProcessor'
 import { exportPresets, exportQualities, getExportResolution } from '../../config/exportPresets'
-import { getProfessionalDuration, getProfessionalRecordingFrame } from '../../config/professionalRecording'
-import { getMusicGain } from '../../utils/audioTimeline'
 import { AdvancedDirectorPanel } from './AdvancedDirectorPanel'
 import { AdvancedTimeline } from './AdvancedTimeline'
 import { EditorHeader } from './EditorHeader'
@@ -64,19 +62,16 @@ export function GarmentAdStudio() {
     return saved === 'scene' || saved === 'direction' || saved === 'audio' ? saved : 'designs'
   })
   const [guidesHidden, setGuidesHidden] = useState(false)
-  const [professionalPreviewing, setProfessionalPreviewing] = useState(false)
-  const [professionalPreviewElapsed, setProfessionalPreviewElapsed] = useState(0)
   const [advancedPlaying, setAdvancedPlaying] = useState(false)
   const [stagePlaybackState, setStagePlaybackState] = useState<StagePlaybackState>('editing')
   const [assetTask, setAssetTask] = useState<string | null>(null)
   const [framingMode, setFramingMode] = useState(false)
-  const [heroVariantId, setHeroVariantId] = useState<GarmentVariantId>('frontLeftSleeve'); const previewFrame = useRef(0)
+  const previewFrame = useRef(0)
   const lastControlPress = useRef(0)
   const timelineSelectionUpdate = useRef(false)
-  const previewSelection = useRef<{ variantId: GarmentVariantId; collectionItemId: string | null; designCombinationId: string | null } | null>(null)
+  const previewSelection = useRef<{ collectionItemId: string | null; designCombinationId: string | null } | null>(null)
   const media = useRef<HTMLImageElement | HTMLVideoElement | null>(null); const musicMedia = useRef<HTMLAudioElement | null>(null); const { start } = useRecording()
   const advancedProject = studio.advancedProjects[studio.activeDirectorId]
-  useEffect(() => { if (useStudioStore.getState().studioMode !== 'advanced') useStudioStore.getState().setStudioMode('advanced') }, [])
   const activeCollectionItem = studio.collectionItems.find((item) => item.id === studio.activeCollectionItemId) ?? studio.collectionItems[0] ?? null
   const activeCombination = studio.designCombinations.find((item) => item.id === studio.activeDesignCombinationId) ?? studio.designCombinations[0]
   const enabledCombinations = studio.designCombinations.filter((item) => item.enabled).sort((a, b) => a.order - b.order)
@@ -93,14 +88,14 @@ export function GarmentAdStudio() {
     const urls = adaptivePreloadKey ? adaptivePreloadKey.split('\u0000') : []
     void renderAssetManager.prepareSceneWindow(urls).catch(() => undefined)
   }, [adaptivePreloadKey])
-  const selectedCamera = studio.campaignMode === 'collection' ? activeCollectionItem?.camera ?? advancedProject.cameras.frontLeftSleeve : activeCombination?.camera ?? advancedProject.cameras[studio.activeVariantId]
+  const selectedCamera = studio.campaignMode === 'collection' ? activeCollectionItem?.camera ?? createDefaultCamera() : activeCombination?.camera ?? createDefaultCamera()
   const [cameraDraft, setCameraDraft] = useState<VariantCameraPreset>(selectedCamera)
   useEffect(() => {
     if (advancedPlaying || studio.recordingStatus === 'recording') return
     if (timelineSelectionUpdate.current) { timelineSelectionUpdate.current = false; return }
     setStagePlaybackState('editing')
-  }, [advancedPlaying, studio.activeCollectionItemId, studio.activeVariantId, studio.recordingStatus])
-  useEffect(() => { if (!framingMode) { const state = useStudioStore.getState(); const project = state.advancedProjects[state.activeDirectorId]; const item = state.collectionItems.find((candidate) => candidate.id === state.activeCollectionItemId); const combination = state.designCombinations.find((candidate) => candidate.id === state.activeDesignCombinationId); setCameraDraft(state.campaignMode === 'collection' ? item?.camera ?? project.cameras.frontLeftSleeve : combination?.camera ?? project.cameras[state.activeVariantId]) } }, [framingMode, studio.activeDirectorId, studio.activeVariantId, studio.activeCollectionItemId, studio.activeDesignCombinationId, studio.campaignMode, studio.advancedProjects, studio.collectionItems, studio.designCombinations])
+  }, [advancedPlaying, studio.activeCollectionItemId, studio.activeDesignCombinationId, studio.recordingStatus])
+  useEffect(() => { if (!framingMode) { const state = useStudioStore.getState(); const item = state.collectionItems.find((candidate) => candidate.id === state.activeCollectionItemId); const combination = state.designCombinations.find((candidate) => candidate.id === state.activeDesignCombinationId); setCameraDraft(state.campaignMode === 'collection' ? item?.camera ?? createDefaultCamera() : combination?.camera ?? createDefaultCamera()) } }, [framingMode, studio.activeCollectionItemId, studio.activeDesignCombinationId, studio.campaignMode, studio.collectionItems, studio.designCombinations])
   useEffect(() => { useStudioStore.getState().syncAdvancedAssets() }, [studio.background.videoAudioEnabled, studio.music.name, studio.overlayLayers.length])
   useEffect(() => {
     let active = true
@@ -183,8 +178,8 @@ export function GarmentAdStudio() {
   const syncPreviewMusic = (seconds: number) => {
     const element = musicMedia.current; const music = useStudioStore.getState().music
     if (!element || !music.url) return
-    const state = useStudioStore.getState(); const project = state.advancedProjects[state.activeDirectorId]; const directed = state.studioMode === 'advanced' || state.campaignMode === 'collection'; const advancedClip = directed ? activeAssetClips(project, 'music', seconds)[0] : null
-    const gain = directed ? (advancedClip ? clipOpacity(advancedClip, seconds) * music.volume / 100 : 0) : getMusicGain(music, seconds); const sourceTime = advancedClip ? advancedClip.sourceStart + seconds - advancedClip.start : Math.max(0, seconds - music.start)
+    const state = useStudioStore.getState(); const project = state.advancedProjects[state.activeDirectorId]; const advancedClip = activeAssetClips(project, 'music', seconds)[0]
+    const gain = advancedClip ? clipOpacity(advancedClip, seconds) * music.volume / 100 : 0; const sourceTime = advancedClip ? advancedClip.sourceStart + seconds - advancedClip.start : 0
     if (gain > 0) {
       if (Math.abs(element.currentTime - sourceTime) > .28) element.currentTime = Math.min(sourceTime, Math.max(0, music.sourceDuration - .02))
       element.volume = Math.min(1, gain); if (element.paused) void element.play().catch(() => undefined)
@@ -192,55 +187,38 @@ export function GarmentAdStudio() {
   }
   const play = () => {
     cancelAnimationFrame(previewFrame.current)
-    previewSelection.current = { variantId: studio.activeVariantId, collectionItemId: studio.activeCollectionItemId, designCombinationId: studio.activeDesignCombinationId }
+    previewSelection.current = { collectionItemId: studio.activeCollectionItemId, designCombinationId: studio.activeDesignCombinationId }
     setStagePlaybackState('playing')
-    if (studio.studioMode === 'advanced' || studio.campaignMode === 'collection') {
-      const project = useStudioStore.getState().advancedProjects[studio.activeDirectorId]
-      const startAt = project.playhead >= project.duration - .05 ? 0 : project.playhead
-      restartBackgroundVideo(startAt)
-      studio.setAdvancedPlayhead(startAt); setAdvancedPlaying(true); setProfessionalPreviewing(true); studio.play()
-      let started: number | null = null
-      const tick = (timestamp: number) => {
-        started ??= timestamp - startAt * 1000
-        const elapsed = Math.min(project.duration, (timestamp - started) / 1000); useStudioStore.getState().setAdvancedPlayhead(elapsed); syncPreviewMusic(elapsed)
-        const state = useStudioStore.getState(); const directed = directorFrameAt(state.advancedProjects[state.activeDirectorId], elapsed, state.collectionItems, state.beatSync)
-        if (directed?.collectionItemId) state.setActiveCollectionItemId(directed.collectionItemId)
-        else if (directed?.designCombinationId) state.setActiveDesignCombinationId(directed.designCombinationId)
-        else if (directed && state.activeVariantId !== directed.variantId) state.setActiveVariantId(directed.variantId)
-        if (elapsed < project.duration) previewFrame.current = requestAnimationFrame(tick)
-        else {
-          musicMedia.current?.pause(); setAdvancedPlaying(false); setProfessionalPreviewing(false); setStagePlaybackState('editing')
-          const selected = previewSelection.current; previewSelection.current = null
-          if (selected) { state.setActiveVariantId(selected.variantId); state.setActiveCollectionItemId(selected.collectionItemId); state.setActiveDesignCombinationId(selected.designCombinationId) }
-        }
-      }
-      previewFrame.current = requestAnimationFrame(tick); return
-    }
-    restartBackgroundVideo()
-    const professional = Boolean(studio.variantAssets.large.url && studio.variantAssets.small.url)
-    const totalDuration = professional ? getProfessionalDuration(studio.duration, studio.beatSync, studio.enabledShotTypes) : studio.duration
-    const selectedHero = professionalPreviewing ? heroVariantId : studio.activeVariantId; setHeroVariantId(selectedHero); let started: number | null = null; setProfessionalPreviewElapsed(0); setProfessionalPreviewing(true); studio.play()
+    const project = useStudioStore.getState().advancedProjects[studio.activeDirectorId]
+    const startAt = project.playhead >= project.duration - .05 ? 0 : project.playhead
+    restartBackgroundVideo(startAt)
+    studio.setAdvancedPlayhead(startAt); setAdvancedPlaying(true)
+    let started: number | null = null
     const tick = (timestamp: number) => {
-      started ??= timestamp
-      const elapsed = Math.min(totalDuration, (timestamp - started) / 1000); syncPreviewMusic(elapsed)
-      if (professional) { const state = useStudioStore.getState(); const directed = getProfessionalRecordingFrame(elapsed, totalDuration, selectedHero, state.cameraView, state.beatSync, state.enabledShotTypes); setProfessionalPreviewElapsed(elapsed); if (state.activeVariantId !== directed.variantId) state.setActiveVariantId(directed.variantId) }
-      if (elapsed < totalDuration) previewFrame.current = requestAnimationFrame(tick)
-      else { musicMedia.current?.pause(); setProfessionalPreviewing(false); setStagePlaybackState('editing'); if (professional) useStudioStore.getState().setActiveVariantId(selectedHero); previewSelection.current = null }
+      started ??= timestamp - startAt * 1000
+      const elapsed = Math.min(project.duration, (timestamp - started) / 1000); useStudioStore.getState().setAdvancedPlayhead(elapsed); syncPreviewMusic(elapsed)
+      const state = useStudioStore.getState(); const directed = directorFrameAt(state.advancedProjects[state.activeDirectorId], elapsed, state.collectionItems, state.beatSync)
+      if (directed?.collectionItemId) state.setActiveCollectionItemId(directed.collectionItemId)
+      else if (directed?.designCombinationId) state.setActiveDesignCombinationId(directed.designCombinationId)
+      if (elapsed < project.duration) previewFrame.current = requestAnimationFrame(tick)
+      else {
+        musicMedia.current?.pause(); setAdvancedPlaying(false); setStagePlaybackState('editing')
+        const selected = previewSelection.current; previewSelection.current = null
+        if (selected) { state.setActiveCollectionItemId(selected.collectionItemId); state.setActiveDesignCombinationId(selected.designCombinationId) }
+      }
     }
-    setProfessionalPreviewing(professional)
     previewFrame.current = requestAnimationFrame(tick)
   }
   const pauseAdvanced = () => {
-    cancelAnimationFrame(previewFrame.current); musicMedia.current?.pause(); if (media.current instanceof HTMLVideoElement) media.current.pause(); setAdvancedPlaying(false); setProfessionalPreviewing(false); setStagePlaybackState('editing')
+    cancelAnimationFrame(previewFrame.current); musicMedia.current?.pause(); if (media.current instanceof HTMLVideoElement) media.current.pause(); setAdvancedPlaying(false); setStagePlaybackState('editing')
     const selected = previewSelection.current; previewSelection.current = null
-    if (selected) { useStudioStore.getState().setActiveVariantId(selected.variantId); useStudioStore.getState().setActiveCollectionItemId(selected.collectionItemId); useStudioStore.getState().setActiveDesignCombinationId(selected.designCombinationId) }
+    if (selected) { useStudioStore.getState().setActiveCollectionItemId(selected.collectionItemId); useStudioStore.getState().setActiveDesignCombinationId(selected.designCombinationId) }
   }
   const seekAdvanced = (time: number) => {
     pauseAdvanced(); setStagePlaybackState('scrubbing'); studio.setAdvancedPlayhead(time); if (media.current instanceof HTMLVideoElement) media.current.currentTime = media.current.duration ? time % media.current.duration : time
     const state = useStudioStore.getState(); const directed = directorFrameAt(state.advancedProjects[state.activeDirectorId], time, state.collectionItems, state.beatSync)
     if (directed?.collectionItemId && directed.collectionItemId !== state.activeCollectionItemId) { timelineSelectionUpdate.current = true; studio.setActiveCollectionItemId(directed.collectionItemId) }
     else if (directed?.designCombinationId && directed.designCombinationId !== state.activeDesignCombinationId) { timelineSelectionUpdate.current = true; studio.setActiveDesignCombinationId(directed.designCombinationId) }
-    else if (directed && directed.variantId !== state.activeVariantId) { timelineSelectionUpdate.current = true; studio.setActiveVariantId(directed.variantId) }
   }
   const record = async (skipPreflight = false) => {
     const validCollectionItems = studio.collectionItems.filter(isCompleteCollectionItem)
@@ -250,17 +228,16 @@ export function GarmentAdStudio() {
     }
     const output = getExportResolution(studio.format, studio.exportQuality)
     const bitrate = exportQualities[studio.exportQuality].bitrate
-    const isAdvanced = studio.studioMode === 'advanced'; const isCollection = studio.campaignMode === 'collection'; const usesDirector = isAdvanced || isCollection; const project = studio.advancedProjects[studio.activeDirectorId]
+    const isCollection = studio.campaignMode === 'collection'; const project = studio.advancedProjects[studio.activeDirectorId]
     const sequenceReady = Boolean(studio.variantAssets.large.url && studio.variantAssets.small.url)
-    const originalVariant = professionalPreviewing ? heroVariantId : studio.activeVariantId
     const originalCollectionItemId = studio.activeCollectionItemId
     const originalDesignCombinationId = studio.activeDesignCombinationId
-    const totalDuration = usesDirector ? project.duration : sequenceReady ? getProfessionalDuration(studio.duration, studio.beatSync, studio.enabledShotTypes) : studio.duration
-    cancelAnimationFrame(previewFrame.current); musicMedia.current?.pause(); setProfessionalPreviewing(false); setAdvancedPlaying(false); setHeroVariantId(originalVariant)
-    if (sequenceReady || isAdvanced) studio.setActiveDesignCombinationId(enabledCombinations[0]?.id ?? studio.activeDesignCombinationId)
+    const totalDuration = project.duration
+    cancelAnimationFrame(previewFrame.current); musicMedia.current?.pause(); setAdvancedPlaying(false)
+    if (sequenceReady) studio.setActiveDesignCombinationId(enabledCombinations[0]?.id ?? studio.activeDesignCombinationId)
     if (isCollection && validCollectionItems[0]) studio.setActiveCollectionItemId(validCollectionItems[0].id)
-    if (usesDirector) studio.setAdvancedPlayhead(0)
-    const restoreSelection = () => { if (sequenceReady || isAdvanced) { useStudioStore.getState().setActiveVariantId(originalVariant); useStudioStore.getState().setActiveDesignCombinationId(originalDesignCombinationId) } if (isCollection) useStudioStore.getState().setActiveCollectionItemId(originalCollectionItemId) }
+    studio.setAdvancedPlayhead(0)
+    const restoreSelection = () => { useStudioStore.getState().setActiveDesignCombinationId(originalDesignCombinationId); if (isCollection) useStudioStore.getState().setActiveCollectionItemId(originalCollectionItemId) }
     const usedCollectionIds = new Set(project.presentationPlan?.itemIds ?? validCollectionItems.map((item) => item.id))
     const printResources = isCollection
       ? validCollectionItems.filter((item) => usedCollectionIds.has(item.id)).flatMap((item) => [{ id: `${item.id}-main`, label: `${item.name} · Principal`, url: item.asset.url }, { id: `${item.id}-companion`, label: `${item.name} · Companion`, url: item.companionAsset.url }])
@@ -272,18 +249,12 @@ export function GarmentAdStudio() {
     const manifest = buildRecordingResourceManifest({ modelUrl: garmentModels[0]?.path ?? 'procedural-garment', images: [...printResources, ...overlayResources], background: { type: studio.background.type, url: studio.background.url, name: studio.background.name }, music: { url: studio.music.url, name: studio.music.name }, backgroundAudioEnabled: studio.background.videoAudioEnabled, fonts })
     renderAssetManager.beginRecordingSession(manifest.flatMap((resource) => resource.kind === 'image' && resource.url ? [resource.url] : []))
     studio.setRecording('preparing', 0, 'Construyendo manifiesto de grabación…', { completed: 0, total: manifest.length })
-    const begin = () => { restartBackgroundVideo(); studio.play(); const current = useStudioStore.getState(); start({ renderCanvas: canvas, media: media.current, background: current.background, music: current.music, beatSync: current.beatSync, enabledShotTypes: current.enabledShotTypes, overlayLayers: current.overlayLayers, layerOrder: current.layerOrder, systemLayerTimings: current.systemLayerTimings, professionalHeroVariantId: !usesDirector && sequenceReady ? originalVariant : null, advancedProject: usesDirector ? current.advancedProjects[current.activeDirectorId] : null, collectionItems: current.collectionItems.filter(isCompleteCollectionItem), designCombinations: current.designCombinations, duration: totalDuration, width: output.width, height: output.height, bitrate, fps: current.exportFps,
+    const begin = () => { restartBackgroundVideo(); const current = useStudioStore.getState(); start({ renderCanvas: canvas, media: media.current, background: current.background, music: current.music, overlayLayers: current.overlayLayers, layerOrder: current.layerOrder, systemLayerTimings: current.systemLayerTimings, advancedProject: current.advancedProjects[current.activeDirectorId], collectionItems: current.collectionItems.filter(isCompleteCollectionItem), designCombinations: current.designCombinations, duration: totalDuration, width: output.width, height: output.height, bitrate, fps: current.exportFps,
       onProgress: (seconds) => {
-        if (usesDirector) {
-          const state = useStudioStore.getState(); state.setAdvancedPlayhead(seconds)
-          const directed = directorFrameAt(state.advancedProjects[state.activeDirectorId], seconds, state.collectionItems, state.beatSync)
-          if (directed?.collectionItemId) state.setActiveCollectionItemId(directed.collectionItemId)
-          else if (directed?.designCombinationId) state.setActiveDesignCombinationId(directed.designCombinationId)
-          else if (directed && state.activeVariantId !== directed.variantId) state.setActiveVariantId(directed.variantId)
-        } else if (sequenceReady) {
-          const state = useStudioStore.getState(); const directed = getProfessionalRecordingFrame(seconds, totalDuration, originalVariant, state.cameraView, state.beatSync, state.enabledShotTypes)
-          if (useStudioStore.getState().activeVariantId !== directed.variantId) useStudioStore.getState().setActiveVariantId(directed.variantId)
-        }
+        const state = useStudioStore.getState(); state.setAdvancedPlayhead(seconds)
+        const directed = directorFrameAt(state.advancedProjects[state.activeDirectorId], seconds, state.collectionItems, state.beatSync)
+        if (directed?.collectionItemId) state.setActiveCollectionItemId(directed.collectionItemId)
+        else if (directed?.designCombinationId) state.setActiveDesignCombinationId(directed.designCombinationId)
         studio.setRecording('recording', seconds)
       },
       onFinalizing: () => studio.setRecording('finalizing', totalDuration, 'Codificando y guardando el archivo…'),
@@ -306,23 +277,15 @@ export function GarmentAdStudio() {
     }
   }
   const variantLibraryEnabled = hasVariantLibrary(studio.variantAssets)
-  const activeVariant = getGarmentVariantPreset(studio.activeVariantId)
   const collectionMode = studio.campaignMode === 'collection'
-  const basicProfessionalDuration = variantLibraryEnabled ? getProfessionalDuration(studio.duration, studio.beatSync, studio.enabledShotTypes) : studio.duration
-  const directedMode = studio.studioMode === 'advanced' || collectionMode
   const recordingBusy = busyRecordingStatuses.includes(studio.recordingStatus)
-  const collectionReady = !collectionMode || isValidCollectionSize(completeCollectionItems.length)
-  const collectionDirecting = collectionMode && (studio.studioMode === 'advanced' || advancedPlaying || recordingBusy)
-  const stageUsesProject = !framingMode && (studio.studioMode === 'advanced' || collectionDirecting)
-  const advancedTime = studio.recordingStatus === 'recording' && directedMode ? studio.recordingElapsed : advancedProject.playhead
+  const projectReady = collectionMode ? isValidCollectionSize(completeCollectionItems.length) : variantLibraryEnabled && enabledCombinations.length > 0
+  const stageUsesProject = !framingMode
+  const advancedTime = studio.recordingStatus === 'recording' ? studio.recordingElapsed : advancedProject.playhead
   const timelineStageActive = stagePlaybackState !== 'editing' || studio.recordingStatus === 'recording'
-  const professionalFrame = stageUsesProject && timelineStageActive
-    ? directorFrameAt(advancedProject, advancedTime, studio.collectionItems, studio.beatSync)
-    : variantLibraryEnabled && studio.recordingStatus === 'recording'
-    ? getProfessionalRecordingFrame(studio.recordingElapsed, basicProfessionalDuration, heroVariantId, studio.cameraView, studio.beatSync, studio.enabledShotTypes)
-    : variantLibraryEnabled && professionalPreviewing ? getProfessionalRecordingFrame(professionalPreviewElapsed, basicProfessionalDuration, heroVariantId, studio.cameraView, studio.beatSync, studio.enabledShotTypes) : null
-  const variantTemplate = studio.variantPrintSettings.frontLeftSleeve
-  const zoneTemplate = studio.variantZoneAdjustments.frontLeftSleeve
+  const directorFrame = stageUsesProject && timelineStageActive ? directorFrameAt(advancedProject, advancedTime, studio.collectionItems, studio.beatSync) : null
+  const variantTemplate = studio.prints
+  const zoneTemplate = studio.printZoneAdjustments
   const editingCompanion = collectionMode && studio.activeCollectionAssetRole === 'companion'
   const activeCollectionPlacement = activeCollectionItem ? editingCompanion ? activeCollectionItem.companionPlacement : activeCollectionItem.placement : studio.activePrintPlacement
   const activeDesignPlacement = activeCombination ? activeCombination.focusRole === 'main' ? activeCombination.mainPlacement : activeCombination.companionPlacement : studio.activePrintPlacement
@@ -349,13 +312,13 @@ export function GarmentAdStudio() {
   const viewerCamera = cameraDraft
   const resetFraming = () => {
     pauseAdvanced()
-    const reset = collectionMode ? createDefaultCamera() : createDefaultCamera(activeCombination?.presetId ?? studio.activeVariantId)
+    const reset = createDefaultCamera(activeCombination?.presetId)
     setCameraDraft(reset)
     if (collectionMode && activeCollectionItem) studio.updateCollectionItem(activeCollectionItem.id, { camera: reset })
     else if (activeCombination) studio.updateDesignCombination(activeCombination.id, { camera: reset })
     setFramingMode(false)
   }
-  const viewer = { garmentColor: collectionMode && activeCollectionItem ? activeCollectionItem.garmentColor : activeCombination?.garmentColor ?? studio.garmentColor, printApplications, printZoneAdjustments: activeZoneAdjustments, activePrintPlacement: collectionMode && activeCollectionItem ? activeCollectionPlacement : activeDesignPlacement, editorMode: studio.editorMode, alignmentRequest: studio.alignmentRequest, onPrintMove: (placement: Parameters<typeof studio.setPrint>[0], x: number, y: number) => updatePrint(placement, { x, y }), onPrintScale: (placement: Parameters<typeof studio.setPrint>[0], scale: number) => updatePrint(placement, { scale }), onPrintZoneChange: updateZone, showPrintGuides: !recordingBusy && !professionalPreviewing && !guidesHidden && stagePlaybackState === 'editing', animation: studio.animation, duration: directedMode ? advancedProject.duration : basicProfessionalDuration, playbackKey: studio.playbackKey, targetRotation: studio.targetRotation, cameraView: viewerCamera, cameraFov: cameraDraft.fov, cameraComposition: framingMode ? cameraDraft.composition : [0, 0] as [number, number], onCameraViewChange: (view: typeof studio.cameraView) => framingMode && setCameraDraft((current) => ({ ...current, ...view })), professionalFrame, renderResolution: recordingBusy ? getExportResolution(studio.format, studio.exportQuality) : null }
+  const viewer = { garmentColor: collectionMode && activeCollectionItem ? activeCollectionItem.garmentColor : activeCombination?.garmentColor ?? studio.garmentColor, printApplications, printZoneAdjustments: activeZoneAdjustments, activePrintPlacement: collectionMode && activeCollectionItem ? activeCollectionPlacement : activeDesignPlacement, editorMode: studio.editorMode, alignmentRequest: studio.alignmentRequest, onPrintMove: (placement: Parameters<typeof studio.setPrint>[0], x: number, y: number) => updatePrint(placement, { x, y }), onPrintScale: (placement: Parameters<typeof studio.setPrint>[0], scale: number) => updatePrint(placement, { scale }), onPrintZoneChange: updateZone, showPrintGuides: !recordingBusy && !guidesHidden && stagePlaybackState === 'editing', targetRotation: studio.targetRotation, cameraView: viewerCamera, cameraFov: cameraDraft.fov, cameraComposition: framingMode ? cameraDraft.composition : [0, 0] as [number, number], onCameraViewChange: (view: CameraViewSettings) => framingMode && setCameraDraft((current) => ({ ...current, ...view })), directorFrame, renderResolution: recordingBusy ? getExportResolution(studio.format, studio.exportQuality) : null }
   const setWorkspace = (next: WorkspaceId) => { setWorkspaceState(next); window.localStorage.setItem(workspaceKey, next); if (next !== 'direction' && framingMode) { setCameraDraft(selectedCamera); setFramingMode(false) } }
   const resizeTimeline = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -388,32 +351,32 @@ export function GarmentAdStudio() {
     '--timeline-height': `${timelineHeight}%`,
   } as CSSProperties
   const outputResolution = getExportResolution(studio.format, studio.exportQuality)
-  const statusDuration = directedMode ? advancedProject.duration : basicProfessionalDuration
-  const statusTime = studio.recordingStatus === 'recording' ? studio.recordingElapsed : directedMode ? advancedProject.playhead : professionalPreviewing ? professionalPreviewElapsed : 0
-  const statusPlaying = advancedPlaying || professionalPreviewing
-  const statusCampaign = collectionMode ? `Colección · ${completeCollectionItems.length} prendas` : activeCombination ? `Diseño único · ${activeCombination.name}` : variantLibraryEnabled ? `Variantes · ${activeVariant.label}` : 'Diseño individual'
+  const statusDuration = advancedProject.duration
+  const statusTime = studio.recordingStatus === 'recording' ? studio.recordingElapsed : advancedProject.playhead
+  const statusPlaying = advancedPlaying
+  const statusCampaign = collectionMode ? `Colección · ${completeCollectionItems.length} prendas` : activeCombination ? `Diseño único · ${activeCombination.name}` : 'Diseño único'
   const statusSelection = collectionMode && activeCollectionItem ? `${activeCollectionItem.name} · ${editingCompanion ? 'Companion' : 'Principal'}` : `${activeCollectionPlacement} · ${studio.editorMode === 'zone' ? 'Zona' : 'Diseño'}`
   const statusActivity = assetTask ?? (framingMode ? 'Ajustando encuadre' : guidesHidden ? 'Vista limpia' : studio.editorMode === 'zone' ? 'Configurando zona imprimible' : 'Editando estampado')
   const directorPanel = <AdvancedDirectorPanel framing={framingMode} draft={cameraDraft} onBeginFraming={() => { pauseAdvanced(); setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : activeCombination?.camera ?? cameraDraft); setFramingMode(true) }} onCancelFraming={() => { setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : activeCombination?.camera ?? cameraDraft); setFramingMode(false) }} onSaveFraming={() => { if (collectionMode && activeCollectionItem) studio.updateCollectionItem(activeCollectionItem.id, { camera: { ...cameraDraft, saved: true } }); else if (activeCombination) studio.updateDesignCombination(activeCombination.id, { camera: { ...cameraDraft, saved: true } }); setFramingMode(false) }} onResetFraming={resetFraming} onDraftFov={(fov) => setCameraDraft((current) => ({ ...current, fov }))} onDraftComposition={(composition) => setCameraDraft((current) => ({ ...current, composition }))} />
   return <main className="studio zen-studio advanced-mode unified-studio">
     <div className="zen-layout" style={layoutStyle}>
       <section className={`editor-column${timelineCollapsed ? ' timeline-collapsed' : ' has-editor-timeline'}`}>
-        <EditorHeader canUndo={studio.canUndo} canRedo={studio.canRedo} onUndo={studio.undo} onRedo={studio.redo} renderLayers={(close) => <LayersDrawer embedded onRequestClose={close} />} renderSettings={() => <SettingsPanel onTaskChange={setAssetTask} />} layerCount={studio.layerOrder.length} playing={statusPlaying} recording={studio.recordingStatus === 'recording'} previewDisabled={recordingBusy || !collectionReady} recordDisabled={recordingBusy || !collectionReady} onPreview={statusPlaying ? pauseAdvanced : play} onRecord={() => { void record() }} />
+        <EditorHeader canUndo={studio.canUndo} canRedo={studio.canRedo} onUndo={studio.undo} onRedo={studio.redo} renderLayers={(close) => <LayersDrawer embedded onRequestClose={close} />} renderSettings={() => <SettingsPanel onTaskChange={setAssetTask} />} layerCount={studio.layerOrder.length} playing={statusPlaying} recording={studio.recordingStatus === 'recording'} previewDisabled={recordingBusy || !projectReady} recordDisabled={recordingBusy || !projectReady} onPreview={statusPlaying ? pauseAdvanced : play} onRecord={() => { void record() }} />
         <WorkspaceTabs value={workspace} tabs={workspaceTabs} onChange={setWorkspace} />
         <aside className="control-drawer workspace-drawer">
-        <div className="drawer-intro"><span>{workspaceTabs.find((tab) => tab.id === workspace)?.label}</span><strong>{collectionMode ? `${completeCollectionItems.length} pares · ${buildPresentationGroups(completeCollectionItems).length} grupos · ${studio.presentationMode}` : variantLibraryEnabled ? activeVariant.label : 'Configura tu producto'}</strong></div>
+        <div className="drawer-intro"><span>{workspaceTabs.find((tab) => tab.id === workspace)?.label}</span><strong>{collectionMode ? `${completeCollectionItems.length} pares · ${buildPresentationGroups(completeCollectionItems).length} grupos · ${studio.presentationMode}` : activeCombination?.name ?? 'Configura tu producto'}</strong></div>
         <div className="workspace-content">{workspace === 'designs' ? <><CampaignPanel />{!collectionMode && <DesignPanel />}</> : workspace === 'scene' ? <BackgroundPanel /> : workspace === 'direction' ? directorPanel : <AudioPanel />}</div>
         </aside>
         <>
           <button className="editor-split-resizer" onPointerDown={resizeTimeline} aria-label="Cambiar altura de la línea de tiempo" title="Arrastra para cambiar la altura de la línea de tiempo" />
           <div className="timeline-slot"><AdvancedTimeline embedded collapsed={timelineCollapsed} onCollapsedChange={setTimelineVisibility} playing={advancedPlaying} onTogglePlay={advancedPlaying ? pauseAdvanced : play} onSeek={seekAdvanced} /></div>
         </>
-        <EditorStatusBar mode={studio.studioMode} campaign={statusCampaign} selection={statusSelection} activity={statusActivity} currentTime={statusTime} duration={statusDuration} playing={statusPlaying} recordingStatus={studio.recordingStatus} recordingMessage={studio.recordingMessage} preparedResources={studio.recordingPreparedResources} totalResources={studio.recordingTotalResources} shot={professionalFrame?.shotLabel} output={`${outputResolution.width}×${outputResolution.height} · ${studio.exportFps} FPS`} />
+        <EditorStatusBar campaign={statusCampaign} selection={statusSelection} activity={statusActivity} currentTime={statusTime} duration={statusDuration} playing={statusPlaying} recordingStatus={studio.recordingStatus} recordingMessage={studio.recordingMessage} preparedResources={studio.recordingPreparedResources} totalResources={studio.recordingTotalResources} shot={directorFrame?.shotLabel} output={`${outputResolution.width}×${outputResolution.height} · ${studio.exportFps} FPS`} />
         {studio.recordingStatus === 'error' && <div className="preflight-status-banner" role="alert"><AlertTriangle size={15} /><span>{studio.recordingMessage}</span><button onClick={() => { void record() }}><RefreshCw size={13} /> Reintentar</button><button className="warning" onClick={() => { void record(true) }}><AlertTriangle size={13} /> Grabar igualmente</button><button onClick={() => studio.setRecording('idle')} aria-label="Cerrar aviso"><X size={13} /></button></div>}
       </section>
       <section className="zen-workspace">
         <audio ref={musicMedia} className="music-preview-media" src={studio.music.url ?? undefined} preload="auto" />
-        <AdStage format={studio.format} background={studio.background} mediaRef={media} onCanvasReady={setCanvas} viewer={viewer} overlayLayers={studio.overlayLayers} layerOrder={studio.layerOrder} selectedLayerId={studio.selectedLayerId} systemLayerTimings={studio.systemLayerTimings} duration={directedMode ? advancedProject.duration : basicProfessionalDuration} playbackKey={studio.playbackKey} recordingStatus={studio.recordingStatus} recordingElapsed={studio.recordingElapsed} professionalFrame={professionalFrame} advancedProject={stageUsesProject ? advancedProject : null} advancedTime={advancedTime} advancedGridViews={stageUsesProject ? gridViews : null} playbackState={studio.recordingStatus === 'recording' ? 'recording' : stagePlaybackState} collectionItems={completeCollectionItems} designCombinations={studio.designCombinations} onSelectLayer={studio.selectLayer} onUpdateOverlay={studio.updateOverlayLayer} />
+        <AdStage format={studio.format} background={studio.background} mediaRef={media} onCanvasReady={setCanvas} viewer={viewer} overlayLayers={studio.overlayLayers} layerOrder={studio.layerOrder} selectedLayerId={studio.selectedLayerId} systemLayerTimings={studio.systemLayerTimings} duration={advancedProject.duration} recordingStatus={studio.recordingStatus} recordingElapsed={studio.recordingElapsed} directorFrame={directorFrame} advancedProject={stageUsesProject ? advancedProject : null} advancedTime={advancedTime} advancedGridViews={stageUsesProject ? gridViews : null} playbackState={studio.recordingStatus === 'recording' ? 'recording' : stagePlaybackState} collectionItems={completeCollectionItems} designCombinations={studio.designCombinations} onSelectLayer={studio.selectLayer} onUpdateOverlay={studio.updateOverlayLayer} />
       </section>
     </div>
   </main>

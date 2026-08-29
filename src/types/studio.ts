@@ -1,5 +1,4 @@
 export type BackgroundType = 'color' | 'image' | 'video'
-export type AnimationPreset = 'still' | 'spin180' | 'spin360'
 export type FormatId = 'reel' | 'feed' | 'square'
 export type ExportQualityId = 'hd' | '2k' | '4k'
 export type ExportFps = 24 | 30 | 60
@@ -15,7 +14,6 @@ export type VariantAssetRole = 'large' | 'small'
 export type GarmentVariantId = 'frontLeftSleeve' | 'frontBack' | 'backRightSleeve' | 'backChest'
 export type LayerTransition = 'none' | 'fade' | 'slideLeft' | 'slideRight' | 'slideUp' | 'zoom'
 export type SystemLayerId = 'background' | 'garment'
-export type StudioMode = 'basic' | 'advanced'
 export type CampaignMode = 'variants' | 'collection'
 export type PresentationMode = 'grouped' | 'sequential' | 'mixed'
 export type DirectorShotKind = 'groupShowcase' | 'itemShowcase' | 'hero' | 'detailLarge' | 'detailSmall'
@@ -104,6 +102,20 @@ export interface VariantCameraPreset extends CameraViewSettings {
   fov: number
   composition: [number, number]
   saved: boolean
+}
+
+export interface DirectorFrame {
+  variantId: GarmentVariantId
+  designCombinationId?: string
+  collectionItemId?: string
+  rotation: number
+  cameraPosition: [number, number, number]
+  cameraTarget: [number, number, number]
+  cameraFov?: number
+  garmentOpacity: number
+  shotLabel: string
+  shotIndex: number
+  shotCount: number
 }
 
 export interface VariantLabelSettings {
