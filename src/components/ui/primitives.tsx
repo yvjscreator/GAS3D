@@ -53,3 +53,12 @@ export function MediaThumbnailButton({ selected, badge, label, className = '', .
   const { src, alt, ...buttonProps } = props
   return <button {...buttonProps} className={`ui-media-thumbnail${selected ? ' selected' : ''} ${className}`.trim()} aria-label={label}>{src ? <img src={src} alt={alt ?? ''} /> : <span className="ui-media-placeholder" />}{badge && <b>{badge}</b>}</button>
 }
+
+export type WorkspaceTab<T extends string> = { id: T; label: string; icon?: LucideIcon }
+
+export function WorkspaceTabs<T extends string>({ value, tabs, onChange, label = 'Espacios de trabajo' }: { value: T; tabs: WorkspaceTab<T>[]; onChange: (value: T) => void; label?: string }) {
+  return <nav className="ui-workspace-tabs" aria-label={label}>{tabs.map((tab) => {
+    const Icon = tab.icon
+    return <button key={tab.id} type="button" className={value === tab.id ? 'active' : ''} aria-current={value === tab.id ? 'page' : undefined} onClick={() => onChange(tab.id)}>{Icon && <Icon size={15} />}<span>{tab.label}</span></button>
+  })}</nav>
+}
