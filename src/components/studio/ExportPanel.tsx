@@ -10,7 +10,7 @@ export function ExportPanel() {
   const shotCount = scenes.length; const participantCount = new Set(scenes.flatMap((scene) => scene.itemIds)).size
   return <section className="panel export-panel"><h2>Exportación</h2>
     <p className="muted">WebM · {hasAudio ? 'audio mezclado' : 'sin audio'}</p>
-    <p className="professional-export"><strong>Plan de presentación</strong><span>{shotCount} tomas · {participantCount} {participantCount === 1 ? 'participante' : 'participantes'} · {studio.advancedProjects[studio.activeDirectorId].duration.toFixed(1)}s</span></p>
+    <p className="presentation-export"><strong>Plan de presentación</strong><span>{shotCount} tomas · {participantCount} {participantCount === 1 ? 'participante' : 'participantes'} · {studio.advancedProjects[studio.activeDirectorId].duration.toFixed(1)}s</span></p>
     <div className="quality-options">{Object.entries(exportQualities).map(([id, quality]) => <button key={id} disabled={recordingBusy} className={studio.exportQuality === id ? 'quality-option active' : 'quality-option'} onClick={() => studio.setExportQuality(id as typeof studio.exportQuality)}><strong>{quality.label}</strong><small>{quality.detail}</small></button>)}</div>
     <label className="select-row">Fotogramas por segundo<select value={studio.exportFps} disabled={recordingBusy} onChange={(event) => studio.setExportFps(Number(event.target.value) as typeof studio.exportFps)}>{[24, 30, 60].map((fps) => <option key={fps} value={fps}>{fps} FPS</option>)}</select></label>
     <p className="export-resolution">Salida real <strong>{resolution.width} × {resolution.height}</strong></p>
