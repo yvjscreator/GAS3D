@@ -4,6 +4,7 @@ import type { AlphaPipelineMode, AssetQualityProfile } from '../../types/studio'
 import { FlaskConical, Gauge, ShieldCheck } from '../icons'
 import { ResponsiveOptionGrid, SelectableCard } from '../ui'
 import { renderAssetManager } from '../../render/RenderAssetManager'
+import { AssetReprocessPanel } from './AssetReprocessPanel'
 
 const qualityOptions: { id: AssetQualityProfile; name: string; detail: string }[] = [
   { id: 'performance', name: 'Rendimiento', detail: 'Máximo 1536 px; menor memoria y carga rápida.' },
@@ -18,7 +19,7 @@ const alphaOptions: { id: AlphaPipelineMode; name: string; detail: string }[] = 
   { id: 'straightAlpha', name: 'Alpha D · Limpieza', detail: 'PNG con dilatación RGB en píxeles transparentes.' },
 ]
 
-export function RenderLabPanel() {
+export function RenderLabPanel({ onTaskChange }: { onTaskChange?: (message: string | null) => void }) {
   const studio = useStudioStore()
   const [metrics, setMetrics] = useState(() => renderAssetManager.getMetrics())
   useEffect(() => { const timer = window.setInterval(() => setMetrics(renderAssetManager.getMetrics()), 1000); return () => window.clearInterval(timer) }, [])
@@ -29,6 +30,7 @@ export function RenderLabPanel() {
     <ResponsiveOptionGrid minWidth={150} className="render-lab-grid">{qualityOptions.map((option) => <SelectableCard key={option.id} selected={studio.assetQualityProfile === option.id} onClick={() => studio.setAssetQualityProfile(option.id)}><strong>{option.name}</strong><small>{option.detail}</small></SelectableCard>)}</ResponsiveOptionGrid>
     <div className="advanced-section-title"><ShieldCheck size={14} /><span>Transparencia</span></div>
     <ResponsiveOptionGrid minWidth={160} className="render-lab-grid">{alphaOptions.map((option) => <SelectableCard key={option.id} selected={studio.alphaPipelineMode === option.id} onClick={() => studio.setAlphaPipelineMode(option.id)}><strong>{option.name}</strong><small>{option.detail}</small></SelectableCard>)}</ResponsiveOptionGrid>
+    <AssetReprocessPanel onTaskChange={onTaskChange} />
     <details className="render-diagnostics"><summary>Avanzado / Diagnóstico</summary><div className="render-metrics"><span><strong>{metrics.cachedTextures}</strong> texturas en caché</span><span><strong>{metrics.referencedTextures}</strong> en uso</span><span><strong>{metrics.loadingTextures}</strong> cargando</span><span><strong>{metrics.pinnedTextures}</strong> recursos precargados</span><span><strong>{memoryMb.toFixed(1)} MB</strong> estimados</span><span><strong>{metrics.drawCalls}</strong> draw calls</span><span><strong>{metrics.triangles.toLocaleString()}</strong> triángulos</span><span><strong>{metrics.approximateFps.toFixed(0)}</strong> FPS estimados</span><span><strong>{metrics.longFrames}</strong> frames lentos</span><span><strong>{metrics.lastScenePrepareMs.toFixed(0)} ms</strong> último cambio</span></div></details>
   </section>
 }

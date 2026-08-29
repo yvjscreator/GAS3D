@@ -125,5 +125,9 @@ const combinedSource = sourceFiles.map((file) => readFileSync(file, 'utf8')).joi
 check(!combinedSource.includes('PROFESSIONAL_CUE_COUNT'), 'Regresó el conteo fijo de cues profesionales')
 check(!combinedSource.match(/batchIndex\s*\*\s*4/), 'Regresó la indexación fija por lotes de cuatro')
 check(!readFileSync('src/hooks/useRecording.ts', 'utf8').includes('captureStream(30)'), 'La grabación volvió a fijar 30 FPS ignorando Configuración')
+const mediaStorageSource = readFileSync('src/utils/mediaStorage.ts', 'utf8')
+check(mediaStorageSource.includes(':source`'), 'IndexedDB no conserva una clave source para los originales')
+check(mediaStorageSource.includes('storeValues(values)'), 'El reemplazo de proxy dejó de usar una escritura agrupada segura')
+for (const file of ['src/components/studio/VariantsPanel.tsx', 'src/components/studio/CampaignPanel.tsx']) check(readFileSync(file, 'utf8').match(/storePreparedMedia\([^\n]+,\s*(item\.file|file)\)/), `${file} no entrega el original al almacenamiento frío`)
 
 console.log(`Roadmap QA completado: ${assertions} verificaciones.`)

@@ -31,7 +31,7 @@ export function VariantsPanel() {
         const current = studio.variantAssets[role]
         if (current.url) URL.revokeObjectURL(current.url)
         if (current.thumbnailUrl) URL.revokeObjectURL(current.thumbnailUrl)
-        await storePreparedMedia(variantMediaKey(role), item.prepared.renderBlob, item.prepared.thumbnailBlob, item.prepared.metadata)
+        await storePreparedMedia(variantMediaKey(role), item.prepared.renderBlob, item.prepared.thumbnailBlob, item.prepared.metadata, item.file)
         studio.setVariantAsset(role, { url: URL.createObjectURL(item.prepared.renderBlob), thumbnailUrl: URL.createObjectURL(item.prepared.thumbnailBlob), name: item.file.name, width: item.prepared.metadata.proxyWidth, height: item.prepared.metadata.proxyHeight, originalWidth: item.prepared.metadata.originalWidth, originalHeight: item.prepared.metadata.originalHeight, originalBytes: item.prepared.metadata.originalBytes, renderBytes: item.prepared.metadata.renderBytes, profile: item.prepared.metadata.profile })
       }))
       setError(null)

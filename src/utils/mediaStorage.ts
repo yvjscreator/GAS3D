@@ -23,6 +23,19 @@ async function storeValue(key: string, value: unknown) {
   database.close()
 }
 
+async function storeValues(values: [string, unknown][]) {
+  const database = await openDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
+    values.forEach(([key, value]) => store.put(value, key))
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+    transaction.onabort = () => reject(transaction.error)
+  })
+  database.close()
+}
+
 export async function storeMedia(key: string, file: Blob) { await storeValue(key, file) }
 
 export async function storeMediaMetadata(key: string, metadata: object) { await storeValue(metadataMediaKey(key), metadata) }
@@ -52,11 +65,16 @@ export async function loadMediaMetadata<T extends object>(key: string) {
 export const renderMediaKey = (key: string) => `${key}:render`
 export const thumbnailMediaKey = (key: string) => `${key}:thumb`
 export const metadataMediaKey = (key: string) => `${key}:meta`
+export const sourceMediaKey = (key: string) => `${key}:source`
 
-export async function storePreparedMedia(key: string, renderBlob: Blob, thumbnailBlob: Blob, metadata: object) {
+export async function storePreparedMedia(key: string, renderBlob: Blob, thumbnailBlob: Blob, metadata: object, sourceBlob?: Blob) {
+  const values: [string, unknown][] = [[renderMediaKey(key), renderBlob], [thumbnailMediaKey(key), thumbnailBlob], [metadataMediaKey(key), metadata]]
+  if (sourceBlob) values.push([sourceMediaKey(key), sourceBlob])
+  await storeValues(values)
   await removeMedia(key)
-  await Promise.all([storeMedia(renderMediaKey(key), renderBlob), storeMedia(thumbnailMediaKey(key), thumbnailBlob), storeMediaMetadata(key, metadata)])
 }
+
+export async function loadSourceMedia(key: string) { return loadMedia(sourceMediaKey(key)) }
 
 export async function loadPreparedMedia<T extends object>(key: string) {
   const [renderBlob, thumbnailBlob, metadata] = await Promise.all([
@@ -79,7 +97,7 @@ export async function removeMedia(key: string) {
 }
 
 export async function removePreparedMedia(key: string) {
-  await Promise.all([removeMedia(key), removeMedia(renderMediaKey(key)), removeMedia(thumbnailMediaKey(key)), removeMedia(metadataMediaKey(key))])
+  await Promise.all([removeMedia(key), removeMedia(renderMediaKey(key)), removeMedia(thumbnailMediaKey(key)), removeMedia(metadataMediaKey(key)), removeMedia(sourceMediaKey(key))])
 }
 
 export const printMediaKey = (placement: string) => `print:${placement}`

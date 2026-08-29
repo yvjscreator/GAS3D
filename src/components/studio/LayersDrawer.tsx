@@ -28,7 +28,7 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
       const url = URL.createObjectURL(prepared.renderBlob)
       const layer: StageOverlayLayer = { id, type: 'image', name: file.name, sourceName: file.name, url, naturalWidth: prepared.metadata.proxyWidth, naturalHeight: prepared.metadata.proxyHeight, x: 50, y: 50, width: 28, rotation: 0, opacity: 100, timing: defaultTiming(studio.duration) }
       studio.addOverlayLayer(layer); setOpen(true); setError(null)
-      await storePreparedMedia(overlayMediaKey(id), prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata)
+      await storePreparedMedia(overlayMediaKey(id), prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
     } catch { setError('No se pudo procesar la imagen.') }
   }
   const addText = () => {

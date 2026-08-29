@@ -15,7 +15,7 @@ export function BackgroundPanel() {
       else {
         const prepared = await prepareVideoAsset(file, { profile: useStudioStore.getState().assetQualityProfile, alphaMode: useStudioStore.getState().alphaPipelineMode, mimeType: file.type === 'image/jpeg' ? 'image/webp' : undefined })
         renderBlob = prepared.renderBlob
-        await storePreparedMedia(backgroundMediaKey, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata)
+        await storePreparedMedia(backgroundMediaKey, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
       }
       if (background.url) URL.revokeObjectURL(background.url)
       setBackground({ url: URL.createObjectURL(renderBlob), name: file.name, videoPaused: false })

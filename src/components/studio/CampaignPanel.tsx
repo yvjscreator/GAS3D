@@ -56,7 +56,7 @@ export function CampaignPanel() {
         studio.updateCollectionItem(item.id, { companionAsset: asset, companionPrint: { ...item.companionPrint, url, name: file.name } })
       }
       selectItem(item, role); setError(null)
-      await storePreparedMedia(collectionMediaKey(item.id, role), prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata)
+      await storePreparedMedia(collectionMediaKey(item.id, role), prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
     } catch { setError(`No se pudo procesar ${file.name}.`) }
   }
   const requestUpload = (item: CollectionItem, role: CollectionAssetRole) => { selectItem(item, role); pendingUpload.current = { item, role }; uploadInput.current?.click() }
