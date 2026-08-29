@@ -1,10 +1,9 @@
 import { useCallback, useRef } from 'react'
-import type { AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CollectionItem, DirectorProject, DirectorShotKind, GarmentVariantId, LayerTiming, StageLayerId, StageOverlayLayer, SystemLayerId, VariantLabelSettings } from '../types/studio'
+import type { AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CollectionItem, DesignCombination, DirectorProject, DirectorShotKind, GarmentVariantId, LayerTiming, StageLayerId, StageOverlayLayer, SystemLayerId, VariantLabelSettings } from '../types/studio'
 import { evaluateBackgroundFrame, evaluateDirectorFrame, evaluateLayerFrame, type LayerFrame } from '../utils/stageTimeline'
 import { getProfessionalRecordingFrame } from '../config/professionalRecording'
 import { getMusicGain } from '../utils/audioTimeline'
 import { activeAssetClips, activeClip, activeLabelClips, clipOpacity } from '../config/advancedDirectors'
-import { garmentVariantPresets } from '../config/garmentVariants'
 import { getGridLayout } from '../utils/gridLayout'
 
 type Args = {
@@ -20,6 +19,7 @@ type Args = {
   professionalHeroVariantId?: GarmentVariantId | null
   advancedProject?: DirectorProject | null
   collectionItems?: CollectionItem[]
+  designCombinations?: DesignCombination[]
   duration: number
   width: number
   height: number
@@ -52,7 +52,7 @@ function drawCover(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
 export function useRecording() {
   const stopRef = useRef<(() => void) | null>(null)
   const start = useCallback((args: Args) => {
-    const { renderCanvas, media, background, music, beatSync, enabledShotTypes, overlayLayers, layerOrder, systemLayerTimings, professionalHeroVariantId, advancedProject = null, collectionItems = [], duration, width: outputWidth, height: outputHeight, bitrate, onProgress, onFinalizing, onFinish, onError } = args
+    const { renderCanvas, media, background, music, beatSync, enabledShotTypes, overlayLayers, layerOrder, systemLayerTimings, professionalHeroVariantId, advancedProject = null, collectionItems = [], designCombinations = [], duration, width: outputWidth, height: outputHeight, bitrate, onProgress, onFinalizing, onFinish, onError } = args
     if (!renderCanvas || !renderCanvas.captureStream) { onError('Este navegador no permite capturar el canvas.'); return }
     const composition = document.createElement('canvas'); composition.width = outputWidth; composition.height = outputHeight
     if (!composition.width || !composition.height) { onError('El preview aún no está listo.'); return }
@@ -134,13 +134,17 @@ export function useRecording() {
       }
       if (advancedProject) activeLabelClips(advancedProject, seconds).forEach((item) => {
         const collectionItem = item.collectionItemId ? collectionItems.find((candidate) => candidate.id === item.collectionItemId) : null
-        if (!item.variantId && !collectionItem) return
-        const settings: VariantLabelSettings = collectionItem?.label ?? advancedProject.labels[item.variantId!]; const transition = evaluateLayerFrame({ start: item.start, duration: item.duration, enter: settings.enter, exit: settings.exit }, seconds)
+        const combination = item.designCombinationId ? designCombinations.find((candidate) => candidate.id === item.designCombinationId) : null
+        if (!item.variantId && !collectionItem && !combination) return
+        const settings: VariantLabelSettings | undefined = collectionItem?.label ?? combination?.label ?? (item.variantId ? advancedProject.labels[item.variantId] : undefined)
+        if (!settings?.enabled) return
+        const transition = evaluateLayerFrame({ start: item.start, duration: item.duration, enter: settings.enter, exit: settings.exit }, seconds)
         let xPercent = settings.x + transition.translateX; let yPercent = settings.y + transition.translateY
         if (directorItem?.type === 'gridScene') {
           const sceneItems = collectionItem ? (directorItem.itemIds ?? []).map((id) => collectionItems.find((candidate) => candidate.id === id)).filter((candidate): candidate is CollectionItem => Boolean(candidate)) : []
-          const index = collectionItem ? sceneItems.findIndex((candidate) => candidate.id === collectionItem.id) : garmentVariantPresets.findIndex((variant) => variant.id === item.variantId)
-          const cell = getGridLayout(collectionItem ? sceneItems.length : 4)[Math.max(0, index)]; xPercent = (cell.x + xPercent / 100 * cell.width) * 100; yPercent = (1 - cell.y - cell.height + yPercent / 100 * cell.height) * 100
+          const sceneCombinationIds = combination ? directorItem.itemIds ?? [] : []
+          const index = collectionItem ? sceneItems.findIndex((candidate) => candidate.id === collectionItem.id) : combination ? sceneCombinationIds.indexOf(combination.id) : 0
+          const cell = getGridLayout(Math.max(1, collectionItem ? sceneItems.length : sceneCombinationIds.length || 1))[Math.max(0, index)]; xPercent = (cell.x + xPercent / 100 * cell.width) * 100; yPercent = (1 - cell.y - cell.height + yPercent / 100 * cell.height) * 100
         }
         const fontSize = composition.width * settings.fontSize / 100; context.save(); context.globalAlpha = clipOpacity(item, seconds) * transition.opacity; context.font = `700 ${fontSize}px ${settings.fontFamily}, sans-serif`; context.textAlign = 'center'; context.textBaseline = 'middle'
         const metrics = context.measureText(settings.text); const paddingX = fontSize * .7; const paddingY = fontSize * .42; const x = composition.width * xPercent / 100; const y = composition.height * yPercent / 100

@@ -1,5 +1,4 @@
 import { directorShotDefinitions } from '../../config/directorShots'
-import { garmentVariantPresets } from '../../config/garmentVariants'
 import { useStudioStore } from '../../store/studioStore'
 import type { CameraViewSettings, LayerTransition, PresentationMode, VariantCameraPreset } from '../../types/studio'
 import { Aperture, Frame, Grid2X2, Repeat2, Rotate3D, RotateCcw, Save, Search, Sparkles, Split } from '../icons'
@@ -19,13 +18,14 @@ export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancel
   onDraftFov: (value: number) => void
   onDraftComposition: (value: [number, number]) => void
 }) {
-  const studio = useStudioStore(); const project = studio.advancedProjects[studio.activeDirectorId]
+  const studio = useStudioStore()
   const collectionMode = studio.campaignMode === 'collection'
   const collectionItem = studio.collectionItems.find((item) => item.id === studio.activeCollectionItemId) ?? studio.collectionItems[0] ?? null
-  const label = collectionMode ? collectionItem?.label : project.labels[studio.activeVariantId]
+  const designCombination = studio.designCombinations.find((item) => item.id === studio.activeDesignCombinationId) ?? studio.designCombinations[0]
+  const label = collectionMode ? collectionItem?.label : designCombination?.label
   const updateLabel = (value: Partial<NonNullable<typeof label>>) => {
     if (collectionMode && collectionItem) studio.updateCollectionItem(collectionItem.id, { label: { ...collectionItem.label, ...value } })
-    else studio.updateVariantLabel(studio.activeVariantId, value)
+    else if (designCombination) studio.updateDesignCombination(designCombination.id, { label: { ...designCombination.label, ...value } })
   }
   const directionMaster = <div className="direction-master"><div className="advanced-section-title"><Rotate3D size={14} /><span>Tipo de director</span></div>
     <SegmentedControl label="Modo de presentación" value={studio.presentationMode} onChange={(value: PresentationMode) => studio.setPresentationMode(value)} options={[{ value: 'grouped', label: 'Agrupado', icon: Grid2X2 }, { value: 'sequential', label: 'Secuencial', icon: Split }, { value: 'mixed', label: 'Mixto', icon: Repeat2 }]} />
@@ -34,8 +34,8 @@ export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancel
     <ResponsiveOptionGrid minWidth={170} className="director-shot-grid">{directorShotDefinitions.map((shot) => { const Icon = shotIcons[shot.id]; return <label key={shot.id} className="collection-option-card"><input type="checkbox" checked={studio.enabledShotTypes.includes(shot.id)} onChange={() => studio.toggleShotType(shot.id)} /><Icon size={16} /><span><strong>{shot.name}</strong><small>{shot.description}</small></span></label> })}</ResponsiveOptionGrid>
     {!studio.enabledShotTypes.length && <p className="advanced-current-variant">Activa al menos una toma para construir la película.</p>}
     <div className="advanced-section-title"><Frame size={14} /><span>{collectionMode ? 'Diseños' : 'Variantes'}</span></div>
-    <div className="advanced-variant-tabs">{collectionMode ? studio.collectionItems.map((item, index) => <button key={item.id} className={studio.activeCollectionItemId === item.id ? 'active' : ''} onClick={() => studio.setActiveCollectionItemId(item.id)}>{index + 1}</button>) : garmentVariantPresets.map((variant, index) => <button key={variant.id} className={studio.activeVariantId === variant.id ? 'active' : ''} onClick={() => studio.setActiveVariantId(variant.id)}>{index + 1}</button>)}</div>
-    <p className="advanced-current-variant">{collectionMode ? collectionItem?.name ?? 'Agrega un diseño a la colección' : garmentVariantPresets.find((variant) => variant.id === studio.activeVariantId)?.label}</p></div>
+    <div className="advanced-variant-tabs">{collectionMode ? studio.collectionItems.map((item, index) => <button key={item.id} className={studio.activeCollectionItemId === item.id ? 'active' : ''} onClick={() => studio.setActiveCollectionItemId(item.id)}>{index + 1}</button>) : studio.designCombinations.map((combination, index) => <button key={combination.id} className={studio.activeDesignCombinationId === combination.id ? 'active' : ''} onClick={() => studio.setActiveDesignCombinationId(combination.id)} disabled={!combination.enabled}>{index + 1}</button>)}</div>
+    <p className="advanced-current-variant">{collectionMode ? collectionItem?.name ?? 'Agrega un diseño a la colección' : designCombination?.name ?? 'Crea una combinación de estampados'}</p></div>
   const directionInspector = <div className="direction-inspector"><div className="advanced-section-title"><Frame size={14} /><span>{collectionMode ? 'Encuadre por diseño' : 'Encuadre por variante'}</span></div>
     <div className="framing-actions">
       {!framing ? <><button className="primary-icon-button" disabled={collectionMode && !collectionItem} onClick={onBeginFraming}><Frame size={14} /> Modo encuadre</button><button disabled={collectionMode && !collectionItem} onClick={onResetFraming} title="Volver al encuadre predeterminado"><RotateCcw size={14} /> Restablecer</button></> : <><button className="save-framing" onClick={() => onSaveFraming()}><Save size={14} /> Guardar</button><button onClick={onCancelFraming}>Cancelar</button></>}

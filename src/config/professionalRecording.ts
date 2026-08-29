@@ -8,6 +8,7 @@ export const PROFESSIONAL_MIN_DURATION = 24
 
 export interface ProfessionalRecordingFrame {
   variantId: GarmentVariantId
+  designCombinationId?: string
   collectionItemId?: string
   rotation: number
   cameraPosition: Vec3

@@ -13,6 +13,7 @@ import type {
   BeatSyncSettings,
   PresentationMode,
   DirectorShotKind,
+  DesignCombination,
 } from '../types/studio'
 import { garmentVariantPresets } from './garmentVariants'
 import type { ProfessionalRecordingFrame } from './professionalRecording'
@@ -21,7 +22,7 @@ import { cueDuration, hasBeatMap, rhythmicProgress } from '../utils/beatSync'
 import { buildPresentationPlan } from '../utils/presentationPlanner'
 import { defaultEnabledShotTypes } from './directorShots'
 
-export const ADVANCED_SCHEMA_VERSION = 8
+export const ADVANCED_SCHEMA_VERSION = 9
 export const directorDefinitions: { id: DirectorId; name: string; description: string; duration: number }[] = [
   { id: 'cinematic', name: 'Presentación cinematográfica', description: 'Variantes, toma hero y acercamientos dirigidos.', duration: 24 },
   { id: 'grid2x2', name: 'Comparativa 2 × 2', description: 'Las cuatro variantes giran simultáneamente.', duration: 12 },
@@ -51,14 +52,20 @@ export function createDefaultCamera(variantId: GarmentVariantId = 'frontLeftSlee
 export function createDefaultLabel(textOrVariant: string | GarmentVariantId = 'frontLeftSleeve'): VariantLabelSettings {
   const text = textOrVariant in variantLabelDefaults ? variantLabelDefaults[textOrVariant as GarmentVariantId] : textOrVariant
   return {
+    enabled: true,
     text,
     fontFamily: 'Manrope',
     fontSize: 3.2,
     color: '#f4f8ff',
     backgroundColor: '#101621',
     backgroundOpacity: 82,
+    backgroundEnabled: true,
     borderColor: '#4f88bd',
+    borderEnabled: true,
+    borderWidth: 1,
     borderRadius: 10,
+    shadowEnabled: true,
+    backdropBlurEnabled: true,
     x: 50,
     y: 8,
     enter: 'fade',
@@ -70,26 +77,30 @@ const clip = (value: Omit<TimelineClip, 'id' | 'sourceStart' | 'fadeIn' | 'fadeO
   id: ids(), sourceStart: 0, fadeIn: .35, fadeOut: .35, ...value,
 })
 
-function variantTracks(presentationMode: PresentationMode, enabledShotTypes: readonly DirectorShotKind[]) {
-  const variantIds = garmentVariantPresets.map((variant) => variant.id)
+function variantTracks(presentationMode: PresentationMode, enabledShotTypes: readonly DirectorShotKind[], combinations: readonly DesignCombination[]) {
+  const planItems = combinations.length ? combinations.filter((item) => item.enabled).map((item) => ({ id: item.id, name: item.name, presetId: item.presetId, label: item.label })) : garmentVariantPresets.map((item) => ({ id: item.id, name: item.label, presetId: item.id, label: createDefaultLabel(item.id) }))
+  const variantIds = planItems.map((item) => item.id)
   const rawPlan = buildPresentationPlan(variantIds, presentationMode, enabledShotTypes)
-  const heroId = garmentVariantPresets[0].id
+  const heroId = planItems[0]?.id
   const plan = { ...rawPlan, scenes: rawPlan.scenes.filter((scene) => scene.kind === 'groupShowcase' || scene.kind === 'itemShowcase' || scene.itemIds[0] === heroId) }
   const directorClips: TimelineClip[] = []
-  const labelClips = new Map<GarmentVariantId, TimelineClip[]>()
+  const labelClips = new Map<string, TimelineClip[]>()
   let cursor = 0
   plan.scenes.forEach((scene) => {
     const duration = scene.kind === 'groupShowcase' ? 8 : scene.kind === 'itemShowcase' ? 3.4 : scene.kind === 'hero' ? 4.4 : 3
     if (scene.kind === 'groupShowcase') directorClips.push(clip({ type: 'gridScene', name: 'Cuatro variantes', start: cursor, duration, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, fadeIn: .5, fadeOut: .5 }))
     else {
-      const variantId = scene.itemIds[0] as GarmentVariantId
-      const names: Record<Exclude<DirectorShotKind, 'groupShowcase'>, string> = { itemShowcase: `Variante ${variantIds.indexOf(variantId) + 1}`, hero: 'Toma hero', detailLarge: 'Acercamiento principal', detailSmall: 'Detalle secundario' }
-      directorClips.push(clip({ type: 'directorShot', name: names[scene.kind], start: cursor, duration, variantId, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds }))
+      const combinationId = scene.itemIds[0]
+      const planItem = planItems.find((item) => item.id === combinationId)
+      const names: Record<Exclude<DirectorShotKind, 'groupShowcase'>, string> = { itemShowcase: planItem?.name ?? `Combinación ${variantIds.indexOf(combinationId) + 1}`, hero: 'Toma hero', detailLarge: 'Acercamiento principal', detailSmall: 'Detalle companion' }
+      directorClips.push(clip({ type: 'directorShot', name: names[scene.kind], start: cursor, duration, variantId: planItem?.presetId, designCombinationId: combinationId, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds }))
     }
     scene.itemIds.forEach((id) => {
-      const variantId = id as GarmentVariantId; const labels = labelClips.get(variantId) ?? []
-      labels.push(clip({ type: 'variantLabel', name: variantLabelDefaults[variantId], start: cursor, duration, variantId, sceneId: scene.id, itemIds: scene.itemIds }))
-      labelClips.set(variantId, labels)
+      const planItem = planItems.find((item) => item.id === id)
+      if (!planItem?.label.enabled) return
+      const labels = labelClips.get(id) ?? []
+      labels.push(clip({ type: 'variantLabel', name: planItem.label.text, start: cursor, duration, variantId: planItem.presetId, designCombinationId: id, sceneId: scene.id, itemIds: scene.itemIds }))
+      labelClips.set(id, labels)
     })
     cursor += duration
   })
@@ -97,15 +108,15 @@ function variantTracks(presentationMode: PresentationMode, enabledShotTypes: rea
   const tracks: TimelineTrack[] = [
     { id: 'background', name: 'Fondo obligatorio', type: 'background', locked: true, hidden: false, clips: [clip({ type: 'background', name: 'Fondo', start: 0, duration, fadeIn: 0, fadeOut: 0 })] },
     { id: 'director', name: 'Director 3D', type: 'director', locked: false, hidden: false, clips: directorClips },
-    ...garmentVariantPresets.map((variant, index) => ({ id: `label-${variant.id}`, name: `Etiqueta ${index + 1}`, type: 'label' as const, locked: false, hidden: false, clips: labelClips.get(variant.id) ?? [] })),
+    ...planItems.filter((item) => item.label.enabled).map((item, index) => ({ id: `label-${item.id}`, name: `Etiqueta ${index + 1}`, type: 'label' as const, locked: false, hidden: false, clips: labelClips.get(item.id) ?? [] })),
   ]
   return { tracks, plan }
 }
 
-export function createDirectorProject(id: DirectorId, overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes, presentationMode: PresentationMode = 'mixed'): DirectorProject {
+export function createDirectorProject(id: DirectorId, overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes, presentationMode: PresentationMode = 'mixed', combinations: readonly DesignCombination[] = []): DirectorProject {
   if (id === 'collection') return createCollectionProject([], overlays, musicAvailable, backgroundAudio)
   const definition = directorDefinitions.find((item) => item.id === id)!
-  const variantPlan = variantTracks(id === 'grid2x2' ? 'grouped' : presentationMode, enabledShotTypes)
+  const variantPlan = variantTracks(id === 'grid2x2' ? 'grouped' : presentationMode, enabledShotTypes, combinations)
   const tracks = variantPlan.tracks
   overlays.forEach((layer) => tracks.push({
     id: `asset-${layer.id}`, name: layer.name, type: layer.type, locked: false, hidden: false,
@@ -258,17 +269,18 @@ export function clipOpacity(item: TimelineClip, time: number) {
   return Math.max(0, Math.min(fadeIn, fadeOut))
 }
 
-export function getAdvancedDirectorFrame(project: DirectorProject, time: number, beatSync?: BeatSyncSettings): ProfessionalRecordingFrame | null {
+export function getAdvancedDirectorFrame(project: DirectorProject, time: number, beatSync?: BeatSyncSettings, combinations: readonly DesignCombination[] = []): ProfessionalRecordingFrame | null {
   if (project.id !== 'cinematic') return null
   const track = project.tracks.find((item) => item.type === 'director' && !item.hidden)
   const item = track?.clips.find((candidate) => time >= candidate.start && time <= candidate.start + candidate.duration)
-  if (!item?.variantId) return null
-  const variant = garmentVariantPresets.find((candidate) => candidate.id === item.variantId) ?? garmentVariantPresets[0]
-  const camera = project.cameras[item.variantId]
+  if (!item?.variantId && !item?.designCombinationId) return null
+  const combination = item.designCombinationId ? combinations.find((candidate) => candidate.id === item.designCombinationId) : null
+  const variant = garmentVariantPresets.find((candidate) => candidate.id === (combination?.presetId ?? item.variantId)) ?? garmentVariantPresets[0]
+  const camera = combination?.camera ?? project.cameras[item.variantId ?? variant.id]
   const rawLocal = Math.min(1, Math.max(0, (time - item.start) / Math.max(.1, item.duration)))
   const local = beatSync && hasBeatMap(beatSync) ? rhythmicProgress(rawLocal, beatSync.style) : rawLocal
   const smooth = local * local * (3 - 2 * local)
-  const placement = item.shotKind === 'detailSmall' ? variant.smallPlacement : variant.largePlacement
+  const placement = item.shotKind === 'detailSmall' ? combination?.companionPlacement ?? variant.smallPlacement : combination?.mainPlacement ?? variant.largePlacement
   const baseFacing = placementFacing[placement]
   const spin = item.shotKind === 'itemShowcase' ? smooth * Math.PI * 2 : Math.sin(local * Math.PI) * (item.shotKind?.startsWith('detail') ? .045 : .09)
   const target: [number, number, number] = [
@@ -280,7 +292,8 @@ export function getAdvancedDirectorFrame(project: DirectorProject, time: number,
   const position = camera.position.map((value, index) => target[index] + (value - camera.target[index]) * distanceScale) as [number, number, number]
   const shotIndex = track?.clips.indexOf(item) ?? 0
   return {
-    variantId: item.variantId,
+    variantId: combination?.presetId ?? item.variantId ?? variant.id,
+    designCombinationId: combination?.id,
     rotation: baseFacing - .28 + spin,
     cameraPosition: position,
     cameraTarget: target,
@@ -322,5 +335,5 @@ export function activeLabelClips(project: DirectorProject, time: number) {
   return project.tracks
     .filter((track) => track.type === 'label' && !track.hidden)
     .flatMap((track) => track.clips)
-    .filter((item) => (item.variantId || item.collectionItemId) && time >= item.start && time <= item.start + item.duration)
+    .filter((item) => (item.variantId || item.designCombinationId || item.collectionItemId) && time >= item.start && time <= item.start + item.duration)
 }

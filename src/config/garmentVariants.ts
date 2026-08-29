@@ -1,4 +1,4 @@
-import type { GarmentVariantId, PrintPlacement, PrintSettings, VariantAsset, VariantAssetRole } from '../types/studio'
+import type { DesignCombination, GarmentVariantId, PrintPlacement, PrintSettings, VariantAsset, VariantAssetRole } from '../types/studio'
 
 export type GarmentVariantPreset = {
   id: GarmentVariantId
@@ -34,5 +34,14 @@ export function createVariantPrints(
   }
   assign(preset.largePlacement, assets.large)
   assign(preset.smallPlacement, assets.small)
+  return result
+}
+
+export function createCombinationPrints(combination: DesignCombination, assets: Record<VariantAssetRole, VariantAsset>) {
+  const result: PrintSettings[] = Object.values(combination.printSettings).map((print) => ({ ...print, url: null, name: null }))
+  const main = result.find((print) => print.placement === combination.mainPlacement)
+  const companion = result.find((print) => print.placement === combination.companionPlacement)
+  if (main) Object.assign(main, { url: assets.large.url, name: assets.large.name, placement: combination.mainPlacement })
+  if (companion) Object.assign(companion, { url: assets.small.url, name: assets.small.name, placement: combination.companionPlacement })
   return result
 }

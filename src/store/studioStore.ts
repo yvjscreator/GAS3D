@@ -1,9 +1,10 @@
 import { create } from 'zustand'
-import type { AlphaPipelineMode, AnimationPreset, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, StudioMode, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
-import { ADVANCED_SCHEMA_VERSION, applyBeatSyncToProject, createCollectionProject, createDirectorProject, getProjectDuration, isCompleteCollectionItem } from '../config/advancedDirectors'
+import type { AlphaPipelineMode, AnimationPreset, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DesignCombination, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, StudioMode, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
+import { ADVANCED_SCHEMA_VERSION, applyBeatSyncToProject, createCollectionProject, createDefaultCamera, createDefaultLabel, createDirectorProject, getProjectDuration, isCompleteCollectionItem } from '../config/advancedDirectors'
 import { defaultCollectionMotionIds, defaultCollectionTransitionIds } from '../config/garmentMotions'
 import { defaultBeatSyncSettings } from '../utils/beatSync'
 import { defaultEnabledShotTypes } from '../config/directorShots'
+import { garmentVariantPresets } from '../config/garmentVariants'
 
 type StudioState = {
   canUndo: boolean; canRedo: boolean; undo: () => void; redo: () => void
@@ -52,6 +53,13 @@ type StudioState = {
   editorMode: EditorMode; setEditorMode: (mode: EditorMode) => void
   alignmentRequest: PrintAlignmentRequest | null; alignPrint: (placement: PrintPlacement, alignment: PrintAlignment, target: EditorMode) => void
   variantAssets: Record<VariantAssetRole, VariantAsset>; setVariantAsset: (role: VariantAssetRole, asset: VariantAsset) => void
+  designCombinations: DesignCombination[]; activeDesignCombinationId: string | null
+  setActiveDesignCombinationId: (id: string | null) => void
+  addDesignCombination: (combination: DesignCombination) => void
+  updateDesignCombination: (id: string, value: Partial<DesignCombination>) => void
+  duplicateDesignCombination: (id: string) => void
+  removeDesignCombination: (id: string) => void
+  moveDesignCombination: (id: string, direction: -1 | 1) => void
   activeVariantId: GarmentVariantId; setActiveVariantId: (id: GarmentVariantId) => void
   background: BackgroundSettings; setBackground: (value: Partial<BackgroundSettings>) => void
   cameraView: CameraViewSettings; setCameraView: (value: CameraViewSettings) => void
@@ -81,7 +89,7 @@ type StudioState = {
 type HistorySnapshot = Pick<StudioState,
   'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'collectionMotionIds' | 'collectionTransitionIds' | 'advancedProjects' |
   'garmentColor' | 'prints' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' |
-  'variantAssets' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' |
+  'variantAssets' | 'designCombinations' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' |
   'systemLayerTimings' | 'format' | 'exportQuality' | 'animation' | 'duration'
 >
 
@@ -110,6 +118,7 @@ const captureHistory = (state: StudioState): HistorySnapshot => cloneHistory({
   variantPrintSettings: state.variantPrintSettings,
   variantZoneAdjustments: state.variantZoneAdjustments,
   variantAssets: state.variantAssets,
+  designCombinations: state.designCombinations,
   background: state.background,
   cameraView: state.cameraView,
   music: state.music,
@@ -184,7 +193,7 @@ const defaultVariantAssets: Record<VariantAssetRole, VariantAsset> = { large: em
 const variantIds: GarmentVariantId[] = ['frontLeftSleeve', 'frontBack', 'backRightSleeve', 'backChest']
 const STORAGE_KEY = 'garment-ad-studio:settings:v1'
 const defaultLayerTiming = (duration = 8): LayerTiming => ({ start: 0, duration, enter: 'none', exit: 'none' })
-type PersistedState = Pick<StudioState, 'studioMode' | 'campaignMode' | 'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'activeCollectionItemId' | 'activeCollectionAssetRole' | 'collectionMotionIds' | 'collectionTransitionIds' | 'activeDirectorId' | 'advancedProjects' | 'garmentColor' | 'activePrintPlacement' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' | 'editorMode' | 'variantAssets' | 'activeVariantId' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' | 'selectedLayerId' | 'systemLayerTimings' | 'format' | 'exportQuality' | 'animation' | 'duration' | 'targetRotation'> & {
+type PersistedState = Pick<StudioState, 'studioMode' | 'campaignMode' | 'presentationMode' | 'enabledShotTypes' | 'assetQualityProfile' | 'alphaPipelineMode' | 'collectionItems' | 'activeCollectionItemId' | 'activeCollectionAssetRole' | 'collectionMotionIds' | 'collectionTransitionIds' | 'activeDirectorId' | 'advancedProjects' | 'garmentColor' | 'activePrintPlacement' | 'printZoneAdjustments' | 'variantPrintSettings' | 'variantZoneAdjustments' | 'editorMode' | 'variantAssets' | 'designCombinations' | 'activeDesignCombinationId' | 'activeVariantId' | 'background' | 'cameraView' | 'music' | 'beatSync' | 'overlayLayers' | 'layerOrder' | 'selectedLayerId' | 'systemLayerTimings' | 'format' | 'exportQuality' | 'animation' | 'duration' | 'targetRotation'> & {
   schemaVersion: number
   prints: Record<PrintPlacement, PrintSettings>
   /** Compatibility with sessions saved before explicit editor modes existed. */
@@ -209,6 +218,7 @@ const initialCollectionItems = (persisted.collectionItems ?? []).map((item) => {
     companionPlacement,
     companionPrint: { ...createPrint(companionPlacement), ...(item.companionPrint ?? {}), placement: companionPlacement, url: null },
     companionZoneAdjustment: { ...createZoneAdjustment(), ...(item.companionZoneAdjustment ?? {}) },
+    label: { ...createDefaultLabel(item.name), ...(item.label ?? {}) },
   }
 })
 const initialCollectionMotionIds = persisted.collectionMotionIds?.filter((id) => defaultCollectionMotionIds.includes(id)) ?? defaultCollectionMotionIds
@@ -219,8 +229,37 @@ const initialOverlayLayers = (persisted.overlayLayers ?? []).map((layer) => laye
 const initialLayerOrder = (persisted.layerOrder ?? ['garment']).filter((id, index, order) => id !== 'background' && order.indexOf(id) === index && (id === 'garment' || initialOverlayLayers.some((layer) => layer.id === id)))
 if (!initialLayerOrder.includes('garment')) initialLayerOrder.unshift('garment')
 const persistedProjects = persisted.advancedProjects
+const makeCombinationId = () => globalThis.crypto?.randomUUID?.() ?? `combination-${Date.now()}-${Math.random().toString(16).slice(2)}`
+const normalizeCombination = (combination: DesignCombination, index: number): DesignCombination => ({
+  ...combination,
+  order: index,
+  garmentColor: combination.garmentColor ?? persisted.garmentColor ?? '#050505',
+  printSettings: Object.fromEntries(Object.entries(initialPrints).map(([placement, value]) => [placement, { ...value, ...(combination.printSettings?.[placement as PrintPlacement] ?? {}), placement, url: null }])) as Record<PrintPlacement, PrintSettings>,
+  zoneAdjustments: Object.fromEntries(Object.entries(initialZones).map(([placement, value]) => [placement, { ...value, ...(combination.zoneAdjustments?.[placement as PrintPlacement] ?? {}) }])) as Record<PrintPlacement, PrintZoneAdjustment>,
+  camera: { ...createDefaultCamera(combination.presetId), ...(combination.camera ?? {}) },
+  label: { ...createDefaultLabel(combination.name), ...(combination.label ?? {}) },
+})
+const migratedCombinations = garmentVariantPresets.map((preset, index) => normalizeCombination({
+  id: preset.id,
+  presetId: preset.id,
+  name: preset.label,
+  enabled: true,
+  order: index,
+  mainPlacement: preset.largePlacement,
+  companionPlacement: preset.smallPlacement,
+  focusRole: preset.focusPlacement === preset.smallPlacement ? 'companion' : 'main',
+  garmentColor: persisted.garmentColor ?? '#050505',
+  printSettings: initialVariantPrintSettings[preset.id],
+  zoneAdjustments: initialVariantZones[preset.id],
+  camera: persistedProjects?.cinematic?.cameras[preset.id] ?? createDefaultCamera(preset.id),
+  label: { ...createDefaultLabel(preset.id), ...(persistedProjects?.cinematic?.labels[preset.id] ?? {}) },
+}, index))
+const initialDesignCombinations = (persisted.designCombinations?.length ? persisted.designCombinations : migratedCombinations).map(normalizeCombination)
+const initialActiveDesignCombinationId = persisted.activeDesignCombinationId && initialDesignCombinations.some((item) => item.id === persisted.activeDesignCombinationId)
+  ? persisted.activeDesignCombinationId
+  : initialDesignCombinations.find((item) => item.enabled)?.id ?? initialDesignCombinations[0]?.id ?? null
 const createSeededProject = (id: DirectorId) => {
-  const project = applyBeatSyncToProject(createDirectorProject(id, initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialEnabledShotTypes, initialPresentationMode), initialBeatSync)
+  const project = applyBeatSyncToProject(createDirectorProject(id, initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialEnabledShotTypes, initialPresentationMode, initialDesignCombinations), initialBeatSync)
   const previous = persistedProjects?.[id]
   if (previous) return {
     ...project,
@@ -256,7 +295,7 @@ const syncProjectAssets = (project: DirectorProject, overlays: StageOverlayLayer
 const rebuildCollectionProject = (state: StudioState, items: CollectionItem[], motions = state.collectionMotionIds, transitions = state.collectionTransitionIds, beatSync = state.beatSync, presentationMode = state.presentationMode, enabledShotTypes = state.enabledShotTypes) => createCollectionProject(items.filter(isCompleteCollectionItem), state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), motions, transitions, state.advancedProjects.collection, beatSync, presentationMode, enabledShotTypes)
 const rebuildVariantProject = (state: StudioState, id: 'cinematic' | 'grid2x2', enabledShotTypes = state.enabledShotTypes, presentationMode = state.presentationMode) => {
   const current = state.advancedProjects[id]
-  const next = applyBeatSyncToProject(createDirectorProject(id, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), enabledShotTypes, presentationMode), state.beatSync)
+  const next = applyBeatSyncToProject(createDirectorProject(id, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), enabledShotTypes, presentationMode, state.designCombinations), state.beatSync)
   return { ...next, cameras: current.cameras, labels: current.labels, zoom: current.zoom, playhead: Math.min(current.playhead, next.duration) }
 }
 export const useStudioStore = create<StudioState>((set) => ({
@@ -337,7 +376,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   initializeAdvancedProject: (id) => set((state) => {
     const directorId = id ?? state.activeDirectorId
     if (state.advancedProjects[directorId]?.initialized) return state
-    return { advancedProjects: { ...state.advancedProjects, [directorId]: createDirectorProject(directorId, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), state.enabledShotTypes, state.presentationMode) } }
+    return { advancedProjects: { ...state.advancedProjects, [directorId]: createDirectorProject(directorId, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), state.enabledShotTypes, state.presentationMode, state.designCombinations) } }
   }),
   setAdvancedPlayhead: (time) => { historyApplying = true; set((state) => {
     const project = state.advancedProjects[state.activeDirectorId]
@@ -426,6 +465,41 @@ export const useStudioStore = create<StudioState>((set) => ({
   alignPrint: (placement, alignment, target) => set((state) => ({ alignmentRequest: { placement, alignment, target, id: (state.alignmentRequest?.id ?? 0) + 1 } })),
   variantAssets: initialVariantAssets,
   setVariantAsset: (role, asset) => set((state) => ({ variantAssets: { ...state.variantAssets, [role]: asset } })),
+  designCombinations: initialDesignCombinations,
+  activeDesignCombinationId: initialActiveDesignCombinationId,
+  setActiveDesignCombinationId: (activeDesignCombinationId) => set((state) => {
+    const combination = state.designCombinations.find((item) => item.id === activeDesignCombinationId)
+    return { activeDesignCombinationId, ...(combination?.presetId ? { activeVariantId: combination.presetId } : {}), ...(combination ? { activePrintPlacement: combination.focusRole === 'main' ? combination.mainPlacement : combination.companionPlacement } : {}) }
+  }),
+  addDesignCombination: (combination) => set((state) => {
+    const designCombinations = [...state.designCombinations, normalizeCombination({ ...combination, id: combination.id || makeCombinationId() }, state.designCombinations.length)]
+    const nextState = { ...state, designCombinations }
+    return { designCombinations, activeDesignCombinationId: designCombinations.at(-1)!.id, advancedProjects: { ...state.advancedProjects, cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped') } }
+  }),
+  updateDesignCombination: (id, value) => set((state) => {
+    const designCombinations = state.designCombinations.map((item) => item.id === id ? normalizeCombination({ ...item, ...value, printSettings: value.printSettings ?? item.printSettings, zoneAdjustments: value.zoneAdjustments ?? item.zoneAdjustments, camera: value.camera ? { ...item.camera, ...value.camera } : item.camera, label: value.label ? { ...item.label, ...value.label } : item.label }, item.order) : item)
+    const activeDesignCombinationId = designCombinations.some((item) => item.id === state.activeDesignCombinationId && item.enabled) ? state.activeDesignCombinationId : designCombinations.find((item) => item.enabled)?.id ?? designCombinations[0]?.id ?? null
+    const nextState = { ...state, designCombinations }
+    return { designCombinations, activeDesignCombinationId, advancedProjects: { ...state.advancedProjects, cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped') } }
+  }),
+  duplicateDesignCombination: (id) => set((state) => {
+    const source = state.designCombinations.find((item) => item.id === id); if (!source) return state
+    const copy = normalizeCombination({ ...cloneHistory(source), id: makeCombinationId(), presetId: undefined, name: `${source.name} copia`, enabled: true }, state.designCombinations.length)
+    const designCombinations = [...state.designCombinations, copy]; const nextState = { ...state, designCombinations }
+    return { designCombinations, activeDesignCombinationId: copy.id, advancedProjects: { ...state.advancedProjects, cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped') } }
+  }),
+  removeDesignCombination: (id) => set((state) => {
+    const designCombinations = state.designCombinations.filter((item) => item.id !== id).map((item, order) => ({ ...item, order })); if (!designCombinations.length) return state
+    const nextState = { ...state, designCombinations }
+    return { designCombinations, activeDesignCombinationId: state.activeDesignCombinationId === id ? designCombinations.find((item) => item.enabled)?.id ?? designCombinations[0].id : state.activeDesignCombinationId, advancedProjects: { ...state.advancedProjects, cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped') } }
+  }),
+  moveDesignCombination: (id, direction) => set((state) => {
+    const from = state.designCombinations.findIndex((item) => item.id === id); const to = from + direction
+    if (from < 0 || to < 0 || to >= state.designCombinations.length) return state
+    const designCombinations = [...state.designCombinations]; [designCombinations[from], designCombinations[to]] = [designCombinations[to], designCombinations[from]]
+    const ordered = designCombinations.map((item, order) => ({ ...item, order })); const nextState = { ...state, designCombinations: ordered }
+    return { designCombinations: ordered, advancedProjects: { ...state.advancedProjects, cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped') } }
+  }),
   activeVariantId: persisted.activeVariantId ?? 'frontLeftSleeve', setActiveVariantId: (activeVariantId) => set({ activeVariantId }),
   background: { type: 'color', color: '#1b1d24', name: null, blur: 0, darkness: 15, ambilight: true, ambilightStrength: 70, ambilightReach: 55, videoPaused: false, videoAudioEnabled: false, videoVolume: 80, ...persisted.background, url: null },
   setBackground: (value) => set((state) => ({ background: { ...state.background, ...value } })),
@@ -504,7 +578,7 @@ useStudioStore.subscribe((state) => {
       schemaVersion: ADVANCED_SCHEMA_VERSION, studioMode: state.studioMode, campaignMode: state.campaignMode, presentationMode: state.presentationMode, enabledShotTypes: state.enabledShotTypes, assetQualityProfile: state.assetQualityProfile, alphaPipelineMode: state.alphaPipelineMode, collectionItems: state.collectionItems.map((item) => ({ ...item, asset: { ...item.asset, url: null, thumbnailUrl: null }, print: { ...item.print, url: null }, companionAsset: { ...item.companionAsset, url: null, thumbnailUrl: null }, companionPrint: { ...item.companionPrint, url: null } })), activeCollectionItemId: state.activeCollectionItemId, activeCollectionAssetRole: state.activeCollectionAssetRole, collectionMotionIds: state.collectionMotionIds, collectionTransitionIds: state.collectionTransitionIds, activeDirectorId: state.activeDirectorId, advancedProjects: state.advancedProjects,
       garmentColor: state.garmentColor, prints, activePrintPlacement: state.activePrintPlacement,
       printZoneAdjustments: state.printZoneAdjustments, variantPrintSettings, variantZoneAdjustments: state.variantZoneAdjustments, editorMode: state.editorMode,
-      variantAssets: { large: { ...state.variantAssets.large, url: null, thumbnailUrl: null }, small: { ...state.variantAssets.small, url: null, thumbnailUrl: null } }, activeVariantId: state.activeVariantId,
+      variantAssets: { large: { ...state.variantAssets.large, url: null, thumbnailUrl: null }, small: { ...state.variantAssets.small, url: null, thumbnailUrl: null } }, designCombinations: state.designCombinations.map((item) => ({ ...item, printSettings: Object.fromEntries(Object.entries(item.printSettings).map(([placement, print]) => [placement, { ...print, url: null }])) as Record<PrintPlacement, PrintSettings> })), activeDesignCombinationId: state.activeDesignCombinationId, activeVariantId: state.activeVariantId,
       background: { ...state.background, url: null }, cameraView: state.cameraView, music: { ...state.music, url: null }, beatSync: state.beatSync,
       overlayLayers: state.overlayLayers.map((layer) => layer.type === 'image' ? { ...layer, url: null } : layer), layerOrder: state.layerOrder,
       selectedLayerId: state.selectedLayerId, systemLayerTimings: state.systemLayerTimings,

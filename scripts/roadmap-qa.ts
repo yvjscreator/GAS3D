@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { buildPresentationGroups, buildPresentationPlan } from '../src/utils/presentationPlanner'
-import { applyBeatSyncToProject, createCollectionProject, createDirectorProject } from '../src/config/advancedDirectors'
+import { applyBeatSyncToProject, createCollectionProject, createDefaultLabel, createDirectorProject } from '../src/config/advancedDirectors'
 import { buildProfessionalShotSequence, getProfessionalDuration } from '../src/config/professionalRecording'
 import { defaultBeatSyncSettings } from '../src/utils/beatSync'
 import { buildRecordingResourceManifest } from '../src/utils/recordingPreflight'
 import { evaluateBackgroundFrame, evaluateDirectorFrame } from '../src/utils/stageTimeline'
-import type { CollectionItem, DirectorShotKind, PresentationMode } from '../src/types/studio'
+import type { CollectionItem, DesignCombination, DirectorShotKind, PresentationMode } from '../src/types/studio'
 
 let assertions = 0
 const check = (condition: unknown, message: string) => { assertions += 1; assert.ok(condition, message) }
@@ -46,6 +46,21 @@ const noHeroProject = createDirectorProject('cinematic', [], false, false, witho
 const noHeroClips = noHeroProject.tracks.find((track) => track.type === 'director')?.clips ?? []
 check(noHeroClips.every((clip) => clip.shotKind !== 'hero'), 'Desactivar Hero no lo eliminó de la timeline')
 equal(noHeroClips.length, 7, 'Desactivar Hero no redujo la duración lógica del plan')
+
+const dynamicCombinations = Array.from({ length: 4 }, (_, index) => ({
+  id: `combination-${index + 1}`,
+  name: `Combinación ${index + 1}`,
+  enabled: index !== 1,
+  order: index,
+  presetId: index < 2 ? 'frontLeftSleeve' : undefined,
+  label: createDefaultLabel(`Combinación ${index + 1}`),
+})) as DesignCombination[]
+const dynamicProject = createDirectorProject('cinematic', [], false, false, ['groupShowcase', 'itemShowcase'], 'mixed', dynamicCombinations)
+const dynamicDirectorClips = dynamicProject.tracks.find((track) => track.type === 'director')?.clips ?? []
+equal(dynamicProject.presentationPlan?.itemIds, ['combination-1', 'combination-3', 'combination-4'], 'El director dinámico no respetó combinaciones habilitadas y su orden')
+check(dynamicDirectorClips.every((item) => !item.itemIds?.includes('combination-2')), 'Una combinación deshabilitada llegó a la película')
+check(dynamicDirectorClips.some((item) => item.designCombinationId === 'combination-3'), 'Las tomas individuales no conservan el ID dinámico')
+equal(dynamicProject.tracks.filter((track) => track.type === 'label').length, 3, 'No se creó una pista de etiqueta por combinación habilitada')
 
 equal(buildProfessionalShotSequence('frontLeftSleeve', allShots).length, 7, 'La secuencia básica predeterminada debe derivar siete tomas')
 equal(buildProfessionalShotSequence('frontLeftSleeve', withoutHero).length, 6, 'La secuencia básica no reaccionó al quitar Hero')

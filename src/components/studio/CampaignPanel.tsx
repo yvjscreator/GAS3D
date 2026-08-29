@@ -1,12 +1,12 @@
 import { useRef, useState, type DragEvent } from 'react'
 import { createDefaultCamera, createDefaultLabel, isCompleteCollectionItem, isValidCollectionSize } from '../../config/advancedDirectors'
-import { collectionTransitionDefinitions, garmentMotionDefinitions, placementFacing } from '../../config/garmentMotions'
+import { placementFacing } from '../../config/garmentMotions'
 import { useStudioStore } from '../../store/studioStore'
 import type { CampaignMode, CollectionAssetRole, CollectionItem, PrintPlacement, VariantAsset } from '../../types/studio'
 import { collectionMediaKey, removePreparedMedia, storePreparedMedia } from '../../utils/mediaStorage'
 import { prepareVideoAsset } from '../../utils/mediaProcessor'
-import { ArrowLeft, ArrowRight, ArrowUp, Blend, ChevronDown, ChevronUp, Grid2X2, GripVertical, ImagePlus, Images, Orbit, Plus, Repeat2, RotateCcw, RotateCw, Search, Split, Trash2, Zap, ZoomIn } from '../icons'
-import { IconButton, InspectorSection, MasterDetailLayout, ResponsiveOptionGrid, SegmentedControl } from '../ui'
+import { ChevronDown, ChevronUp, Grid2X2, GripVertical, ImagePlus, Images, Plus, Split, Trash2 } from '../icons'
+import { IconButton, MasterDetailLayout, SegmentedControl } from '../ui'
 import { VariantsPanel } from './VariantsPanel'
 import { buildPresentationGroups } from '../../utils/presentationPlanner'
 
@@ -14,8 +14,6 @@ const placements: { id: PrintPlacement; label: string }[] = [
   { id: 'frontCenter', label: 'Frente' }, { id: 'backCenter', label: 'Espalda' }, { id: 'frontChest', label: 'Pecho' },
   { id: 'leftSleeve', label: 'Manga izquierda' }, { id: 'rightSleeve', label: 'Manga derecha' },
 ]
-const transitionIcons = { fade: Blend, slideLeft: ArrowLeft, slideRight: ArrowRight, slideUp: ArrowUp, zoom: ZoomIn }
-const motionIcons = { turntableRight: RotateCw, turntableLeft: RotateCcw, whipCompanion: Zap, heroArc: Orbit, detailPush: Search, companionReveal: Repeat2 }
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `collection-${Date.now()}-${Math.random().toString(16).slice(2)}`
 const cleanName = (name: string) => name.replace(/\.[^.]+$/, '')
 const emptyAsset = (): VariantAsset => ({ url: null, name: null, width: 0, height: 0 })
@@ -73,14 +71,14 @@ export function CampaignPanel() {
   const activePlacement = active ? role === 'main' ? active.placement : active.companionPlacement : null
   const activeAsset = active ? role === 'main' ? active.asset : active.companionAsset : null
   const updatePrint = (value: Partial<NonNullable<typeof activePrint>>) => { if (!active || !activePrint) return; studio.updateCollectionItem(active.id, role === 'main' ? { print: { ...active.print, ...value } } : { companionPrint: { ...active.companionPrint, ...value } }) }
-  const updatePlacement = (placement: PrintPlacement) => {
+  const updatePlacement = (targetRole: CollectionAssetRole, placement: PrintPlacement) => {
     if (!active) return
-    if (role === 'main') studio.updateCollectionItem(active.id, { placement, print: { ...active.print, placement } })
+    if (targetRole === 'main') studio.updateCollectionItem(active.id, { placement, print: { ...active.print, placement } })
     else studio.updateCollectionItem(active.id, { companionPlacement: placement, companionPrint: { ...active.companionPrint, placement } })
-    studio.setActivePrintPlacement(placement); studio.setTargetRotation(placementFacing[placement])
+    if (targetRole === role) { studio.setActivePrintPlacement(placement); studio.setTargetRotation(placementFacing[placement]) }
   }
   return <section className="panel campaign-panel"><h2>Tipo de campaña</h2>
-    <SegmentedControl label="Tipo de campaña" value={studio.campaignMode} onChange={(value: CampaignMode) => studio.setCampaignMode(value)} options={[{ value: 'variants', label: 'Variantes', icon: Split }, { value: 'collection', label: 'Colección', icon: Images }]} />
+    <SegmentedControl label="Tipo de campaña" value={studio.campaignMode} onChange={(value: CampaignMode) => studio.setCampaignMode(value)} options={[{ value: 'variants', label: 'Diseño único', icon: Split }, { value: 'collection', label: 'Colección', icon: Images }]} />
     {studio.campaignMode === 'variants' ? <div className="campaign-variants"><VariantsPanel /></div> : <>
       <input ref={uploadInput} hidden type="file" accept="image/png,image/webp" onChange={(event) => { const target = pendingUpload.current; if (target) void uploadAsset(target.item, target.role, event.target.files?.[0]); pendingUpload.current = null; event.currentTarget.value = '' }} />
       <div className="collection-toolbar"><div className={validSize ? 'collection-summary valid' : 'collection-summary'}><span>{completeItems.length} pares completos</span><strong>{presentationGroups.length} {presentationGroups.length === 1 ? 'grupo' : 'grupos'} · {presentationGroups.map((group) => group.length).join(' + ') || '—'}</strong></div><button className="upload-button collection-add" onClick={addPair}><Plus size={14} /> Agregar par</button></div>
@@ -97,11 +95,9 @@ export function CampaignPanel() {
         <SegmentedControl label="Arte del par" value={role} onChange={(value: CollectionAssetRole) => selectItem(active, value)} options={[{ value: 'main', label: 'Principal', icon: ImagePlus }, { value: 'companion', label: 'Companion', icon: Grid2X2 }]} />
         <button className={`collection-upload-slot ${role}`} onClick={() => requestUpload(active, role)}>{activeAsset.url ? <img src={activeAsset.thumbnailUrl || activeAsset.url} alt="" /> : <ImagePlus size={24} />}<span><strong>{activeAsset.name ?? (role === 'main' ? 'Cargar estampado principal' : 'Cargar companion')}</strong><small>PNG o WebP transparente · clic para {activeAsset.name ? 'reemplazar' : 'cargar'}</small></span></button>
         <SegmentedControl label="Modo de edición" value={studio.editorMode} onChange={studio.setEditorMode} options={[{ value: 'design', label: 'Mover diseño', icon: ImagePlus }, { value: 'zone', label: 'Configurar zona', icon: Grid2X2 }]} />
-        <div className="collection-inspector-fields"><label className="layer-field collection-name-field">Nombre del producto<input value={active.name} onChange={(event) => studio.updateCollectionItem(active.id, { name: event.target.value, label: { ...active.label, text: event.target.value } })} /></label><label className="select-row">Zona de esta arte<select value={activePlacement} onChange={(event) => updatePlacement(event.target.value as PrintPlacement)}>{placements.map((placement) => <option key={placement.id} value={placement.id} disabled={role === 'main' ? placement.id === active.companionPlacement : placement.id === active.placement}>{placement.label}</option>)}</select></label><label className="collection-color-field">Color de la remera<input type="color" value={active.garmentColor} onChange={(event) => studio.updateCollectionItem(active.id, { garmentColor: event.target.value })} /></label></div>
+        <div className="collection-inspector-fields"><label className="layer-field collection-name-field">Nombre del producto<input value={active.name} onChange={(event) => studio.updateCollectionItem(active.id, { name: event.target.value, label: { ...active.label, text: event.target.value } })} /></label><div className="collection-placement-pair"><label className="select-row">Ubicación del Principal<select value={active.placement} onChange={(event) => updatePlacement('main', event.target.value as PrintPlacement)}>{placements.map((placement) => <option key={placement.id} value={placement.id} disabled={placement.id === active.companionPlacement}>{placement.label}</option>)}</select></label><label className="select-row">Ubicación del Companion<select value={active.companionPlacement} onChange={(event) => updatePlacement('companion', event.target.value as PrintPlacement)}>{placements.map((placement) => <option key={placement.id} value={placement.id} disabled={placement.id === active.placement}>{placement.label}</option>)}</select></label></div><label className="collection-color-field">Color de la remera<input type="color" value={active.garmentColor} onChange={(event) => studio.updateCollectionItem(active.id, { garmentColor: event.target.value })} /></label></div>
         <label className="range-row collection-scale-field">Tamaño<output>{activePrint.scale.toFixed(2)}×</output><input type="range" min=".2" max="2.5" step=".01" value={activePrint.scale} onChange={(event) => updatePrint({ scale: Number(event.target.value) })} /></label><div className="layer-inline"><label>Horizontal<input type="number" step=".01" value={activePrint.x} onChange={(event) => updatePrint({ x: Number(event.target.value) })} /></label><label>Vertical<input type="number" step=".01" value={activePrint.y} onChange={(event) => updatePrint({ y: Number(event.target.value) })} /></label></div>
       </div> : <div className="collection-inspector-empty"><Images size={28} /><strong>Selecciona una prenda</strong><span>Su configuración aparecerá aquí.</span></div>} />
-      <div className="collection-director-options"><InspectorSection title="Transiciones entre tomas"><p>Selecciona cuáles puede utilizar el montaje final.</p><ResponsiveOptionGrid minWidth={150}>{collectionTransitionDefinitions.map((transition) => { const Icon = transitionIcons[transition.id]; return <label key={transition.id} className="collection-option-card"><input type="checkbox" checked={studio.collectionTransitionIds.includes(transition.id)} onChange={() => studio.toggleCollectionTransition(transition.id)} /><Icon size={17} /><span><strong>{transition.name}</strong><small>{transition.description}</small></span></label> })}</ResponsiveOptionGrid>{!studio.collectionTransitionIds.length && <em>El director utilizará cortes limpios.</em>}</InspectorSection>
-      <InspectorSection title="Movimientos 3D"><p>El director alternará solamente los estilos seleccionados.</p><ResponsiveOptionGrid minWidth={175}>{garmentMotionDefinitions.map((motion) => { const Icon = motionIcons[motion.id]; return <label key={motion.id} className="collection-option-card"><input type="checkbox" checked={studio.collectionMotionIds.includes(motion.id)} onChange={() => studio.toggleCollectionMotion(motion.id)} /><Icon size={17} /><span><strong>{motion.name}</strong><small>{motion.description}</small></span></label> })}</ResponsiveOptionGrid>{!studio.collectionMotionIds.length && <em>Se utilizará el turntable derecho como respaldo.</em>}</InspectorSection></div>
     </>}
   </section>
 }

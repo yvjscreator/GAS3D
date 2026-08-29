@@ -22,6 +22,7 @@ export type PresentationSceneKind = DirectorShotKind
 export type BeatSyncSource = 'music' | 'background'
 export type BeatSyncStyle = 'elegant' | 'dynamic' | 'impact'
 export type CollectionAssetRole = 'main' | 'companion'
+export type DesignAssetRole = 'main' | 'companion'
 export type DirectorId = 'cinematic' | 'grid2x2' | 'collection'
 export type TimelineTrackType = 'background' | 'director' | 'label' | 'image' | 'text' | 'music' | 'backgroundAudio'
 export type TimelineClipType = 'background' | 'directorShot' | 'gridScene' | 'variantLabel' | 'image' | 'text' | 'music' | 'backgroundAudio'
@@ -105,14 +106,20 @@ export interface VariantCameraPreset extends CameraViewSettings {
 }
 
 export interface VariantLabelSettings {
+  enabled: boolean
   text: string
   fontFamily: string
   fontSize: number
   color: string
   backgroundColor: string
   backgroundOpacity: number
+  backgroundEnabled: boolean
   borderColor: string
+  borderEnabled: boolean
+  borderWidth: number
   borderRadius: number
+  shadowEnabled: boolean
+  backdropBlurEnabled: boolean
   x: number
   y: number
   enter: LayerTransition
@@ -130,6 +137,7 @@ export interface TimelineClip {
   fadeOut: number
   assetId?: string
   variantId?: GarmentVariantId
+  designCombinationId?: string
   collectionItemId?: string
   sceneId?: string
   itemIds?: string[]
@@ -182,6 +190,22 @@ export interface CollectionItem {
   companionPlacement: PrintPlacement
   companionPrint: PrintSettings
   companionZoneAdjustment: PrintZoneAdjustment
+  camera: VariantCameraPreset
+  label: VariantLabelSettings
+}
+
+export interface DesignCombination {
+  id: string
+  presetId?: GarmentVariantId
+  name: string
+  enabled: boolean
+  order: number
+  mainPlacement: PrintPlacement
+  companionPlacement: PrintPlacement
+  focusRole: DesignAssetRole
+  garmentColor: string
+  printSettings: Record<PrintPlacement, PrintSettings>
+  zoneAdjustments: Record<PrintPlacement, PrintZoneAdjustment>
   camera: VariantCameraPreset
   label: VariantLabelSettings
 }

@@ -6,10 +6,9 @@ import type { BackgroundSettings, FormatId, LayerTiming, RecordingStatus, StageL
 import type { GarmentViewerProps } from '../viewer/GarmentViewer'
 import { evaluateBackgroundFrame, evaluateDirectorFrame, evaluateLayerFrame, type StagePlaybackState } from '../../utils/stageTimeline'
 import type { ProfessionalRecordingFrame } from '../../config/professionalRecording'
-import type { CollectionItem, DirectorProject, GarmentVariantId, VariantLabelSettings } from '../../types/studio'
+import type { CollectionItem, DesignCombination, DirectorProject, GarmentVariantId, VariantLabelSettings } from '../../types/studio'
 import { activeAssetClips, activeClip, activeLabelClips, clipOpacity } from '../../config/advancedDirectors'
 import { AdvancedGridViewer, type GridVariantView } from '../viewer/AdvancedGridViewer'
-import { garmentVariantPresets } from '../../config/garmentVariants'
 import { getGridLayout } from '../../utils/gridLayout'
 
 type Props = {
@@ -32,6 +31,7 @@ type Props = {
   advancedGridViews?: GridVariantView[] | null
   playbackState?: StagePlaybackState
   collectionItems?: CollectionItem[]
+  designCombinations?: DesignCombination[]
   onSelectLayer: (id: StageLayerId) => void
   onUpdateOverlay: (id: string, value: Partial<StageOverlayLayer>) => void
 }
@@ -41,7 +41,7 @@ const frameStyle = (timing: LayerTiming, time: number, zIndex: number, opacityMu
   return { zIndex, opacity: frame.opacity * opacityMultiplier, visibility: frame.visible ? 'visible' : 'hidden', transform: `translate(${frame.translateX}%, ${frame.translateY}%) scale(${frame.scale})` }
 }
 
-export function AdStage({ format, background, viewer, onCanvasReady, mediaRef, overlayLayers, layerOrder, selectedLayerId, systemLayerTimings, duration, playbackKey, recordingStatus, recordingElapsed, professionalFrame = null, advancedProject = null, advancedTime, advancedGridViews = null, playbackState = 'editing', collectionItems = [], onSelectLayer, onUpdateOverlay }: Props) {
+export function AdStage({ format, background, viewer, onCanvasReady, mediaRef, overlayLayers, layerOrder, selectedLayerId, systemLayerTimings, duration, playbackKey, recordingStatus, recordingElapsed, professionalFrame = null, advancedProject = null, advancedTime, advancedGridViews = null, playbackState = 'editing', collectionItems = [], designCombinations = [], onSelectLayer, onUpdateOverlay }: Props) {
   const ratio = exportPresets[format].ratio; const frameRef = useRef<HTMLDivElement>(null)
   const [previewTime, setPreviewTime] = useState(.72); const [playing, setPlaying] = useState(false)
   const selectedTiming = selectedLayerId === 'background' || selectedLayerId === 'garment' ? systemLayerTimings[selectedLayerId] : overlayLayers.find((layer) => layer.id === selectedLayerId)?.timing
@@ -87,11 +87,12 @@ export function AdStage({ format, background, viewer, onCanvasReady, mediaRef, o
   const labelClips = advancedProject && playbackState !== 'editing' ? activeLabelClips(advancedProject, time) : []
   const backgroundAudioClips = advancedProject ? activeAssetClips(advancedProject, 'background-audio', time) : []
   const stageBackground = advancedProject ? { ...background, videoPaused: background.videoPaused || playbackState === 'scrubbing', videoAudioEnabled: background.videoAudioEnabled && backgroundAudioClips.length > 0, videoVolume: background.videoVolume * (backgroundAudioClips.length ? Math.max(...backgroundAudioClips.map((item) => clipOpacity(item, time))) : 0) } : background
-  const labelPosition = (variantId: GarmentVariantId | undefined, collectionItemId: string | undefined, x: number, y: number) => {
+  const labelPosition = (variantId: GarmentVariantId | undefined, collectionItemId: string | undefined, designCombinationId: string | undefined, x: number, y: number) => {
     if (!gridActive) return { x, y }
     const sceneItems = collectionItemId ? (directorClip?.itemIds ?? []).map((id) => collectionItems.find((item) => item.id === id)).filter((item): item is CollectionItem => Boolean(item)) : []
-    const index = collectionItemId ? sceneItems.findIndex((item) => item.id === collectionItemId) : garmentVariantPresets.findIndex((variant) => variant.id === variantId)
-    const count = collectionItemId ? sceneItems.length : 4; const cell = getGridLayout(count)[Math.max(0, index)]
+    const sceneCombinationIds = designCombinationId ? directorClip?.itemIds ?? [] : []
+    const index = collectionItemId ? sceneItems.findIndex((item) => item.id === collectionItemId) : designCombinationId ? sceneCombinationIds.indexOf(designCombinationId) : Math.max(0, advancedGridViews?.findIndex((view) => view.id === variantId) ?? 0)
+    const count = collectionItemId ? sceneItems.length : designCombinationId ? sceneCombinationIds.length : advancedGridViews?.length ?? 1; const cell = getGridLayout(Math.max(1, count))[Math.max(0, index)]
     return { x: (cell.x + x / 100 * cell.width) * 100, y: (1 - cell.y - cell.height + y / 100 * cell.height) * 100 }
   }
   return <section className="preview-shell">
@@ -111,8 +112,11 @@ export function AdStage({ format, background, viewer, onCanvasReady, mediaRef, o
       })}
       {labelClips.map((item) => {
         const collectionItem = item.collectionItemId ? collectionItems.find((candidate) => candidate.id === item.collectionItemId) : null
-        if (!item.variantId && !collectionItem) return null
-        const settings: VariantLabelSettings = collectionItem?.label ?? advancedProject!.labels[item.variantId!]; const transition = evaluateLayerFrame({ start: item.start, duration: item.duration, enter: settings.enter, exit: settings.exit }, time); const position = labelPosition(item.variantId, item.collectionItemId, settings.x + transition.translateX, settings.y + transition.translateY); const opacity = clipOpacity(item, time) * transition.opacity
+        const combination = item.designCombinationId ? designCombinations.find((candidate) => candidate.id === item.designCombinationId) : null
+        if (!item.variantId && !collectionItem && !combination) return null
+        const settings: VariantLabelSettings | undefined = collectionItem?.label ?? combination?.label ?? (item.variantId ? advancedProject!.labels[item.variantId] : undefined)
+        if (!settings?.enabled) return null
+        const transition = evaluateLayerFrame({ start: item.start, duration: item.duration, enter: settings.enter, exit: settings.exit }, time); const position = labelPosition(item.variantId, item.collectionItemId, item.designCombinationId, settings.x + transition.translateX, settings.y + transition.translateY); const opacity = clipOpacity(item, time) * transition.opacity
         return <div key={item.id} className="advanced-variant-label" style={{ left: `${position.x}%`, top: `${position.y}%`, color: settings.color, background: `color-mix(in srgb, ${settings.backgroundColor} ${settings.backgroundOpacity}%, transparent)`, borderColor: settings.borderColor, borderRadius: settings.borderRadius, fontFamily: settings.fontFamily, fontSize: `${settings.fontSize}cqw`, opacity, transform: `translate(-50%,-50%) scale(${transition.scale})` }}>{settings.text}</div>
       })}
     </div>
