@@ -53,14 +53,16 @@ const dynamicCombinations = Array.from({ length: 4 }, (_, index) => ({
   enabled: index !== 1,
   order: index,
   presetId: index < 2 ? 'frontLeftSleeve' : undefined,
-  label: createDefaultLabel(`Combinación ${index + 1}`),
+  label: { ...createDefaultLabel(`Combinación ${index + 1}`), enabled: index !== 3 },
 })) as DesignCombination[]
-const dynamicProject = createDirectorProject('cinematic', [], false, false, ['groupShowcase', 'itemShowcase'], 'mixed', dynamicCombinations)
+const dynamicProject = createDirectorProject('cinematic', [], false, false, ['groupShowcase', 'itemShowcase'], 'mixed', dynamicCombinations, ['turntableLeft'], ['slideRight'])
 const dynamicDirectorClips = dynamicProject.tracks.find((track) => track.type === 'director')?.clips ?? []
 equal(dynamicProject.presentationPlan?.itemIds, ['combination-1', 'combination-3', 'combination-4'], 'El director dinámico no respetó combinaciones habilitadas y su orden')
 check(dynamicDirectorClips.every((item) => !item.itemIds?.includes('combination-2')), 'Una combinación deshabilitada llegó a la película')
 check(dynamicDirectorClips.some((item) => item.designCombinationId === 'combination-3'), 'Las tomas individuales no conservan el ID dinámico')
-equal(dynamicProject.tracks.filter((track) => track.type === 'label').length, 3, 'No se creó una pista de etiqueta por combinación habilitada')
+equal(dynamicProject.tracks.filter((track) => track.type === 'label').length, 2, 'Se creó una pista para una etiqueta desactivada')
+check(dynamicDirectorClips.filter((item) => item.type === 'directorShot').every((item) => item.garmentMotion === 'turntableLeft'), 'El movimiento elegido no llegó a las tomas dinámicas')
+check(dynamicDirectorClips.every((item) => item.sceneTransition === 'slideRight'), 'La transición elegida no llegó a todo el montaje dinámico')
 
 equal(buildProfessionalShotSequence('frontLeftSleeve', allShots).length, 7, 'La secuencia básica predeterminada debe derivar siete tomas')
 equal(buildProfessionalShotSequence('frontLeftSleeve', withoutHero).length, 6, 'La secuencia básica no reaccionó al quitar Hero')
@@ -78,11 +80,12 @@ for (const label of synced.tracks.filter((track) => track.type === 'label').flat
 }
 
 const collectionItems = Array.from({ length: 12 }, (_, index) => ({
-  id: `collection-${index + 1}`, name: `Diseño ${index + 1}`, asset: { name: 'principal.png' }, companionAsset: { name: 'companion.png' },
+  id: `collection-${index + 1}`, name: `Diseño ${index + 1}`, asset: { name: 'principal.png' }, companionAsset: { name: 'companion.png' }, label: { ...createDefaultLabel(`Diseño ${index + 1}`), enabled: index !== 1 },
 })) as CollectionItem[]
 const collection = createCollectionProject(collectionItems.slice(0, 9), [], false, false, undefined, undefined, undefined, undefined, 'grouped', allShots)
 equal(collection.presentationPlan?.groups.map((group) => group.length), [3, 3, 3], 'La colección de nueve diseños no usa 3 + 3 + 3')
 equal(collection.tracks.find((track) => track.type === 'director')?.clips.map((clip) => clip.itemIds?.length), [3, 3, 3], 'Las escenas de colección no guardan sus IDs explícitos')
+equal(collection.tracks.filter((track) => track.type === 'label').length, 8, 'La colección generó una pista para una etiqueta desactivada')
 for (let count = 2; count <= 12; count += 1) {
   for (const mode of ['grouped', 'sequential', 'mixed'] as const) {
     const project = createCollectionProject(collectionItems.slice(0, count), [], false, false, undefined, undefined, undefined, undefined, mode, allShots)

@@ -259,7 +259,7 @@ const initialActiveDesignCombinationId = persisted.activeDesignCombinationId && 
   ? persisted.activeDesignCombinationId
   : initialDesignCombinations.find((item) => item.enabled)?.id ?? initialDesignCombinations[0]?.id ?? null
 const createSeededProject = (id: DirectorId) => {
-  const project = applyBeatSyncToProject(createDirectorProject(id, initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialEnabledShotTypes, initialPresentationMode, initialDesignCombinations), initialBeatSync)
+  const project = applyBeatSyncToProject(createDirectorProject(id, initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialEnabledShotTypes, initialPresentationMode, initialDesignCombinations, initialCollectionMotionIds, initialCollectionTransitionIds), initialBeatSync)
   const previous = persistedProjects?.[id]
   if (previous) return {
     ...project,
@@ -295,7 +295,7 @@ const syncProjectAssets = (project: DirectorProject, overlays: StageOverlayLayer
 const rebuildCollectionProject = (state: StudioState, items: CollectionItem[], motions = state.collectionMotionIds, transitions = state.collectionTransitionIds, beatSync = state.beatSync, presentationMode = state.presentationMode, enabledShotTypes = state.enabledShotTypes) => createCollectionProject(items.filter(isCompleteCollectionItem), state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), motions, transitions, state.advancedProjects.collection, beatSync, presentationMode, enabledShotTypes)
 const rebuildVariantProject = (state: StudioState, id: 'cinematic' | 'grid2x2', enabledShotTypes = state.enabledShotTypes, presentationMode = state.presentationMode) => {
   const current = state.advancedProjects[id]
-  const next = applyBeatSyncToProject(createDirectorProject(id, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), enabledShotTypes, presentationMode, state.designCombinations), state.beatSync)
+  const next = applyBeatSyncToProject(createDirectorProject(id, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), enabledShotTypes, presentationMode, state.designCombinations, state.collectionMotionIds, state.collectionTransitionIds), state.beatSync)
   return { ...next, cameras: current.cameras, labels: current.labels, zoom: current.zoom, playhead: Math.min(current.playhead, next.duration) }
 }
 export const useStudioStore = create<StudioState>((set) => ({
@@ -330,12 +330,14 @@ export const useStudioStore = create<StudioState>((set) => ({
   collectionMotionIds: initialCollectionMotionIds,
   toggleCollectionMotion: (id) => set((state) => {
     const collectionMotionIds = state.collectionMotionIds.includes(id) ? state.collectionMotionIds.filter((motion) => motion !== id) : [...state.collectionMotionIds, id]
-    return { collectionMotionIds, advancedProjects: { ...state.advancedProjects, collection: rebuildCollectionProject(state, state.collectionItems, collectionMotionIds) } }
+    const nextState = { ...state, collectionMotionIds }
+    return { collectionMotionIds, advancedProjects: { cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped'), collection: rebuildCollectionProject(nextState, state.collectionItems, collectionMotionIds) } }
   }),
   collectionTransitionIds: initialCollectionTransitionIds,
   toggleCollectionTransition: (id) => set((state) => {
     const collectionTransitionIds = state.collectionTransitionIds.includes(id) ? state.collectionTransitionIds.filter((transition) => transition !== id) : [...state.collectionTransitionIds, id]
-    return { collectionTransitionIds, advancedProjects: { ...state.advancedProjects, collection: rebuildCollectionProject(state, state.collectionItems, state.collectionMotionIds, collectionTransitionIds) } }
+    const nextState = { ...state, collectionTransitionIds }
+    return { collectionTransitionIds, advancedProjects: { cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped'), collection: rebuildCollectionProject(nextState, state.collectionItems, state.collectionMotionIds, collectionTransitionIds) } }
   }),
   addCollectionItem: (item) => set((state) => {
     const collectionItems = [...state.collectionItems, item]
@@ -346,6 +348,7 @@ export const useStudioStore = create<StudioState>((set) => ({
     const collectionItems = state.collectionItems.map((item) => item.id === id ? { ...item, ...value, asset: value.asset ? { ...item.asset, ...value.asset } : item.asset, print: value.print ? { ...item.print, ...value.print } : item.print, companionAsset: value.companionAsset ? { ...item.companionAsset, ...value.companionAsset } : item.companionAsset, companionPrint: value.companionPrint ? { ...item.companionPrint, ...value.companionPrint } : item.companionPrint, companionZoneAdjustment: value.companionZoneAdjustment ? { ...item.companionZoneAdjustment, ...value.companionZoneAdjustment } : item.companionZoneAdjustment, camera: value.camera ? { ...item.camera, ...value.camera } : item.camera, label: value.label ? { ...item.label, ...value.label } : item.label } : item)
     const nextItem = collectionItems.find((item) => item.id === id)
     let collectionProject = previousItem && nextItem && isCompleteCollectionItem(previousItem) !== isCompleteCollectionItem(nextItem) ? rebuildCollectionProject(state, collectionItems) : state.advancedProjects.collection
+    if (previousItem && nextItem && previousItem.label.enabled !== nextItem.label.enabled) collectionProject = rebuildCollectionProject(state, collectionItems)
     if (value.name !== undefined) collectionProject = { ...collectionProject, tracks: collectionProject.tracks.map((track) => track.id === `collection-label-${id}` ? { ...track, name: value.name!, clips: track.clips.map((item) => ({ ...item, name: value.name! })) } : { ...track, clips: track.clips.map((item) => item.collectionItemId === id ? { ...item, name: value.name! } : item) }) }
     return { collectionItems, advancedProjects: { ...state.advancedProjects, collection: collectionProject } }
   }),
@@ -376,7 +379,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   initializeAdvancedProject: (id) => set((state) => {
     const directorId = id ?? state.activeDirectorId
     if (state.advancedProjects[directorId]?.initialized) return state
-    return { advancedProjects: { ...state.advancedProjects, [directorId]: createDirectorProject(directorId, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), state.enabledShotTypes, state.presentationMode, state.designCombinations) } }
+    return { advancedProjects: { ...state.advancedProjects, [directorId]: createDirectorProject(directorId, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), state.enabledShotTypes, state.presentationMode, state.designCombinations, state.collectionMotionIds, state.collectionTransitionIds) } }
   }),
   setAdvancedPlayhead: (time) => { historyApplying = true; set((state) => {
     const project = state.advancedProjects[state.activeDirectorId]
@@ -480,7 +483,13 @@ export const useStudioStore = create<StudioState>((set) => ({
     const designCombinations = state.designCombinations.map((item) => item.id === id ? normalizeCombination({ ...item, ...value, printSettings: value.printSettings ?? item.printSettings, zoneAdjustments: value.zoneAdjustments ?? item.zoneAdjustments, camera: value.camera ? { ...item.camera, ...value.camera } : item.camera, label: value.label ? { ...item.label, ...value.label } : item.label }, item.order) : item)
     const activeDesignCombinationId = designCombinations.some((item) => item.id === state.activeDesignCombinationId && item.enabled) ? state.activeDesignCombinationId : designCombinations.find((item) => item.enabled)?.id ?? designCombinations[0]?.id ?? null
     const nextState = { ...state, designCombinations }
-    return { designCombinations, activeDesignCombinationId, advancedProjects: { ...state.advancedProjects, cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped') } }
+    const rebuild = value.enabled !== undefined || value.name !== undefined || value.label?.enabled !== undefined
+    if (rebuild) return { designCombinations, activeDesignCombinationId, advancedProjects: { ...state.advancedProjects, cinematic: rebuildVariantProject(nextState, 'cinematic'), grid2x2: rebuildVariantProject(nextState, 'grid2x2', state.enabledShotTypes, 'grouped') } }
+    if (value.label?.text !== undefined) {
+      const rename = (project: DirectorProject): DirectorProject => ({ ...project, tracks: project.tracks.map((track) => ({ ...track, clips: track.clips.map((item) => item.designCombinationId === id && item.type === 'variantLabel' ? { ...item, name: value.label!.text! } : item) })) })
+      return { designCombinations, activeDesignCombinationId, advancedProjects: { ...state.advancedProjects, cinematic: rename(state.advancedProjects.cinematic), grid2x2: rename(state.advancedProjects.grid2x2) } }
+    }
+    return { designCombinations, activeDesignCombinationId }
   }),
   duplicateDesignCombination: (id) => set((state) => {
     const source = state.designCombinations.find((item) => item.id === id); if (!source) return state

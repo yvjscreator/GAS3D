@@ -77,7 +77,9 @@ const clip = (value: Omit<TimelineClip, 'id' | 'sourceStart' | 'fadeIn' | 'fadeO
   id: ids(), sourceStart: 0, fadeIn: .35, fadeOut: .35, ...value,
 })
 
-function variantTracks(presentationMode: PresentationMode, enabledShotTypes: readonly DirectorShotKind[], combinations: readonly DesignCombination[]) {
+function variantTracks(presentationMode: PresentationMode, enabledShotTypes: readonly DirectorShotKind[], combinations: readonly DesignCombination[], motions: readonly GarmentMotionId[], transitions: readonly LayerTransition[]) {
+  const enabledMotions = motions.length ? motions : defaultCollectionMotionIds.slice(0, 1)
+  const transitionAt = (index: number) => transitions.length ? transitions[index % transitions.length] : 'none' as const
   const planItems = combinations.length ? combinations.filter((item) => item.enabled).map((item) => ({ id: item.id, name: item.name, presetId: item.presetId, label: item.label })) : garmentVariantPresets.map((item) => ({ id: item.id, name: item.label, presetId: item.id, label: createDefaultLabel(item.id) }))
   const variantIds = planItems.map((item) => item.id)
   const rawPlan = buildPresentationPlan(variantIds, presentationMode, enabledShotTypes)
@@ -88,12 +90,13 @@ function variantTracks(presentationMode: PresentationMode, enabledShotTypes: rea
   let cursor = 0
   plan.scenes.forEach((scene) => {
     const duration = scene.kind === 'groupShowcase' ? 8 : scene.kind === 'itemShowcase' ? 3.4 : scene.kind === 'hero' ? 4.4 : 3
-    if (scene.kind === 'groupShowcase') directorClips.push(clip({ type: 'gridScene', name: 'Cuatro variantes', start: cursor, duration, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, fadeIn: .5, fadeOut: .5 }))
+    if (scene.kind === 'groupShowcase') directorClips.push(clip({ type: 'gridScene', name: `${scene.itemIds.length} combinaciones`, start: cursor, duration, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
     else {
       const combinationId = scene.itemIds[0]
       const planItem = planItems.find((item) => item.id === combinationId)
+      const combinationIndex = Math.max(0, planItems.findIndex((item) => item.id === combinationId))
       const names: Record<Exclude<DirectorShotKind, 'groupShowcase'>, string> = { itemShowcase: planItem?.name ?? `Combinación ${variantIds.indexOf(combinationId) + 1}`, hero: 'Toma hero', detailLarge: 'Acercamiento principal', detailSmall: 'Detalle companion' }
-      directorClips.push(clip({ type: 'directorShot', name: names[scene.kind], start: cursor, duration, variantId: planItem?.presetId, designCombinationId: combinationId, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds }))
+      directorClips.push(clip({ type: 'directorShot', name: names[scene.kind], start: cursor, duration, variantId: planItem?.presetId, designCombinationId: combinationId, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, garmentMotion: enabledMotions[combinationIndex % enabledMotions.length], sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
     }
     scene.itemIds.forEach((id) => {
       const planItem = planItems.find((item) => item.id === id)
@@ -113,10 +116,10 @@ function variantTracks(presentationMode: PresentationMode, enabledShotTypes: rea
   return { tracks, plan }
 }
 
-export function createDirectorProject(id: DirectorId, overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes, presentationMode: PresentationMode = 'mixed', combinations: readonly DesignCombination[] = []): DirectorProject {
+export function createDirectorProject(id: DirectorId, overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes, presentationMode: PresentationMode = 'mixed', combinations: readonly DesignCombination[] = [], motions: readonly GarmentMotionId[] = defaultCollectionMotionIds, transitions: readonly LayerTransition[] = defaultCollectionTransitionIds): DirectorProject {
   if (id === 'collection') return createCollectionProject([], overlays, musicAvailable, backgroundAudio)
   const definition = directorDefinitions.find((item) => item.id === id)!
-  const variantPlan = variantTracks(id === 'grid2x2' ? 'grouped' : presentationMode, enabledShotTypes, combinations)
+  const variantPlan = variantTracks(id === 'grid2x2' ? 'grouped' : presentationMode, enabledShotTypes, combinations, motions, transitions)
   const tracks = variantPlan.tracks
   overlays.forEach((layer) => tracks.push({
     id: `asset-${layer.id}`, name: layer.name, type: layer.type, locked: false, hidden: false,
@@ -170,14 +173,14 @@ export function createCollectionProject(items: CollectionItem[], overlays: Stage
         directorClips.push(clip({ type: 'directorShot', name: shotNames[scene.kind], start: cursor, duration, collectionItemId: item.id, sceneId: scene.id, itemIds: scene.itemIds, shotKind: scene.kind, garmentMotion: enabledMotions[itemIndex % enabledMotions.length], sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
       }
     }
-    sceneItems.forEach((item) => {
+    sceneItems.filter((item) => item.label.enabled).forEach((item) => {
       const clips = labelClips.get(item.id) ?? []
       clips.push(clip({ type: 'variantLabel', name: item.name, start: cursor, duration, collectionItemId: item.id, sceneId: scene.id, itemIds: scene.itemIds }))
       labelClips.set(item.id, clips)
     })
     cursor += duration
   })
-  const labelTracks: TimelineTrack[] = items.map((item) => ({ id: `collection-label-${item.id}`, name: item.name, type: 'label', locked: false, hidden: false, clips: labelClips.get(item.id) ?? [] }))
+  const labelTracks: TimelineTrack[] = items.filter((item) => item.label.enabled).map((item) => ({ id: `collection-label-${item.id}`, name: item.name, type: 'label', locked: false, hidden: false, clips: labelClips.get(item.id) ?? [] }))
   const duration = Math.max(1, cursor)
   const preservedTracks = previous?.tracks.filter((track) => ['image', 'text', 'music', 'backgroundAudio'].includes(track.type)).map((track) => (track.type === 'music' || track.type === 'backgroundAudio') ? { ...track, clips: track.clips.map((item) => item.start === 0 && Math.abs(item.duration - previous.duration) < .01 ? { ...item, duration } : item) } : track) ?? []
   const tracks: TimelineTrack[] = [
@@ -282,19 +285,19 @@ export function getAdvancedDirectorFrame(project: DirectorProject, time: number,
   const smooth = local * local * (3 - 2 * local)
   const placement = item.shotKind === 'detailSmall' ? combination?.companionPlacement ?? variant.smallPlacement : combination?.mainPlacement ?? variant.largePlacement
   const baseFacing = placementFacing[placement]
-  const spin = item.shotKind === 'itemShowcase' ? smooth * Math.PI * 2 : Math.sin(local * Math.PI) * (item.shotKind?.startsWith('detail') ? .045 : .09)
+  const motion = evaluateGarmentMotion(item.garmentMotion ?? 'turntableRight', local, combination?.mainPlacement ?? variant.largePlacement, combination?.companionPlacement ?? variant.smallPlacement)
   const target: [number, number, number] = [
     camera.target[0] - camera.composition[0] * 1.35,
     camera.target[1] + camera.composition[1] * 1.75 + (placement === 'frontChest' ? .42 : placement.includes('Sleeve') ? .34 : 0),
     camera.target[2],
   ]
   const distanceScale = item.shotKind?.startsWith('detail') ? .58 + .08 * (1 - smooth) : item.shotKind === 'hero' ? .94 : 1
-  const position = camera.position.map((value, index) => target[index] + (value - camera.target[index]) * distanceScale) as [number, number, number]
+  const position = camera.position.map((value, index) => target[index] + (value - camera.target[index]) * distanceScale * motion.cameraScale) as [number, number, number]
   const shotIndex = track?.clips.indexOf(item) ?? 0
   return {
     variantId: combination?.presetId ?? item.variantId ?? variant.id,
     designCombinationId: combination?.id,
-    rotation: baseFacing - .28 + spin,
+    rotation: motion.rotation + (baseFacing - placementFacing[combination?.mainPlacement ?? variant.largePlacement]),
     cameraPosition: position,
     cameraTarget: target,
     cameraFov: camera.fov,
