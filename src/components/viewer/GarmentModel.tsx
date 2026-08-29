@@ -70,6 +70,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
   const handledAlignment = useRef(0)
   const printUniforms = useMemo(() => createGarmentPrintUniforms(), [])
   const [printTextures, setPrintTextures] = useState<Record<string, THREE.Texture>>({})
+  const heldTextureUrls = useRef(new Set<string>())
   useFrame(() => {
     printUniforms.ambilight.color.value.copy(ambilightRig.average)
     printUniforms.ambilight.reach.value = ambilightRig.reach
@@ -109,17 +110,22 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
   const printUrlKey = JSON.stringify(Array.from(new Set(prints.flatMap((print) => print.url ? [print.url] : []))).sort())
   useEffect(() => {
     let active = true
-    const acquired = new Set<string>()
-    setPrintTextures({})
     const urls = JSON.parse(printUrlKey) as string[]
-    urls.forEach((url) => {
-      void renderAssetManager.acquireTexture(url).then((loaded) => {
-        if (!active) { renderAssetManager.releaseTexture(url); return }
-        acquired.add(url); setPrintTextures((current) => ({ ...current, [url]: loaded }))
-      }).catch(() => undefined)
+    if (!urls.length) {
+      const previous = heldTextureUrls.current; heldTextureUrls.current = new Set(); setPrintTextures({})
+      previous.forEach((url) => renderAssetManager.releaseTexture(url)); return
+    }
+    void Promise.allSettled(urls.map(async (url) => [url, await renderAssetManager.acquireTexture(url)] as const)).then((results) => {
+      const acquired = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+      if (!active || acquired.length !== urls.length) { acquired.forEach(([url]) => renderAssetManager.releaseTexture(url)); return }
+      const previous = heldTextureUrls.current
+      heldTextureUrls.current = new Set(urls)
+      setPrintTextures(Object.fromEntries(acquired))
+      requestAnimationFrame(() => previous.forEach((url) => renderAssetManager.releaseTexture(url)))
     })
-    return () => { active = false; acquired.forEach((url) => renderAssetManager.releaseTexture(url)) }
+    return () => { active = false }
   }, [printUrlKey])
+  useEffect(() => () => { heldTextureUrls.current.forEach((url) => renderAssetManager.releaseTexture(url)); heldTextureUrls.current.clear() }, [])
 
   const getZoneFrame = useCallback((placement: PrintPlacement) => createZoneSurfaceFrame(
     config, placement, printZoneAdjustments[placement], prepared.normalizer, prepared.center,

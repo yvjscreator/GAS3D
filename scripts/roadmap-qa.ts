@@ -5,6 +5,7 @@ import { applyBeatSyncToProject, createCollectionProject, createDirectorProject 
 import { buildProfessionalShotSequence, getProfessionalDuration } from '../src/config/professionalRecording'
 import { defaultBeatSyncSettings } from '../src/utils/beatSync'
 import { buildRecordingResourceManifest } from '../src/utils/recordingPreflight'
+import { evaluateBackgroundFrame, evaluateDirectorFrame } from '../src/utils/stageTimeline'
 import type { CollectionItem, DirectorShotKind, PresentationMode } from '../src/types/studio'
 
 let assertions = 0
@@ -85,6 +86,16 @@ const manifest = buildRecordingResourceManifest({
 equal(manifest.length, 8, 'El manifiesto no deduplicó o perdió recursos de grabación')
 equal(manifest.filter((resource) => resource.url === '/a.png').length, 1, 'Una imagen duplicada se precargará más de una vez')
 check(manifest.some((resource) => resource.id === 'background-audio'), 'Falta el audio del video de fondo en el manifiesto')
+
+const sixtySecondProject = createDirectorProject('cinematic', [], false, false, allShots, 'mixed')
+sixtySecondProject.duration = 60
+const backgroundTrack = sixtySecondProject.tracks.find((track) => track.type === 'background')!
+backgroundTrack.clips[0].duration = 60
+const staleBackgroundTiming = { start: 0, duration: 8, enter: 'none' as const, exit: 'none' as const }
+check(evaluateBackgroundFrame(sixtySecondProject, staleBackgroundTiming, 59.9).visible, 'El fondo dirigido desaparece por el timing antiguo antes del final')
+check(!evaluateBackgroundFrame(null, staleBackgroundTiming, 59.9).visible, 'La prueba de regresión no detecta el timing antiguo')
+check(evaluateDirectorFrame(sixtySecondProject, 59.9, 'editing').visible, 'El stage de edición oculta la prenda por un playhead sin clip')
+check(!evaluateDirectorFrame(sixtySecondProject, 59.9, 'recording').visible, 'Recording debe respetar la ausencia real de una toma en timeline')
 
 const sourceFiles = ['src/config/professionalRecording.ts', 'src/utils/presentationPlanner.ts']
 const combinedSource = sourceFiles.map((file) => readFileSync(file, 'utf8')).join('\n')

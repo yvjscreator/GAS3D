@@ -1,4 +1,7 @@
-import type { LayerTiming, LayerTransition } from '../types/studio'
+import type { DirectorProject, LayerTiming, LayerTransition } from '../types/studio'
+import { activeClip, clipOpacity } from '../config/advancedDirectors'
+
+export type StagePlaybackState = 'editing' | 'scrubbing' | 'playing' | 'recording'
 
 export interface LayerFrame {
   visible: boolean
@@ -36,4 +39,25 @@ export function evaluateLayerFrame(timing: LayerTiming, time: number): LayerFram
     translateY: Math.abs(entering.translateY) > Math.abs(exiting.translateY) ? entering.translateY : exiting.translateY,
     scale: Math.min(entering.scale, exiting.scale),
   }
+}
+
+const permanentFrame = (): LayerFrame => ({ visible: true, opacity: 1, translateX: 0, translateY: 0, scale: 1 })
+
+/** The project background track is the temporal authority whenever a directed project exists. */
+export function evaluateBackgroundFrame(project: DirectorProject | null | undefined, legacyTiming: LayerTiming, time: number): LayerFrame {
+  if (!project) return evaluateLayerFrame(legacyTiming, time)
+  const background = project.tracks.find((track) => track.type === 'background' && !track.hidden)?.clips[0]
+  if (!background) return permanentFrame()
+  return evaluateLayerFrame({ start: background.start, duration: Math.max(project.duration, background.duration), enter: 'none', exit: 'none' }, time)
+}
+
+/** Shared garment visibility/transition evaluator for stage preview and recorder. */
+export function evaluateDirectorFrame(project: DirectorProject | null | undefined, time: number, playbackState: StagePlaybackState, fallbackOpacity = 1): LayerFrame {
+  if (!project) return { ...permanentFrame(), opacity: fallbackOpacity, visible: fallbackOpacity > 0 }
+  if (playbackState === 'editing') return permanentFrame()
+  const item = activeClip(project, 'director', time)
+  if (!item) return { ...permanentFrame(), visible: false, opacity: 0 }
+  const transition = evaluateLayerFrame({ start: item.start, duration: item.duration, enter: item.sceneTransition ?? 'none', exit: item.sceneTransition ?? 'none' }, time)
+  const opacity = clipOpacity(item, time) * transition.opacity
+  return { ...transition, visible: transition.visible && opacity > 0, opacity }
 }

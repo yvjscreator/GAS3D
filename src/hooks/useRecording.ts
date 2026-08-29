@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react'
 import type { AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CollectionItem, DirectorProject, DirectorShotKind, GarmentVariantId, LayerTiming, StageLayerId, StageOverlayLayer, SystemLayerId, VariantLabelSettings } from '../types/studio'
-import { evaluateLayerFrame, type LayerFrame } from '../utils/stageTimeline'
+import { evaluateBackgroundFrame, evaluateDirectorFrame, evaluateLayerFrame, type LayerFrame } from '../utils/stageTimeline'
 import { getProfessionalRecordingFrame } from '../config/professionalRecording'
 import { getMusicGain } from '../utils/audioTimeline'
 import { activeAssetClips, activeClip, activeLabelClips, clipOpacity } from '../config/advancedDirectors'
@@ -60,16 +60,14 @@ export function useRecording() {
     if (!context) { onError('No se pudo crear el canvas de exportación.'); return }
     const overlayImages = new Map<string, HTMLImageElement>()
     overlayLayers.forEach((layer) => { if (layer.type === 'image' && layer.url) { const image = new Image(); image.src = layer.url; overlayImages.set(layer.id, image) } })
-    const drawBackground = (seconds: number) => withFrame(context, composition, evaluateLayerFrame(systemLayerTimings.background, seconds), () => {
+    const drawBackground = (seconds: number) => withFrame(context, composition, evaluateBackgroundFrame(advancedProject, systemLayerTimings.background, seconds), () => {
       context.fillStyle = background.color; context.fillRect(0, 0, composition.width, composition.height)
       if (media && readyMedia(media)) { context.save(); context.filter = `blur(${background.blur * .18 * outputWidth / 1080}px)`; drawCover(context, composition, media); context.restore() }
       if (background.darkness) { context.fillStyle = `rgba(0,0,0,${background.darkness / 100})`; context.fillRect(0, 0, composition.width, composition.height) }
     })
     const drawGarment = (seconds: number) => {
-      const directorItem = advancedProject ? activeClip(advancedProject, 'director', seconds) : null
-      const professionalOpacity = directorItem ? clipOpacity(directorItem, seconds) : advancedProject ? 0 : professionalHeroVariantId ? getProfessionalRecordingFrame(seconds, duration, professionalHeroVariantId, undefined, beatSync, enabledShotTypes).garmentOpacity : 1
-      const transition = directorItem ? evaluateLayerFrame({ start: directorItem.start, duration: directorItem.duration, enter: directorItem.sceneTransition ?? 'none', exit: directorItem.sceneTransition ?? 'none' }, seconds) : null
-      const advancedFrame = { visible: professionalOpacity > 0 && Boolean(transition?.visible ?? true), opacity: professionalOpacity * (transition?.opacity ?? 1), translateX: transition?.translateX ?? 0, translateY: transition?.translateY ?? 0, scale: transition?.scale ?? 1 }
+      const professionalOpacity = professionalHeroVariantId ? getProfessionalRecordingFrame(seconds, duration, professionalHeroVariantId, undefined, beatSync, enabledShotTypes).garmentOpacity : 1
+      const advancedFrame = evaluateDirectorFrame(advancedProject, seconds, 'recording', professionalOpacity)
       withFrame(context, composition, advancedProject ? advancedFrame : evaluateLayerFrame(systemLayerTimings.garment, seconds), () => context.drawImage(renderCanvas, 0, 0, composition.width, composition.height), advancedProject ? 1 : professionalOpacity)
     }
     const drawOverlay = (layer: StageOverlayLayer, seconds: number) => {
