@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { createPortal } from 'react-dom'
 import type { LucideIcon } from 'lucide-react'
 
-export function Popover({ open, onOpenChange, trigger, children, align = 'center', className = '' }: { open: boolean; onOpenChange: (open: boolean) => void; trigger: (controls: { open: boolean; toggle: () => void }) => ReactNode; children: ReactNode; align?: 'start' | 'center' | 'end'; className?: string }) {
+export function Popover({ open, onOpenChange, trigger, children, align = 'center', placement = 'anchor', width, className = '' }: { open: boolean; onOpenChange: (open: boolean) => void; trigger: (controls: { open: boolean; toggle: () => void }) => ReactNode; children: ReactNode; align?: 'start' | 'center' | 'end'; placement?: 'anchor' | 'viewport'; width?: number; className?: string }) {
   const root = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
@@ -13,11 +13,13 @@ export function Popover({ open, onOpenChange, trigger, children, align = 'center
       const panelRect = panel.current?.getBoundingClientRect()
       if (!triggerRect || !panelRect) return
       const viewportMargin = 8
-      const preferredLeft = align === 'start'
-        ? triggerRect.left
-        : align === 'end'
-          ? triggerRect.right - panelRect.width
-          : triggerRect.left + (triggerRect.width - panelRect.width) / 2
+      const preferredLeft = placement === 'viewport'
+        ? (window.innerWidth - panelRect.width) / 2
+        : align === 'start'
+          ? triggerRect.left
+          : align === 'end'
+            ? triggerRect.right - panelRect.width
+            : triggerRect.left + (triggerRect.width - panelRect.width) / 2
       const left = Math.min(Math.max(preferredLeft, viewportMargin), Math.max(viewportMargin, window.innerWidth - panelRect.width - viewportMargin))
       const spaceBelow = window.innerHeight - triggerRect.bottom - viewportMargin
       const top = spaceBelow >= Math.min(panelRect.height, 240)
@@ -34,7 +36,7 @@ export function Popover({ open, onOpenChange, trigger, children, align = 'center
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }
-  }, [align, open])
+  }, [align, open, placement])
   useEffect(() => {
     if (!open) return
     const outside = (event: PointerEvent) => {
@@ -51,7 +53,7 @@ export function Popover({ open, onOpenChange, trigger, children, align = 'center
     {open && createPortal(<div
       ref={panel}
       className={`ui-popover ui-popover-portal align-${align} ${className}`.trim()}
-      style={{ top: position?.top ?? 0, left: position?.left ?? 0, visibility: position ? 'visible' : 'hidden' }}
+      style={{ top: position?.top ?? 0, left: position?.left ?? 0, width, visibility: position ? 'visible' : 'hidden' }}
     >{children}</div>, document.body)}
   </div>
 }
