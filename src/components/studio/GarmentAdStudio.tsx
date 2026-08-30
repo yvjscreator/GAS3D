@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { AdStage } from '../stage/AdStage'
-import { DesignPanel } from './DesignPanel'
 import { BackgroundPanel } from './BackgroundPanel'
 import { CampaignPanel } from './CampaignPanel'
 import { LayersDrawer } from './LayersDrawer'
@@ -29,6 +28,7 @@ import type { StagePlaybackState } from '../../utils/stageTimeline'
 import { WorkspaceTabs } from '../ui'
 
 const placementRotation: Record<PrintPlacement, number> = { frontCenter: 0, frontChest: 0, backCenter: Math.PI, leftSleeve: Math.PI / 2, rightSleeve: -Math.PI / 2 }
+const placementLabels: Record<PrintPlacement, string> = { frontCenter: 'Frente', frontChest: 'Pecho', backCenter: 'Espalda', leftSleeve: 'Manga izquierda', rightSleeve: 'Manga derecha' }
 const collectionPrints = (item: CollectionItem | null, template: Record<PrintPlacement, PrintSettings>) => {
   const result = Object.values(template).map((print) => ({ ...print, url: null, name: null }))
   if (!item) return result
@@ -288,7 +288,11 @@ export function GarmentAdStudio() {
   const zoneTemplate = studio.printZoneAdjustments
   const editingCompanion = collectionMode && studio.activeCollectionAssetRole === 'companion'
   const activeCollectionPlacement = activeCollectionItem ? editingCompanion ? activeCollectionItem.companionPlacement : activeCollectionItem.placement : studio.activePrintPlacement
-  const activeDesignPlacement = activeCombination ? activeCombination.focusRole === 'main' ? activeCombination.mainPlacement : activeCombination.companionPlacement : studio.activePrintPlacement
+  const activeDesignPlacement = activeCombination
+    ? [activeCombination.mainPlacement, activeCombination.companionPlacement].includes(studio.activePrintPlacement)
+      ? studio.activePrintPlacement
+      : activeCombination.focusRole === 'main' ? activeCombination.mainPlacement : activeCombination.companionPlacement
+    : studio.activePrintPlacement
   const activePrintSettings = collectionMode ? variantTemplate : activeCombination?.printSettings ?? studio.prints
   const activeZoneAdjustments = collectionMode ? collectionZones(activeCollectionItem, zoneTemplate) : activeCombination?.zoneAdjustments ?? studio.printZoneAdjustments
   const printApplications = collectionMode ? collectionPrints(activeCollectionItem, variantTemplate) : activeCombination ? createCombinationPrints(activeCombination, studio.variantAssets) : Object.values(activePrintSettings)
@@ -355,7 +359,10 @@ export function GarmentAdStudio() {
   const statusTime = studio.recordingStatus === 'recording' ? studio.recordingElapsed : advancedProject.playhead
   const statusPlaying = advancedPlaying
   const statusCampaign = collectionMode ? `Colección · ${completeCollectionItems.length} prendas` : activeCombination ? `Diseño único · ${activeCombination.name}` : 'Diseño único'
-  const statusSelection = collectionMode && activeCollectionItem ? `${activeCollectionItem.name} · ${editingCompanion ? 'Companion' : 'Principal'}` : `${activeCollectionPlacement} · ${studio.editorMode === 'zone' ? 'Zona' : 'Diseño'}`
+  const activeDesignRole = activeCombination && activeDesignPlacement === activeCombination.companionPlacement ? 'Companion' : 'Principal'
+  const statusSelection = collectionMode && activeCollectionItem
+    ? `${activeCollectionItem.name} · ${editingCompanion ? 'Companion' : 'Principal'} · ${placementLabels[activeCollectionPlacement]}`
+    : activeCombination ? `${activeCombination.name} · ${activeDesignRole} · ${placementLabels[activeDesignPlacement]}` : `${placementLabels[activeDesignPlacement]} · ${studio.editorMode === 'zone' ? 'Zona' : 'Diseño'}`
   const statusActivity = assetTask ?? (framingMode ? 'Ajustando encuadre' : guidesHidden ? 'Vista limpia' : studio.editorMode === 'zone' ? 'Configurando zona imprimible' : 'Editando estampado')
   const directorPanel = <AdvancedDirectorPanel framing={framingMode} draft={cameraDraft} onBeginFraming={() => { pauseAdvanced(); setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : activeCombination?.camera ?? cameraDraft); setFramingMode(true) }} onCancelFraming={() => { setCameraDraft(collectionMode ? activeCollectionItem?.camera ?? cameraDraft : activeCombination?.camera ?? cameraDraft); setFramingMode(false) }} onSaveFraming={() => { if (collectionMode && activeCollectionItem) studio.updateCollectionItem(activeCollectionItem.id, { camera: { ...cameraDraft, saved: true } }); else if (activeCombination) studio.updateDesignCombination(activeCombination.id, { camera: { ...cameraDraft, saved: true } }); setFramingMode(false) }} onResetFraming={resetFraming} onDraftFov={(fov) => setCameraDraft((current) => ({ ...current, fov }))} onDraftComposition={(composition) => setCameraDraft((current) => ({ ...current, composition }))} />
   return <main className="studio zen-studio unified-studio">
@@ -365,7 +372,7 @@ export function GarmentAdStudio() {
         <WorkspaceTabs value={workspace} tabs={workspaceTabs} onChange={setWorkspace} />
         <aside className="control-drawer workspace-drawer">
         <div className="drawer-intro"><span>{workspaceTabs.find((tab) => tab.id === workspace)?.label}</span><strong>{collectionMode ? `${completeCollectionItems.length} pares · ${buildPresentationGroups(completeCollectionItems).length} grupos · ${studio.presentationMode}` : activeCombination?.name ?? 'Configura tu producto'}</strong></div>
-        <div className="workspace-content">{workspace === 'designs' ? <><CampaignPanel />{!collectionMode && <DesignPanel />}</> : workspace === 'scene' ? <BackgroundPanel /> : workspace === 'direction' ? directorPanel : <AudioPanel />}</div>
+        <div className="workspace-content">{workspace === 'designs' ? <CampaignPanel /> : workspace === 'scene' ? <BackgroundPanel /> : workspace === 'direction' ? directorPanel : <AudioPanel />}</div>
         </aside>
         <>
           <button className="editor-split-resizer" onPointerDown={resizeTimeline} aria-label="Cambiar altura de la línea de tiempo" title="Arrastra para cambiar la altura de la línea de tiempo" />
