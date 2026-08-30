@@ -362,7 +362,7 @@ export const useStudioStore = create<StudioState>((set) => ({
     const collectionItems = [...state.collectionItems]; const [item] = collectionItems.splice(from, 1); collectionItems.splice(to, 0, item)
     return { collectionItems, advancedProjects: { ...state.advancedProjects, collection: rebuildCollectionProject(state, collectionItems) } }
   }),
-  setActiveCollectionItemId: (activeCollectionItemId) => set({ activeCollectionItemId }),
+  setActiveCollectionItemId: (activeCollectionItemId) => set((state) => state.activeCollectionItemId === activeCollectionItemId ? state : { activeCollectionItemId }),
   activeDirectorId: persisted.campaignMode === 'collection' ? 'collection' : 'cinematic',
   setActiveDirectorId: (activeDirectorId) => set((state) => {
     if (state.campaignMode === 'collection' && activeDirectorId !== 'collection') return state
@@ -377,7 +377,9 @@ export const useStudioStore = create<StudioState>((set) => ({
   }),
   setAdvancedPlayhead: (time) => { historyApplying = true; set((state) => {
     const project = state.advancedProjects[state.activeDirectorId]
-    return { advancedProjects: { ...state.advancedProjects, [state.activeDirectorId]: { ...project, playhead: Math.min(project.duration, Math.max(0, time)) } } }
+    const playhead = Math.min(project.duration, Math.max(0, time))
+    if (Math.abs(project.playhead - playhead) < .0005) return state
+    return { advancedProjects: { ...state.advancedProjects, [state.activeDirectorId]: { ...project, playhead } } }
   }); historyApplying = false },
   setAdvancedZoom: (zoom) => { historyApplying = true; set((state) => {
     const project = state.advancedProjects[state.activeDirectorId]

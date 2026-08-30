@@ -19,7 +19,8 @@ export function GarmentViewer({ onCanvasReady, ...props }: GarmentViewerProps) {
     return () => observer.disconnect()
   }, [])
   const dpr = props.renderResolution ? props.renderResolution.height / hostHeight : 1
-  return <div ref={host} className="garment-viewer-host"><Canvas frameloop="demand" dpr={dpr} gl={{ alpha: true, antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' }} camera={{ fov: props.cameraFov ?? 35 }} onCreated={({ gl }) => onCanvasReady?.(gl.domElement)}>
+  const captureMode = Boolean(props.renderResolution)
+  return <div ref={host} className="garment-viewer-host"><Canvas key={captureMode ? 'capture' : 'preview'} frameloop="demand" dpr={dpr} gl={{ alpha: true, antialias: !captureMode, preserveDrawingBuffer: captureMode, powerPreference: 'high-performance' }} camera={{ fov: props.cameraFov ?? 35 }} onCreated={({ gl }) => onCanvasReady?.(gl.domElement)}>
     <RenderMetricsProbe />
     <GarmentScene config={garmentModels[0]} prints={props.printApplications} printZoneAdjustments={props.printZoneAdjustments} activePrintPlacement={props.activePrintPlacement} editorMode={props.editorMode} alignmentRequest={props.alignmentRequest} onPrintMove={props.onPrintMove} onPrintScale={props.onPrintScale} onPrintZoneChange={props.onPrintZoneChange} showPrintGuides={props.showPrintGuides ?? true} onPrintDragState={setDraggingPrint} controlsEnabled={!draggingPrint} garmentColor={props.garmentColor} targetRotation={props.targetRotation} cameraView={props.cameraView} cameraFov={props.cameraFov} cameraComposition={props.cameraComposition} onCameraViewChange={props.onCameraViewChange} directorFrame={props.directorFrame} background={props.background} backgroundMediaRef={props.backgroundMediaRef} />
   </Canvas></div>

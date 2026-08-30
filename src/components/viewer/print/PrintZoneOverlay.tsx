@@ -28,12 +28,13 @@ type ResizeState = {
 type PointerCaptureTarget = { setPointerCapture?: (pointerId: number) => void; releasePointerCapture?: (pointerId: number) => void }
 const pointerTarget = (event: ThreeEvent<PointerEvent>) => event.target as PointerCaptureTarget | null
 
-export function PrintZoneOverlay({ frame, adjustment, placement, normalizer, onChange, onDragState }: {
+export function PrintZoneOverlay({ frame, adjustment, placement, normalizer, onChange, onCommit, onDragState }: {
   frame: SurfaceFrame
   adjustment: PrintZoneAdjustment
   placement: PrintPlacement
   normalizer: number
   onChange?: (placement: PrintPlacement, value: Partial<PrintZoneAdjustment>) => void
+  onCommit?: () => void
   onDragState: (dragging: boolean) => void
 }) {
   const root = useRef<THREE.Group>(null)
@@ -106,6 +107,7 @@ export function PrintZoneOverlay({ frame, adjustment, placement, normalizer, onC
   const end = (event: ThreeEvent<PointerEvent>) => {
     if (!interaction.current) return
     event.stopPropagation()
+    onCommit?.()
     interaction.current = null
     onDragState(false)
     pointerTarget(event)?.releasePointerCapture?.(event.pointerId)

@@ -5,7 +5,7 @@ import { activeAssetClips, activeClip, activeLabelClips, clipOpacity } from '../
 import { getGridLayout } from '../utils/gridLayout'
 
 type Args = {
-  renderCanvas: HTMLCanvasElement | null
+  renderCanvas: HTMLCanvasElement | null | (() => HTMLCanvasElement | null)
   media: HTMLImageElement | HTMLVideoElement | null
   background: BackgroundSettings
   music: AudioTrackSettings
@@ -20,6 +20,7 @@ type Args = {
   height: number
   bitrate: number
   fps: number
+  onFrame?: (seconds: number) => void
   onProgress: (seconds: number) => void
   onFinalizing: () => void
   onFinish: (message: string) => void
@@ -48,8 +49,14 @@ function drawCover(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
 export function useRecording() {
   const stopRef = useRef<(() => void) | null>(null)
   const start = useCallback((args: Args) => {
-    const { renderCanvas, media, background, music, overlayLayers, layerOrder, systemLayerTimings, advancedProject, collectionItems = [], designCombinations = [], duration, width: outputWidth, height: outputHeight, bitrate, fps, onProgress, onFinalizing, onFinish, onError } = args
-    if (!renderCanvas || !renderCanvas.captureStream) { onError('Este navegador no permite capturar el canvas.'); return }
+    const { renderCanvas, media, background, music, overlayLayers, layerOrder, systemLayerTimings, advancedProject, collectionItems = [], designCombinations = [], duration, width: outputWidth, height: outputHeight, bitrate, fps, onFrame, onProgress, onFinalizing, onFinish, onError } = args
+    let lastRenderCanvas = typeof renderCanvas === 'function' ? renderCanvas() : renderCanvas
+    const currentRenderCanvas = () => {
+      const next = typeof renderCanvas === 'function' ? renderCanvas() : renderCanvas
+      if (next) lastRenderCanvas = next
+      return lastRenderCanvas
+    }
+    if (!currentRenderCanvas()) { onError('El preview aún no está listo.'); return }
     const composition = document.createElement('canvas'); composition.width = outputWidth; composition.height = outputHeight
     if (!composition.width || !composition.height) { onError('El preview aún no está listo.'); return }
     const context = composition.getContext('2d')
@@ -63,7 +70,8 @@ export function useRecording() {
     })
     const drawGarment = (seconds: number) => {
       const directedFrame = evaluateDirectorFrame(advancedProject, seconds, 'recording')
-      withFrame(context, composition, directedFrame, () => context.drawImage(renderCanvas, 0, 0, composition.width, composition.height))
+      const activeCanvas = currentRenderCanvas()
+      if (activeCanvas) withFrame(context, composition, directedFrame, () => context.drawImage(activeCanvas, 0, 0, composition.width, composition.height))
     }
     const drawOverlay = (layer: StageOverlayLayer, seconds: number) => {
       const clips = activeAssetClips(advancedProject, layer.id, seconds)
@@ -152,7 +160,7 @@ export function useRecording() {
         context.globalAlpha = baseOpacity; context.shadowColor = settings.shadowEnabled && !hasBox ? 'rgba(0,0,0,.72)' : 'transparent'; context.shadowBlur = settings.shadowEnabled && !hasBox ? fontSize * .28 : 0; context.shadowOffsetY = settings.shadowEnabled && !hasBox ? fontSize * .08 : 0; context.fillStyle = settings.color; context.fillText(settings.text, x, y); context.restore()
       })
     }
-    const loop = () => { const seconds = Math.min(duration, (performance.now() - started) / 1000); updateAudio(seconds); draw(seconds); onProgress(seconds); frame = requestAnimationFrame(loop) }
+    const loop = () => { const seconds = Math.min(duration, (performance.now() - started) / 1000); onFrame?.(seconds); updateAudio(seconds); draw(seconds); onProgress(seconds); frame = requestAnimationFrame(loop) }
     const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9', 'video/webm'].find((value) => MediaRecorder.isTypeSupported(value))
     try { recorder = new MediaRecorder(captureStream, mime ? { mimeType: mime, videoBitsPerSecond: bitrate, audioBitsPerSecond: 192_000 } : undefined) } catch { cleanupAudio(); onError('No se pudo iniciar MediaRecorder en este navegador.'); return }
     const chunks: BlobPart[] = []

@@ -22,6 +22,9 @@ type UvInteraction =
   | { mode: 'zoneMove'; placement: PrintPlacement; frame: UvSurfaceFrame; pointerOffset: THREE.Vector2; startX: number; startY: number; axisLock: 'x' | 'y' | null }
   | { mode: 'zoneResize'; placement: PrintPlacement; frame: UvSurfaceFrame; baseWidth: number; baseHeight: number }
 
+type PrintDraft = { placement: PrintPlacement } & Partial<Pick<PrintSettings, 'x' | 'y' | 'scale'>>
+type ZoneDraft = { placement: PrintPlacement; value: Partial<PrintZoneAdjustment> }
+
 type PointerCaptureTarget = { setPointerCapture?: (pointerId: number) => void; releasePointerCapture?: (pointerId: number) => void }
 const pointerTarget = (event: ThreeEvent<PointerEvent>) => event.target as PointerCaptureTarget | null
 const alignmentVector = (alignment: PrintAlignmentRequest['alignment']): [number, number] => {
@@ -67,6 +70,10 @@ type LoadedShirtProps = {
 function LoadedShirt({ source, color, config, prints, printZoneAdjustments, activePrintPlacement, editorMode, alignmentRequest, ambilightRig, ambilightEnabled, onPrintMove, onPrintScale, onPrintZoneChange, showPrintGuides, onPrintDragState }: LoadedShirtProps & { source: THREE.Object3D }) {
   const { camera, gl } = useThree()
   const uvInteraction = useRef<UvInteraction | null>(null)
+  const printDraftRef = useRef<PrintDraft | null>(null)
+  const zoneDraftRef = useRef<ZoneDraft | null>(null)
+  const [printDraft, setPrintDraft] = useState<PrintDraft | null>(null)
+  const [zoneDraft, setZoneDraft] = useState<ZoneDraft | null>(null)
   const handledAlignment = useRef(0)
   const printUniforms = useMemo(() => createGarmentPrintUniforms(), [])
   const [printTextures, setPrintTextures] = useState<Record<string, THREE.Texture>>({})
@@ -127,9 +134,48 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
   }, [printUrlKey])
   useEffect(() => () => { heldTextureUrls.current.forEach((url) => renderAssetManager.releaseTexture(url)); heldTextureUrls.current.clear() }, [])
 
+  const renderedPrints = useMemo(() => printDraft
+    ? prints.map((print) => print.placement === printDraft.placement ? { ...print, ...printDraft } : print)
+    : prints, [printDraft, prints])
+  const renderedZoneAdjustments = useMemo(() => zoneDraft
+    ? { ...printZoneAdjustments, [zoneDraft.placement]: { ...printZoneAdjustments[zoneDraft.placement], ...zoneDraft.value } }
+    : printZoneAdjustments, [printZoneAdjustments, zoneDraft])
+  const previewPrint = useCallback((placement: PrintPlacement, value: Partial<Pick<PrintSettings, 'x' | 'y' | 'scale'>>) => {
+    const next = printDraftRef.current?.placement === placement
+      ? { ...printDraftRef.current, ...value }
+      : { placement, ...value }
+    printDraftRef.current = next
+    setPrintDraft(next)
+  }, [])
+  const previewZone = useCallback((placement: PrintPlacement, value: Partial<PrintZoneAdjustment>) => {
+    const next = zoneDraftRef.current?.placement === placement
+      ? { placement, value: { ...zoneDraftRef.current.value, ...value } }
+      : { placement, value }
+    zoneDraftRef.current = next
+    setZoneDraft(next)
+  }, [])
+  const commitPrintDraft = useCallback(() => {
+    const draft = printDraftRef.current
+    if (!draft) return
+    if (draft.x !== undefined || draft.y !== undefined) {
+      const current = prints.find((item) => item.placement === draft.placement)
+      onPrintMove?.(draft.placement, draft.x ?? current?.x ?? 0, draft.y ?? current?.y ?? 0)
+    }
+    if (draft.scale !== undefined) onPrintScale?.(draft.placement, draft.scale)
+    printDraftRef.current = null
+    setPrintDraft(null)
+  }, [onPrintMove, onPrintScale, prints])
+  const commitZoneDraft = useCallback(() => {
+    const draft = zoneDraftRef.current
+    if (!draft) return
+    onPrintZoneChange?.(draft.placement, draft.value)
+    zoneDraftRef.current = null
+    setZoneDraft(null)
+  }, [onPrintZoneChange])
+
   const getZoneFrame = useCallback((placement: PrintPlacement) => createZoneSurfaceFrame(
-    config, placement, printZoneAdjustments[placement], prepared.normalizer, prepared.center,
-  ), [config, printZoneAdjustments, prepared.center, prepared.normalizer])
+    config, placement, renderedZoneAdjustments[placement], prepared.normalizer, prepared.center,
+  ), [config, renderedZoneAdjustments, prepared.center, prepared.normalizer])
   const getFrame = useCallback((placement: PrintPlacement, settings: PrintSettings) => {
     const texture = settings.url ? printTextures[settings.url] : undefined
     const image = texture?.image as { width?: number; height?: number } | undefined
@@ -137,8 +183,8 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
     return createPrintSurfaceFrame(getZoneFrame(placement), settings, prepared.normalizer, aspect, texture)
   }, [getZoneFrame, prepared.normalizer, printTextures])
   const getUvZoneFrame = useCallback((placement: PrintPlacement) => createZoneUvSurfaceFrame(
-    config, placement, printZoneAdjustments[placement], prepared.normalizer,
-  ), [config, prepared.normalizer, printZoneAdjustments])
+    config, placement, renderedZoneAdjustments[placement], prepared.normalizer,
+  ), [config, prepared.normalizer, renderedZoneAdjustments])
   const getUvFrame = useCallback((placement: PrintPlacement, settings: PrintSettings) => {
     const zone = getUvZoneFrame(placement)
     if (!zone) return null
@@ -151,7 +197,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
   useEffect(() => {
     printPlacements.forEach((placement, index) => {
       const slot = printUniforms.slots[index]
-      const settings = prints.find((item) => item.placement === placement)
+      const settings = renderedPrints.find((item) => item.placement === placement)
       if (!settings) { slot.enabled.value = 0; return }
       const texture = settings.url ? printTextures[settings.url] : undefined
       const uvFrame = getUvFrame(placement, settings)
@@ -172,7 +218,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
       slot.opacity.value = 0.88 + settings.integration * 0.0012
       slot.enabled.value = settings.url && texture ? 1 : 0
     })
-    const activeSettings = prints.find((item) => item.placement === activePrintPlacement)
+    const activeSettings = renderedPrints.find((item) => item.placement === activePrintPlacement)
     const activeUvFrame = editorMode === 'design' && activeSettings?.url
       ? getUvFrame(activePrintPlacement, activeSettings)
       : getUvZoneFrame(activePrintPlacement)
@@ -192,7 +238,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
     }
     printUniforms.active.enabled.value = showPrintGuides ? 1 : 0
     printUniforms.active.fill.value = editorMode === 'zone' ? 1 : 0
-  }, [prints, printTextures, printUniforms, activePrintPlacement, showPrintGuides, editorMode, getFrame, getZoneFrame, getUvFrame, getUvZoneFrame])
+  }, [renderedPrints, printTextures, printUniforms, activePrintPlacement, showPrintGuides, editorMode, getFrame, getZoneFrame, getUvFrame, getUvZoneFrame])
   useEffect(() => {
     if (!alignmentRequest || handledAlignment.current === alignmentRequest.id) return
     const [horizontal, vertical] = alignmentVector(alignmentRequest.alignment)
@@ -214,7 +260,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
       })
       return
     }
-    const settings = prints.find((item) => item.placement === alignmentRequest.placement)
+    const settings = renderedPrints.find((item) => item.placement === alignmentRequest.placement)
     if (!settings?.url) return
     if (!printTextures[settings.url]) return
     const uvZone = getUvZoneFrame(alignmentRequest.placement)
@@ -224,8 +270,8 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
       : getPrintMovementLimits(getZoneFrame(alignmentRequest.placement), getFrame(alignmentRequest.placement, settings), settings.rotation, prepared.normalizer)
     handledAlignment.current = alignmentRequest.id
     onPrintMove?.(alignmentRequest.placement, limits.x * horizontal, limits.y * vertical)
-  }, [alignmentRequest, config, getFrame, getUvFrame, getUvZoneFrame, getZoneFrame, onPrintMove, onPrintZoneChange, prepared.normalizer, printTextures, prints])
-  const activeSettings = prints.find((item) => item.placement === activePrintPlacement)
+  }, [alignmentRequest, config, getFrame, getUvFrame, getUvZoneFrame, getZoneFrame, onPrintMove, onPrintZoneChange, prepared.normalizer, printTextures, renderedPrints])
+  const activeSettings = renderedPrints.find((item) => item.placement === activePrintPlacement)
   const activeDesignFrame = activeSettings ? getFrame(activePrintPlacement, activeSettings) : null
   const activeZoneFrame = getZoneFrame(activePrintPlacement)
   const activeUvZoneFrame = getUvZoneFrame(activePrintPlacement)
@@ -278,14 +324,14 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
         }
       } else return
     } else if (isCornerHit(point, activeUvZoneFrame)) {
-      const adjustment = printZoneAdjustments[activePrintPlacement]
+      const adjustment = renderedZoneAdjustments[activePrintPlacement]
       uvInteraction.current = {
         mode: 'zoneResize', placement: activePrintPlacement, frame: activeUvZoneFrame,
         baseWidth: activeUvZoneFrame.width / Math.max(adjustment.width, 0.001),
         baseHeight: activeUvZoneFrame.height / Math.max(adjustment.height, 0.001),
       }
     } else if (isUvPointInside(point, activeUvZoneFrame)) {
-      const adjustment = printZoneAdjustments[activePrintPlacement]
+      const adjustment = renderedZoneAdjustments[activePrintPlacement]
       uvInteraction.current = {
         mode: 'zoneMove', placement: activePrintPlacement, frame: activeUvZoneFrame,
         startX: adjustment.x, startY: adjustment.y, axisLock: null,
@@ -303,13 +349,13 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
     if (interaction.mode === 'designScale') {
       const distance = Math.hypot(event.clientX - interaction.centerX, event.clientY - interaction.centerY)
       const nextScale = THREE.MathUtils.clamp(interaction.startScale * distance / interaction.startDistance, 0.2, 2.5)
-      onPrintScale?.(interaction.placement, nextScale)
+      previewPrint(interaction.placement, { scale: nextScale })
       return
     }
     const point = eventUv(event)
     if (!point || !isUvPointInIsland(point, interaction.mode === 'designMove' ? interaction.zone : interaction.frame)) return
     if (interaction.mode === 'designMove') {
-      const settings = prints.find((item) => item.placement === interaction.placement)
+      const settings = renderedPrints.find((item) => item.placement === interaction.placement)
       const frame = settings ? getUvFrame(interaction.placement, settings) : null
       if (!settings || !frame) return
       const local = uvPointToFrame(point, interaction.zone).sub(interaction.pointerOffset)
@@ -321,11 +367,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
         if (interaction.axisLock === 'x') y = interaction.startY
         else x = interaction.startX
       } else interaction.axisLock = null
-      onPrintMove?.(
-        interaction.placement,
-        x,
-        y,
-      )
+      previewPrint(interaction.placement, { x, y })
       return
     }
     if (interaction.mode === 'zoneMove') {
@@ -340,7 +382,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
         if (interaction.axisLock === 'x') y = interaction.startY
         else x = interaction.startX
       } else interaction.axisLock = null
-      onPrintZoneChange?.(interaction.placement, {
+      previewZone(interaction.placement, {
         x,
         y,
       })
@@ -349,7 +391,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
     const local = uvPointToFrame(point, interaction.frame)
     const maxHalfWidth = Math.min(distanceToIslandEdge(interaction.frame, interaction.frame.right), distanceToIslandEdge(interaction.frame, interaction.frame.right.clone().negate()))
     const maxHalfHeight = Math.min(distanceToIslandEdge(interaction.frame, interaction.frame.up), distanceToIslandEdge(interaction.frame, interaction.frame.up.clone().negate()))
-    onPrintZoneChange?.(interaction.placement, {
+    previewZone(interaction.placement, {
       width: THREE.MathUtils.clamp(Math.abs(local.x) * 2 / interaction.baseWidth, 0.3, Math.min(1.8, maxHalfWidth * 2 / interaction.baseWidth)),
       height: THREE.MathUtils.clamp(Math.abs(local.y) * 2 / interaction.baseHeight, 0.3, Math.min(1.8, maxHalfHeight * 2 / interaction.baseHeight)),
     })
@@ -357,6 +399,8 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
   const endUvInteraction = (event: ThreeEvent<PointerEvent>) => {
     if (!uvInteraction.current) return
     event.stopPropagation()
+    if (uvInteraction.current.mode === 'designMove' || uvInteraction.current.mode === 'designScale') commitPrintDraft()
+    else commitZoneDraft()
     uvInteraction.current = null
     onPrintDragState(false)
     pointerTarget(event)?.releasePointerCapture?.(event.pointerId)
@@ -365,8 +409,8 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
   return <group scale={prepared.normalizer}>
     <primitive object={prepared.clone} onPointerDown={beginUvInteraction} onPointerMove={moveUvInteraction} onPointerUp={endUvInteraction} onPointerCancel={endUvInteraction} />
     <group position={prepared.clone.position}>
-      {!activeUvZoneFrame && showPrintGuides && editorMode === 'zone' && <PrintZoneOverlay frame={activeZoneFrame} adjustment={printZoneAdjustments[activePrintPlacement]} placement={activePrintPlacement} normalizer={prepared.normalizer} onChange={onPrintZoneChange} onDragState={onPrintDragState} />}
-      {!activeUvZoneFrame && showPrintGuides && editorMode === 'design' && activeSettings?.url && activeDesignFrame && <PrintTransformOverlay frame={activeDesignFrame} settings={activeSettings} normalizer={prepared.normalizer} onMove={onPrintMove} onScale={onPrintScale} onDragState={onPrintDragState} />}
+      {!activeUvZoneFrame && showPrintGuides && editorMode === 'zone' && <PrintZoneOverlay frame={activeZoneFrame} adjustment={renderedZoneAdjustments[activePrintPlacement]} placement={activePrintPlacement} normalizer={prepared.normalizer} onChange={previewZone} onCommit={commitZoneDraft} onDragState={onPrintDragState} />}
+      {!activeUvZoneFrame && showPrintGuides && editorMode === 'design' && activeSettings?.url && activeDesignFrame && <PrintTransformOverlay frame={activeDesignFrame} settings={activeSettings} normalizer={prepared.normalizer} onMove={(placement, x, y) => previewPrint(placement, { x, y })} onScale={(placement, scale) => previewPrint(placement, { scale })} onCommit={commitPrintDraft} onDragState={onPrintDragState} />}
     </group>
   </group>
 }

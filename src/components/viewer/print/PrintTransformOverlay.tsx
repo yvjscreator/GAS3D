@@ -11,12 +11,13 @@ type DragState =
 type PointerCaptureTarget = { setPointerCapture?: (pointerId: number) => void; releasePointerCapture?: (pointerId: number) => void }
 const pointerTarget = (event: ThreeEvent<PointerEvent>) => event.target as PointerCaptureTarget | null
 
-export function PrintTransformOverlay({ frame, settings, normalizer, onMove, onScale, onDragState }: {
+export function PrintTransformOverlay({ frame, settings, normalizer, onMove, onScale, onCommit, onDragState }: {
   frame: PrintSurfaceFrame
   settings: PrintSettings
   normalizer: number
   onMove?: (placement: PrintPlacement, x: number, y: number) => void
   onScale?: (placement: PrintPlacement, scale: number) => void
+  onCommit?: () => void
   onDragState: (dragging: boolean) => void
 }) {
   const root = useRef<THREE.Group>(null)
@@ -91,6 +92,7 @@ export function PrintTransformOverlay({ frame, settings, normalizer, onMove, onS
   const end = (event: ThreeEvent<PointerEvent>) => {
     if (!interaction.current) return
     event.stopPropagation()
+    onCommit?.()
     interaction.current = null
     onDragState(false)
     pointerTarget(event)?.releasePointerCapture?.(event.pointerId)

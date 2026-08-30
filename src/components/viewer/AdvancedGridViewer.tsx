@@ -111,7 +111,8 @@ export function AdvancedGridViewer({ views, garmentColor, time, duration, render
     const observer = new ResizeObserver(update); observer.observe(host.current); return () => observer.disconnect()
   }, [])
   const dpr = renderResolution ? renderResolution.height / height : 1
-  return <div ref={host} className="garment-viewer-host advanced-grid-viewer"><Canvas frameloop="demand" dpr={dpr} gl={{ alpha: true, antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' }} onCreated={({ gl }) => onCanvasReady?.(gl.domElement)}>
+  const captureMode = Boolean(renderResolution)
+  return <div ref={host} className="garment-viewer-host advanced-grid-viewer"><Canvas key={captureMode ? 'capture' : 'preview'} frameloop="demand" dpr={dpr} gl={{ alpha: true, antialias: !captureMode, preserveDrawingBuffer: captureMode, powerPreference: 'high-performance' }} onCreated={({ gl }) => onCanvasReady?.(gl.domElement)}>
     <GridRenderer views={views} color={garmentColor} time={time} duration={duration} />
   </Canvas></div>
 }
