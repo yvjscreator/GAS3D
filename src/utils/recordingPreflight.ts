@@ -81,17 +81,25 @@ async function preloadResource(resource: RecordingResource, backgroundMedia: HTM
 
 function nextFrame() { return new Promise<void>((resolve) => requestAnimationFrame(() => resolve())) }
 
-async function waitForCanvas(canvas: HTMLCanvasElement | null, width: number, height: number, timeoutMs: number) {
+type CanvasSource = HTMLCanvasElement | null | (() => HTMLCanvasElement | null)
+
+async function waitForCanvas(canvasSource: CanvasSource, width: number, height: number, timeoutMs: number) {
   const started = performance.now()
-  while (!canvas || canvas.width < width - 2 || canvas.height < height - 2) {
-    if (performance.now() - started > timeoutMs) throw new Error('La GPU no pudo preparar la resolución solicitada.')
+  let actualWidth = 0
+  let actualHeight = 0
+  while (true) {
+    const canvas = typeof canvasSource === 'function' ? canvasSource() : canvasSource
+    actualWidth = canvas?.width ?? 0
+    actualHeight = canvas?.height ?? 0
+    if (actualWidth >= width - 2 && actualHeight >= height - 2) return canvas
+    if (performance.now() - started > timeoutMs) throw new Error(`La GPU no pudo preparar la resolución solicitada (${actualWidth} × ${actualHeight} de ${width} × ${height}).`)
     await nextFrame()
   }
 }
 
 export async function runRecordingPreflight({ manifest, canvas, width, height, backgroundMedia, onProgress, timeoutMs = 15_000 }: {
   manifest: RecordingResource[]
-  canvas: HTMLCanvasElement | null
+  canvas: CanvasSource
   width: number
   height: number
   backgroundMedia: HTMLImageElement | HTMLVideoElement | null

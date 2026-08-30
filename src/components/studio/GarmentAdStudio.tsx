@@ -284,7 +284,7 @@ export function GarmentAdStudio() {
       return
     }
     try {
-      await runRecordingPreflight({ manifest, canvas: canvasRef.current, width: output.width, height: output.height, backgroundMedia: media.current, onProgress: (progress) => studio.setRecording(progress.phase, 0, progress.message, progress) })
+      await runRecordingPreflight({ manifest, canvas: () => canvasRef.current, width: output.width, height: output.height, backgroundMedia: media.current, onProgress: (progress) => studio.setRecording(progress.phase, 0, progress.message, progress) })
       studio.setRecording('recording', 0, 'Grabación iniciada', { completed: manifest.length, total: manifest.length })
       begin()
     } catch (error) {

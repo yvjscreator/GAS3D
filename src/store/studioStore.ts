@@ -541,7 +541,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   selectLayer: (selectedLayerId) => set({ selectedLayerId }),
   setSystemLayerTiming: (id, value) => set((state) => ({ systemLayerTimings: { ...state.systemLayerTimings, [id]: { ...state.systemLayerTimings[id], ...value } } })),
   format: persisted.format ?? 'reel', setFormat: (format) => set({ format }),
-  exportQuality: (persisted.exportQuality as string) === 'high' ? 'hd' : (persisted.exportQuality as string) === 'ultra' ? '4k' : persisted.exportQuality ?? '4k', setExportQuality: (exportQuality) => set({ exportQuality }),
+  exportQuality: (persisted.exportQuality as string) === 'high' ? 'hd' : (persisted.exportQuality as string) === 'ultra' ? '4k' : persisted.exportQuality ?? 'hd', setExportQuality: (exportQuality) => set({ exportQuality }),
   exportFps: persisted.exportFps ?? 30, setExportFps: (exportFps) => set({ exportFps }),
   targetRotation: persisted.targetRotation ?? 0, setTargetRotation: (targetRotation) => set({ targetRotation }),
   recordingStatus: 'idle', recordingElapsed: 0, recordingMessage: null, recordingPreparedResources: 0, recordingTotalResources: 0,
