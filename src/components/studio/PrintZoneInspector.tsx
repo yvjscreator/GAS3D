@@ -25,7 +25,7 @@ export function PrintZoneInspector({ placement, print, zoneAdjustment, editorMod
   const heightCm = zoneAdjustment.height * baseSizeCm.height
   const zoneFactor = (valueCm: number, baseCm: number) => Math.min(1.8, Math.max(0.3, valueCm / baseCm))
   const resetZone = () => onUpdateZone({ x: 0, y: 0, z: 0, width: 1, height: 1, rotation: null })
-  const resetPrint = () => onUpdatePrint({ scale: 1, x: 0, y: 0, rotation: 0 })
+  const resetPrint = () => onUpdatePrint({ scale: 1, x: 0, y: 0, rotation: 0, integration: 78 })
   const sizeSlider = <label className="range-row wide">Tamaño<output>{print.scale.toFixed(2)}×</output><input type="range" min=".2" max="2.5" step=".01" value={print.scale} onChange={(event) => onUpdatePrint({ scale: Number(event.target.value) })} /></label>
 
   return <div className="print-zone-inspector">

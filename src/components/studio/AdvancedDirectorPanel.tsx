@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { isCompleteCollectionItem } from '../../config/advancedDirectors'
 import { directorShotDefinitions } from '../../config/directorShots'
-import { collectionTransitionDefinitions, garmentMotionDefinitions } from '../../config/garmentMotions'
+import { collectionTransitionDefinitions, garmentMotionDefinitions, placementFacing } from '../../config/garmentMotions'
 import { useStudioStore } from '../../store/studioStore'
 import type { CameraViewSettings, LayerTransition, PresentationMode, VariantCameraPreset } from '../../types/studio'
 import { Aperture, ArrowLeft, ArrowRight, ArrowUp, Blend, Check, EllipsisVertical, Eye, EyeOff, Frame, Grid2X2, Orbit, Repeat2, Rotate3D, RotateCcw, RotateCw, Save, Scissors, Search, Sparkles, Split, Zap, ZoomIn } from '../icons'
@@ -31,8 +31,13 @@ export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancel
   const collectionItem = participatingItems.find((item) => item.id === studio.activeCollectionItemId) ?? participatingItems[0] ?? null
   const designCombination = participatingCombinations.find((item) => item.id === studio.activeDesignCombinationId) ?? participatingCombinations[0]
   useEffect(() => {
-    if (collectionMode && collectionItem && collectionItem.id !== studio.activeCollectionItemId) studio.setActiveCollectionItemId(collectionItem.id)
-    if (!collectionMode && designCombination && designCombination.id !== studio.activeDesignCombinationId) studio.setActiveDesignCombinationId(designCombination.id)
+    if (collectionMode && collectionItem && collectionItem.id !== studio.activeCollectionItemId) {
+      studio.setActiveCollectionItemId(collectionItem.id); studio.setActiveCollectionAssetRole('main'); studio.setActivePrintPlacement(collectionItem.placement); studio.setTargetRotation(placementFacing[collectionItem.placement])
+    }
+    if (!collectionMode && designCombination && designCombination.id !== studio.activeDesignCombinationId) {
+      const placement = designCombination.focusRole === 'main' ? designCombination.mainPlacement : designCombination.companionPlacement
+      studio.setActiveDesignCombinationId(designCombination.id); studio.setTargetRotation(placementFacing[placement])
+    }
   }, [collectionMode, collectionItem, designCombination, studio])
   const label = collectionMode ? collectionItem?.label : designCombination?.label
   const updateLabel = (value: Partial<NonNullable<typeof label>>) => {
@@ -41,6 +46,17 @@ export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancel
   }
   const visibleShots = directorShotDefinitions.filter((shot) => studio.presentationMode === 'mixed' || (studio.presentationMode === 'grouped' ? shot.id === 'groupShowcase' : shot.id !== 'groupShowcase'))
   const labelTargets = collectionMode ? participatingItems : participatingCombinations
+  const selectCollectionItem = (item: NonNullable<typeof collectionItem>) => {
+    studio.setActiveCollectionItemId(item.id)
+    studio.setActiveCollectionAssetRole('main')
+    studio.setActivePrintPlacement(item.placement)
+    studio.setTargetRotation(placementFacing[item.placement])
+  }
+  const selectDesignCombination = (combination: NonNullable<typeof designCombination>) => {
+    const placement = combination.focusRole === 'main' ? combination.mainPlacement : combination.companionPlacement
+    studio.setActiveDesignCombinationId(combination.id)
+    studio.setTargetRotation(placementFacing[placement])
+  }
   const setAllLabels = (enabled: boolean) => labelTargets.forEach((item) => collectionMode
     ? studio.updateCollectionItem(item.id, { label: { ...item.label, enabled } })
     : studio.updateDesignCombination(item.id, { label: { ...item.label, enabled } }))
@@ -55,7 +71,7 @@ export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancel
     <div className="advanced-section-title"><Blend size={14} /><span>Transiciones disponibles</span></div>
     <ResponsiveOptionGrid minWidth={170}>{([{ id: 'none' as const, name: 'Corte limpio', description: 'Cambio directo, preciso y sin efecto.' }, ...collectionTransitionDefinitions]).map((transition) => { const Icon = transitionIcons[transition.id]; return <label key={transition.id} className="collection-option-card"><input type="checkbox" checked={studio.collectionTransitionIds.includes(transition.id)} onChange={() => studio.toggleCollectionTransition(transition.id)} /><Icon size={16} /><span><strong>{transition.name}</strong><small>{transition.description}</small></span></label> })}</ResponsiveOptionGrid>
     <div className="advanced-section-title"><Frame size={14} /><span>{collectionMode ? 'Diseños' : 'Combinaciones'}</span></div>
-    <div className="direction-entity-selector">{collectionMode ? participatingItems.map((item) => <button key={item.id} className={studio.activeCollectionItemId === item.id ? 'active' : ''} onClick={() => studio.setActiveCollectionItemId(item.id)}>{(item.asset.thumbnailUrl || item.asset.url) && <img src={(item.asset.thumbnailUrl || item.asset.url)!} alt="" />}<span><strong>{item.name}</strong><small>{item.placement} + {item.companionPlacement}</small></span></button>) : participatingCombinations.map((combination) => <button key={combination.id} className={studio.activeDesignCombinationId === combination.id ? 'active' : ''} onClick={() => studio.setActiveDesignCombinationId(combination.id)}>{(studio.variantAssets.large.thumbnailUrl || studio.variantAssets.large.url) && <img src={(studio.variantAssets.large.thumbnailUrl || studio.variantAssets.large.url)!} alt="" />}<span><strong>{combination.name}</strong><small>{combination.mainPlacement} + {combination.companionPlacement}</small></span></button>)}</div>
+    <div className="direction-entity-selector">{collectionMode ? participatingItems.map((item) => <button key={item.id} className={studio.activeCollectionItemId === item.id ? 'active' : ''} onClick={() => selectCollectionItem(item)}>{(item.asset.thumbnailUrl || item.asset.url) && <img src={(item.asset.thumbnailUrl || item.asset.url)!} alt="" />}<span><strong>{item.name}</strong><small>{item.placement} + {item.companionPlacement}</small></span></button>) : participatingCombinations.map((combination) => <button key={combination.id} className={studio.activeDesignCombinationId === combination.id ? 'active' : ''} onClick={() => selectDesignCombination(combination)}>{(studio.variantAssets.large.thumbnailUrl || studio.variantAssets.large.url) && <img src={(studio.variantAssets.large.thumbnailUrl || studio.variantAssets.large.url)!} alt="" />}<span><strong>{combination.name}</strong><small>{combination.mainPlacement} + {combination.companionPlacement}</small></span></button>)}</div>
     {!labelTargets.length && <p className="advanced-current-variant">No hay {collectionMode ? 'prendas completas' : 'combinaciones activas'} en la película.</p>}</div>
   const directionInspector = <div className="direction-inspector"><div className="advanced-section-title"><Frame size={14} /><span>{collectionMode ? 'Encuadre por diseño' : 'Encuadre por combinación'}</span></div>
     <div className="framing-actions">

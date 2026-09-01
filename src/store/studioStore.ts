@@ -344,6 +344,7 @@ export const useStudioStore = create<StudioState>((set) => ({
     let collectionProject = previousItem && nextItem && isCompleteCollectionItem(previousItem) !== isCompleteCollectionItem(nextItem) ? rebuildCollectionProject(state, collectionItems) : state.advancedProjects.collection
     if (previousItem && nextItem && previousItem.label.enabled !== nextItem.label.enabled) collectionProject = rebuildCollectionProject(state, collectionItems)
     if (value.name !== undefined) collectionProject = { ...collectionProject, tracks: collectionProject.tracks.map((track) => track.id === `collection-label-${id}` ? { ...track, name: value.name!, clips: track.clips.map((item) => ({ ...item, name: value.name! })) } : { ...track, clips: track.clips.map((item) => item.collectionItemId === id ? { ...item, name: value.name! } : item) }) }
+    else if (value.label?.text !== undefined) collectionProject = { ...collectionProject, tracks: collectionProject.tracks.map((track) => track.id === `collection-label-${id}` ? { ...track, clips: track.clips.map((item) => ({ ...item, name: value.label!.text! })) } : track) }
     return { collectionItems, advancedProjects: { ...state.advancedProjects, collection: collectionProject } }
   }),
   removeCollectionItem: (id) => set((state) => {

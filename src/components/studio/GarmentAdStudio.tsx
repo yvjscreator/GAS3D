@@ -333,9 +333,9 @@ export function GarmentAdStudio() {
   const viewerCamera = cameraDraft
   const resetFraming = () => {
     pauseAdvanced()
-    const reset = createDefaultCamera(activeCombination?.presetId)
+    const reset = createDefaultCamera(collectionMode ? undefined : activeCombination?.presetId)
     setCameraDraft(reset)
-    if (collectionMode && activeCollectionItem) studio.updateCollectionItem(activeCollectionItem.id, { camera: reset })
+    if (collectionMode && activeCollectionItem) { studio.updateCollectionItem(activeCollectionItem.id, { camera: reset }); studio.setTargetRotation(placementRotation[activeCollectionItem.placement]) }
     else if (activeCombination) studio.updateDesignCombination(activeCombination.id, { camera: reset })
     setFramingMode(false)
   }

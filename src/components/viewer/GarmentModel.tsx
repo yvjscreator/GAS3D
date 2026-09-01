@@ -215,7 +215,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
         slot.size.value.set(frame.width, frame.height); slot.depth.value = frame.depth
       }
       slot.map.value = texture ?? slot.map.value
-      slot.opacity.value = 0.88 + settings.integration * 0.0012
+      slot.opacity.value = 0.9736
       slot.enabled.value = settings.url && texture ? 1 : 0
     })
     const activeSettings = renderedPrints.find((item) => item.placement === activePrintPlacement)

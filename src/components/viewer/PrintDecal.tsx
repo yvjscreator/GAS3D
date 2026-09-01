@@ -19,6 +19,6 @@ export function PrintDecal({ settings, zone, mesh }: { settings: PrintSettings; 
     depthTest
   >
     <meshBasicMaterial map={texture} transparent depthWrite={false} polygonOffset polygonOffsetFactor={-3}
-      toneMapped={false} premultipliedAlpha={false} opacity={0.88 + settings.integration * 0.0012} />
+      toneMapped={false} premultipliedAlpha={false} opacity={0.9736} />
   </Decal>
 }
