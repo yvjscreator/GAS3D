@@ -77,6 +77,45 @@ const clip = (value: Omit<TimelineClip, 'id' | 'sourceStart' | 'fadeIn' | 'fadeO
   id: ids(), sourceStart: 0, fadeIn: .35, fadeOut: .35, ...value,
 })
 
+const clipSemanticKey = (item: TimelineClip) => [item.type, item.sceneId, item.assetId, item.collectionItemId, item.designCombinationId, item.variantId].filter(Boolean).join(':')
+
+/** Conserva únicamente decisiones temporales explícitas; el director puede renovar cámara, movimiento, nombre y transición. */
+export function preserveManualTimelineEdits(generated: DirectorProject, previous?: DirectorProject): DirectorProject {
+  if (!previous) return generated
+  const previousByTrack = new Map(previous.tracks.map((track) => [track.id, track]))
+  const tracks = generated.tracks.map((track) => {
+    const previousTrack = previousByTrack.get(track.id)
+    if (!previousTrack) return track
+    const manualByKey = new Map<string, TimelineClip[]>()
+    previousTrack.clips.filter((item) => item.manualTiming).forEach((item) => {
+      const key = clipSemanticKey(item); manualByKey.set(key, [...(manualByKey.get(key) ?? []), item])
+    })
+    const clips = track.clips.flatMap((item) => {
+      const manual = manualByKey.get(clipSemanticKey(item))
+      if (!manual?.length) return item
+      return manual.map((saved) => ({
+        ...item,
+        id: saved.id,
+        start: saved.start,
+        duration: saved.duration,
+        sourceStart: saved.sourceStart,
+        fadeIn: saved.fadeIn,
+        fadeOut: saved.fadeOut,
+        manualTiming: true,
+      }))
+    })
+    return { ...track, locked: previousTrack.locked, hidden: previousTrack.hidden, clips }
+  })
+  const known = new Set(tracks.map((track) => track.id))
+  const order = [...previous.tracks.map((track) => track.id).filter((id) => known.has(id)), ...tracks.map((track) => track.id).filter((id) => !previousByTrack.has(id))]
+  const orderedTracks = order.map((id) => tracks.find((track) => track.id === id)!).filter(Boolean)
+  const draft = { ...generated, tracks: orderedTracks }
+  const duration = getProjectDuration(draft)
+  const normalizedTracks = orderedTracks.map((track) => track.id === 'background' ? { ...track, clips: track.clips.map((item, index) => index === 0 ? { ...item, duration } : item) } : track)
+  const selectedClipId = previous.selectedClipId && normalizedTracks.some((track) => track.clips.some((item) => item.id === previous.selectedClipId)) ? previous.selectedClipId : generated.selectedClipId
+  return { ...draft, tracks: normalizedTracks, duration, playhead: Math.min(previous.playhead, duration), zoom: previous.zoom, selectedClipId }
+}
+
 function variantTracks(presentationMode: PresentationMode, enabledShotTypes: readonly DirectorShotKind[], combinations: readonly DesignCombination[], motions: readonly GarmentMotionId[], transitions: readonly LayerTransition[]) {
   const enabledMotions = motions.length ? motions : defaultCollectionMotionIds.slice(0, 1)
   const transitionAt = (index: number) => transitions.length ? transitions[index % transitions.length] : 'none' as const
@@ -195,12 +234,12 @@ export function createCollectionProject(items: CollectionItem[], overlays: Stage
   })
   if (musicAvailable && !tracks.some((track) => track.id === 'music')) tracks.push({ id: 'music', name: 'Música', type: 'music', locked: false, hidden: false, clips: [clip({ type: 'music', name: 'Música', start: 0, duration, assetId: 'music', fadeIn: .5, fadeOut: .8 })] })
   if (backgroundAudio && !tracks.some((track) => track.id === 'background-audio')) tracks.push({ id: 'background-audio', name: 'Audio del fondo', type: 'backgroundAudio', locked: false, hidden: false, clips: [clip({ type: 'backgroundAudio', name: 'Audio del fondo', start: 0, duration, assetId: 'background-audio', fadeIn: 0, fadeOut: 0 })] })
-  return {
+  return preserveManualTimelineEdits({
     id: 'collection', name: 'Colección de diseños', duration, playhead: Math.min(previous?.playhead ?? 0, duration), zoom: previous?.zoom ?? 1,
     cameras: previous?.cameras ?? Object.fromEntries(garmentVariantPresets.map((variant) => [variant.id, createDefaultCamera(variant.id)])) as Record<GarmentVariantId, VariantCameraPreset>,
     labels: previous?.labels ?? Object.fromEntries(garmentVariantPresets.map((variant) => [variant.id, createDefaultLabel(variant.id)])) as Record<GarmentVariantId, VariantLabelSettings>,
     tracks, selectedClipId: directorClips[0]?.id ?? null, initialized: true, presentationPlan: plan,
-  }
+  }, previous)
 }
 
 export function getProjectDuration(project: DirectorProject) {

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { AlphaPipelineMode, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DesignCombination, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportFps, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
-import { ADVANCED_SCHEMA_VERSION, applyBeatSyncToProject, createCollectionProject, createDefaultCamera, createDefaultLabel, createDirectorProject, getProjectDuration, isCompleteCollectionItem } from '../config/advancedDirectors'
+import { ADVANCED_SCHEMA_VERSION, applyBeatSyncToProject, createCollectionProject, createDefaultCamera, createDefaultLabel, createDirectorProject, getProjectDuration, isCompleteCollectionItem, preserveManualTimelineEdits } from '../config/advancedDirectors'
 import { defaultCollectionMotionIds, defaultCollectionTransitionIds } from '../config/garmentMotions'
 import { defaultBeatSyncSettings } from '../utils/beatSync'
 import { defaultEnabledShotTypes } from '../config/directorShots'
@@ -294,7 +294,7 @@ const rebuildCollectionProject = (state: StudioState, items: CollectionItem[], m
 const rebuildVariantProject = (state: StudioState, id: 'cinematic' | 'grid2x2', enabledShotTypes = state.enabledShotTypes, presentationMode = state.presentationMode) => {
   const current = state.advancedProjects[id]
   const next = applyBeatSyncToProject(createDirectorProject(id, state.overlayLayers, Boolean(state.music.name), Boolean(state.background.videoAudioEnabled), enabledShotTypes, presentationMode, state.designCombinations, state.collectionMotionIds, state.collectionTransitionIds), state.beatSync)
-  return { ...next, cameras: current.cameras, labels: current.labels, zoom: current.zoom, playhead: Math.min(current.playhead, next.duration) }
+  return preserveManualTimelineEdits({ ...next, cameras: current.cameras, labels: current.labels }, current)
 }
 export const useStudioStore = create<StudioState>((set) => ({
   canUndo: false, canRedo: false, undo: performUndo, redo: performRedo,
@@ -411,7 +411,7 @@ export const useStudioStore = create<StudioState>((set) => ({
           start = Math.max(minimumStart, Math.min(start, maximumEnd - duration))
           duration = Math.max(.1, Math.min(duration, maximumEnd - start))
         }
-        return { ...item, ...value, start, duration, sourceStart: Math.max(0, value.sourceStart ?? item.sourceStart), fadeIn: Math.max(0, Math.min(value.fadeIn ?? item.fadeIn, duration / 2)), fadeOut: Math.max(0, Math.min(value.fadeOut ?? item.fadeOut, duration / 2)) }
+        return { ...item, ...value, start, duration, sourceStart: Math.max(0, value.sourceStart ?? item.sourceStart), fadeIn: Math.max(0, Math.min(value.fadeIn ?? item.fadeIn, duration / 2)), fadeOut: Math.max(0, Math.min(value.fadeOut ?? item.fadeOut, duration / 2)), manualTiming: true }
       }) }
     })
     let next = { ...project, tracks } as DirectorProject; next.duration = getProjectDuration(next)
@@ -424,8 +424,8 @@ export const useStudioStore = create<StudioState>((set) => ({
     const original = track?.clips.find((item) => item.id === clipId)
     if (!track || track.locked || !original || time <= original.start + .1 || time >= original.start + original.duration - .1) return state
     const leftDuration = time - original.start; const rightDuration = original.duration - leftDuration
-    const left = { ...original, duration: leftDuration, fadeOut: Math.min(original.fadeOut, leftDuration / 2) }
-    const right = { ...original, id: makeClipId(), start: time, duration: rightDuration, sourceStart: original.sourceStart + leftDuration, fadeIn: Math.min(original.fadeIn, rightDuration / 2) }
+    const left = { ...original, duration: leftDuration, fadeOut: Math.min(original.fadeOut, leftDuration / 2), manualTiming: true }
+    const right = { ...original, id: makeClipId(), start: time, duration: rightDuration, sourceStart: original.sourceStart + leftDuration, fadeIn: Math.min(original.fadeIn, rightDuration / 2), manualTiming: true }
     const tracks = project.tracks.map((item) => item.id === trackId ? { ...item, clips: item.clips.flatMap((clip) => clip.id === clipId ? [left, right] : [clip]) } : item)
     return { advancedProjects: { ...state.advancedProjects, [state.activeDirectorId]: { ...project, tracks, selectedClipId: right.id } } }
   }),
@@ -440,7 +440,8 @@ export const useStudioStore = create<StudioState>((set) => ({
     const project = state.advancedProjects[state.activeDirectorId]; const index = project.tracks.findIndex((track) => track.id === trackId); const nextIndex = index + direction
     if (index <= 0 || nextIndex <= 0 || nextIndex >= project.tracks.length) return state
     const tracks = [...project.tracks]; [tracks[index], tracks[nextIndex]] = [tracks[nextIndex], tracks[index]]
-    return { advancedProjects: { ...state.advancedProjects, [state.activeDirectorId]: { ...project, tracks } } }
+    const visualOrder = tracks.flatMap((track) => track.type === 'director' ? ['garment'] : track.id.startsWith('asset-') ? [track.id.slice(6)] : []).filter((id) => id === 'garment' || state.overlayLayers.some((layer) => layer.id === id))
+    return { layerOrder: visualOrder, advancedProjects: { ...state.advancedProjects, [state.activeDirectorId]: { ...project, tracks } } }
   }),
   syncAdvancedAssets: () => set((state) => ({ advancedProjects: {
     cinematic: syncProjectAssets(state.advancedProjects.cinematic, state.overlayLayers, state.music, Boolean(state.background.videoAudioEnabled)),

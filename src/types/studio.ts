@@ -159,6 +159,8 @@ export interface TimelineClip {
   sceneTransition?: LayerTransition
   unsyncedStart?: number
   unsyncedDuration?: number
+  /** El usuario modificó el montaje temporal y una regeneración no debe sobrescribirlo. */
+  manualTiming?: boolean
 }
 
 export interface TimelineTrack {

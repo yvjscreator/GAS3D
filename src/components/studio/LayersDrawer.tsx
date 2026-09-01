@@ -1,14 +1,10 @@
 import { useRef, useState } from 'react'
 import { useStudioStore } from '../../store/studioStore'
-import type { LayerTiming, LayerTransition, StageOverlayLayer } from '../../types/studio'
+import type { LayerTiming, StageOverlayLayer } from '../../types/studio'
 import { overlayMediaKey, removePreparedMedia, storePreparedMedia } from '../../utils/mediaStorage'
 import { prepareVideoAsset } from '../../utils/mediaProcessor'
 import { ChevronDown, ChevronUp, EllipsisVertical, Image as ImageIcon, Layers3, Lock, Plus, Type, X } from '../icons'
 
-const transitionLabels: Record<LayerTransition, string> = {
-  none: 'Sin transición', fade: 'Fundido', slideLeft: 'Desde la izquierda', slideRight: 'Desde la derecha', slideUp: 'Desde abajo', zoom: 'Zoom suave',
-}
-const transitions = Object.keys(transitionLabels) as LayerTransition[]
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `layer-${Date.now()}-${Math.random().toString(16).slice(2)}`
 const defaultTiming = (duration: number): LayerTiming => ({ start: 0, duration, enter: 'fade', exit: 'fade' })
 
@@ -18,7 +14,6 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
   const [open, setOpen] = useState(false); const [optionsOpen, setOptionsOpen] = useState(true); const [error, setError] = useState<string | null>(null)
   const selectedOverlay = studio.overlayLayers.find((layer) => layer.id === studio.selectedLayerId)
   const selectedSystem = studio.selectedLayerId === 'background' || studio.selectedLayerId === 'garment' ? studio.selectedLayerId : null
-  const selectedTiming = selectedSystem ? studio.systemLayerTimings[selectedSystem] : selectedOverlay?.timing
   const selectImage = async (file?: File) => {
     if (!file) return
     if (!['image/png', 'image/webp'].includes(file.type)) { setError('Carga un PNG o WebP con transparencia.'); return }
@@ -34,11 +29,6 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
   const addText = () => {
     studio.addOverlayLayer({ id: newId(), type: 'text', name: 'Texto', text: 'Tu texto', color: '#ffffff', fontSize: 5.2, fontWeight: 700, x: 50, y: 18, width: 40, rotation: 0, opacity: 100, timing: defaultTiming(projectDuration) })
     setOpen(true)
-  }
-  const updateTiming = (value: Partial<LayerTiming>) => {
-    if (!selectedTiming) return
-    if (selectedSystem) studio.setSystemLayerTiming(selectedSystem, value)
-    else if (selectedOverlay) studio.updateOverlayLayer(selectedOverlay.id, { timing: { ...selectedOverlay.timing, ...value } })
   }
   const removeSelected = () => {
     if (!selectedOverlay) return
@@ -73,7 +63,7 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
             <label className="range-row">Opacidad<output>{selectedOverlay.opacity}%</output><input type="range" min="0" max="100" value={selectedOverlay.opacity} onChange={(event) => studio.updateOverlayLayer(selectedOverlay.id, { opacity: Number(event.target.value) })} /></label>
             <label className="range-row">Rotación<output>{selectedOverlay.rotation}°</output><input type="range" min="-180" max="180" value={selectedOverlay.rotation} onChange={(event) => studio.updateOverlayLayer(selectedOverlay.id, { rotation: Number(event.target.value) })} /></label>
           </>}
-          {selectedTiming && <><div className="layer-inline"><label>Inicio<input type="number" min="0" max={projectDuration} step="0.1" value={selectedTiming.start} onChange={(event) => updateTiming({ start: Number(event.target.value) })} /><span>s</span></label><label>Duración<input type="number" min="0.1" max={projectDuration} step="0.1" value={selectedTiming.duration} onChange={(event) => updateTiming({ duration: Number(event.target.value) })} /><span>s</span></label></div><div className="layer-inline"><label>Entrada<select value={selectedTiming.enter} onChange={(event) => updateTiming({ enter: event.target.value as LayerTransition })}>{transitions.map((transition) => <option key={transition} value={transition}>{transitionLabels[transition]}</option>)}</select></label><label>Salida<select value={selectedTiming.exit} onChange={(event) => updateTiming({ exit: event.target.value as LayerTransition })}>{transitions.map((transition) => <option key={transition} value={transition}>{transitionLabels[transition]}</option>)}</select></label></div></>}
+          <p className="layer-timeline-hint">El inicio, la duración, los recortes y los fades se editan en la línea de tiempo.</p>
           <div className="layer-order-actions"><button disabled={selectedSystem === 'background'} onClick={() => studio.moveLayer(studio.selectedLayerId, 1)}>Subir capa</button><button disabled={selectedSystem === 'background'} onClick={() => studio.moveLayer(studio.selectedLayerId, -1)}>Bajar capa</button>{selectedOverlay && <button className="danger" onClick={removeSelected}>Eliminar</button>}</div>
         </div>}
       </div>}
