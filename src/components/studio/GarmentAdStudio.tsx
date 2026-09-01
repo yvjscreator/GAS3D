@@ -113,7 +113,7 @@ export function GarmentAdStudio() {
       for (const role of ['large', 'small'] as VariantAssetRole[]) {
         const current = useStudioStore.getState().variantAssets[role]
         if (!current.name) continue
-        const prepared = await loadPreparedMedia<PreparedVideoAssetMetadata>(variantMediaKey(role)).catch(() => null)
+        const prepared = await loadPreparedMedia<PreparedVideoAssetMetadata>(current.storageKey ?? variantMediaKey(role)).catch(() => null)
         if (!active || !prepared) continue
         const url = URL.createObjectURL(prepared.renderBlob); restoredUrls.push(url)
         const thumbnailUrl = prepared.thumbnailBlob ? URL.createObjectURL(prepared.thumbnailBlob) : url; if (prepared.thumbnailBlob) restoredUrls.push(thumbnailUrl)
@@ -122,11 +122,11 @@ export function GarmentAdStudio() {
       }
       for (const item of useStudioStore.getState().collectionItems) {
         if (item.asset.name) {
-          const prepared = await loadPreparedMedia<PreparedVideoAssetMetadata>(collectionMediaKey(item.id, 'main')).catch(() => null)
+          const prepared = await loadPreparedMedia<PreparedVideoAssetMetadata>(item.asset.storageKey ?? collectionMediaKey(item.id, 'main')).catch(() => null)
           if (active && prepared) { const url = URL.createObjectURL(prepared.renderBlob); restoredUrls.push(url); const thumbnailUrl = prepared.thumbnailBlob ? URL.createObjectURL(prepared.thumbnailBlob) : url; if (prepared.thumbnailBlob) restoredUrls.push(thumbnailUrl); const metadata = prepared.metadata; useStudioStore.getState().updateCollectionItem(item.id, { asset: { ...item.asset, url, thumbnailUrl, width: metadata?.proxyWidth ?? item.asset.width, height: metadata?.proxyHeight ?? item.asset.height, originalWidth: metadata?.originalWidth ?? item.asset.originalWidth, originalHeight: metadata?.originalHeight ?? item.asset.originalHeight, originalBytes: metadata?.originalBytes ?? item.asset.originalBytes, renderBytes: metadata?.renderBytes ?? prepared.renderBlob.size, profile: metadata?.profile ?? item.asset.profile }, print: { ...item.print, url, name: item.asset.name } }) }
         }
         if (item.companionAsset.name) {
-          const prepared = await loadPreparedMedia<PreparedVideoAssetMetadata>(collectionMediaKey(item.id, 'companion')).catch(() => null)
+          const prepared = await loadPreparedMedia<PreparedVideoAssetMetadata>(item.companionAsset.storageKey ?? collectionMediaKey(item.id, 'companion')).catch(() => null)
           if (active && prepared) { const url = URL.createObjectURL(prepared.renderBlob); restoredUrls.push(url); const thumbnailUrl = prepared.thumbnailBlob ? URL.createObjectURL(prepared.thumbnailBlob) : url; if (prepared.thumbnailBlob) restoredUrls.push(thumbnailUrl); const metadata = prepared.metadata; useStudioStore.getState().updateCollectionItem(item.id, { companionAsset: { ...item.companionAsset, url, thumbnailUrl, width: metadata?.proxyWidth ?? item.companionAsset.width, height: metadata?.proxyHeight ?? item.companionAsset.height, originalWidth: metadata?.originalWidth ?? item.companionAsset.originalWidth, originalHeight: metadata?.originalHeight ?? item.companionAsset.originalHeight, originalBytes: metadata?.originalBytes ?? item.companionAsset.originalBytes, renderBytes: metadata?.renderBytes ?? prepared.renderBlob.size, profile: metadata?.profile ?? item.companionAsset.profile }, companionPrint: { ...item.companionPrint, url, name: item.companionAsset.name } }) }
         }
       }
@@ -140,16 +140,16 @@ export function GarmentAdStudio() {
       }
       const state = useStudioStore.getState()
       if (state.background.type !== 'color' && state.background.name) {
-        const prepared = await loadPreparedMedia(backgroundMediaKey).catch(() => null)
+        const prepared = await loadPreparedMedia(state.background.storageKey ?? backgroundMediaKey).catch(() => null)
         if (active && prepared) { const url = URL.createObjectURL(prepared.renderBlob); restoredUrls.push(url); useStudioStore.getState().setBackground({ url }) }
       }
       if (state.music.name) {
-        const blob = await loadMedia(musicMediaKey).catch(() => null)
+        const blob = await loadMedia(state.music.storageKey ?? musicMediaKey).catch(() => null)
         if (active && blob) { const url = URL.createObjectURL(blob); restoredUrls.push(url); useStudioStore.getState().setMusic({ url }) }
       }
       for (const layer of state.overlayLayers) {
         if (layer.type !== 'image' || !layer.sourceName) continue
-        const prepared = await loadPreparedMedia(overlayMediaKey(layer.id)).catch(() => null)
+        const prepared = await loadPreparedMedia(layer.storageKey ?? overlayMediaKey(layer.id)).catch(() => null)
         if (!active || !prepared) continue
         const url = URL.createObjectURL(prepared.renderBlob); restoredUrls.push(url)
         useStudioStore.getState().updateOverlayLayer(layer.id, { url })

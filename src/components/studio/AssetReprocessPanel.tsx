@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { renderAssetManager } from '../../render/RenderAssetManager'
 import { useStudioStore } from '../../store/studioStore'
 import type { CollectionAssetRole, VariantAssetRole } from '../../types/studio'
-import { collectionMediaKey, loadMediaMetadata, loadSourceMedia, storePreparedMedia, variantMediaKey } from '../../utils/mediaStorage'
+import { collectionMediaKey, createMediaRevisionKey, loadMediaMetadata, loadSourceMedia, storePreparedMedia, variantMediaKey } from '../../utils/mediaStorage'
 import { prepareVideoAsset, type PreparedVideoAssetMetadata } from '../../utils/mediaProcessor'
 import { Image, RefreshCw, ShieldCheck } from '../icons'
 
 type Target = {
   key: string
+  baseKey: string
   label: string
   kind: 'variant' | 'collection'
   role: VariantAssetRole | CollectionAssetRole
@@ -22,14 +23,14 @@ export function AssetReprocessPanel({ onTaskChange }: { onTaskChange?: (message:
   const [message, setMessage] = useState<string | null>(null)
   const targets = useMemo<Target[]>(() => {
     const result: Target[] = []
-    if (studio.variantAssets.large.name) result.push({ key: variantMediaKey('large'), label: `Principal · ${studio.variantAssets.large.name}`, kind: 'variant', role: 'large' })
-    if (studio.variantAssets.small.name) result.push({ key: variantMediaKey('small'), label: `Companion · ${studio.variantAssets.small.name}`, kind: 'variant', role: 'small' })
+    if (studio.variantAssets.large.name) result.push({ key: studio.variantAssets.large.storageKey ?? variantMediaKey('large'), baseKey: variantMediaKey('large'), label: `Principal · ${studio.variantAssets.large.name}`, kind: 'variant', role: 'large' })
+    if (studio.variantAssets.small.name) result.push({ key: studio.variantAssets.small.storageKey ?? variantMediaKey('small'), baseKey: variantMediaKey('small'), label: `Companion · ${studio.variantAssets.small.name}`, kind: 'variant', role: 'small' })
     studio.collectionItems.forEach((item) => {
-      if (item.asset.name) result.push({ key: collectionMediaKey(item.id, 'main'), label: `${item.name} · Principal`, kind: 'collection', role: 'main', itemId: item.id })
-      if (item.companionAsset.name) result.push({ key: collectionMediaKey(item.id, 'companion'), label: `${item.name} · Companion`, kind: 'collection', role: 'companion', itemId: item.id })
+      if (item.asset.name) result.push({ key: item.asset.storageKey ?? collectionMediaKey(item.id, 'main'), baseKey: collectionMediaKey(item.id, 'main'), label: `${item.name} · Principal`, kind: 'collection', role: 'main', itemId: item.id })
+      if (item.companionAsset.name) result.push({ key: item.companionAsset.storageKey ?? collectionMediaKey(item.id, 'companion'), baseKey: collectionMediaKey(item.id, 'companion'), label: `${item.name} · Companion`, kind: 'collection', role: 'companion', itemId: item.id })
     })
     return result
-  }, [studio.collectionItems, studio.variantAssets.large.name, studio.variantAssets.small.name])
+  }, [studio.collectionItems, studio.variantAssets])
   const targetKey = targets.map((item) => `${item.key}:${item.label}`).join('|')
   const refresh = useCallback(async () => {
     const entries = await Promise.all(targets.map(async (target) => {
@@ -44,20 +45,20 @@ export function AssetReprocessPanel({ onTaskChange }: { onTaskChange?: (message:
   const selected = studio.campaignMode === 'collection'
     ? targets.find((target) => target.kind === 'collection' && target.itemId === studio.activeCollectionItemId && target.role === studio.activeCollectionAssetRole)
     : (() => { const combination = studio.designCombinations.find((item) => item.id === studio.activeDesignCombinationId); const role: VariantAssetRole = combination?.focusRole === 'companion' ? 'small' : 'large'; return targets.find((target) => target.kind === 'variant' && target.role === role) })()
-  const replaceUrls = (target: Target, prepared: Awaited<ReturnType<typeof prepareVideoAsset>>) => {
+  const replaceUrls = (target: Target, storageKey: string, prepared: Awaited<ReturnType<typeof prepareVideoAsset>>) => {
     const url = URL.createObjectURL(prepared.renderBlob); const thumbnailUrl = URL.createObjectURL(prepared.thumbnailBlob)
     const metadata = prepared.metadata
     if (target.kind === 'variant') {
       const role = target.role as VariantAssetRole; const current = useStudioStore.getState().variantAssets[role]
-      useStudioStore.getState().setVariantAsset(role, { ...current, url, thumbnailUrl, width: metadata.proxyWidth, height: metadata.proxyHeight, originalWidth: metadata.originalWidth, originalHeight: metadata.originalHeight, originalBytes: metadata.originalBytes, renderBytes: metadata.renderBytes, profile: metadata.profile })
-      window.setTimeout(() => { if (current.url) { renderAssetManager.invalidate(current.url); URL.revokeObjectURL(current.url) } if (current.thumbnailUrl) URL.revokeObjectURL(current.thumbnailUrl) }, 1200)
+      useStudioStore.getState().setVariantAsset(role, { ...current, url, thumbnailUrl, storageKey, width: metadata.proxyWidth, height: metadata.proxyHeight, originalWidth: metadata.originalWidth, originalHeight: metadata.originalHeight, originalBytes: metadata.originalBytes, renderBytes: metadata.renderBytes, profile: metadata.profile })
+      if (current.url) renderAssetManager.invalidate(current.url)
       return
     }
     const item = useStudioStore.getState().collectionItems.find((candidate) => candidate.id === target.itemId)
     if (!item) { URL.revokeObjectURL(url); URL.revokeObjectURL(thumbnailUrl); return }
     const companion = target.role === 'companion'; const current = companion ? item.companionAsset : item.asset
-    useStudioStore.getState().updateCollectionItem(item.id, companion ? { companionAsset: { ...current, url, thumbnailUrl, width: metadata.proxyWidth, height: metadata.proxyHeight, originalWidth: metadata.originalWidth, originalHeight: metadata.originalHeight, originalBytes: metadata.originalBytes, renderBytes: metadata.renderBytes, profile: metadata.profile }, companionPrint: { ...item.companionPrint, url, name: current.name } } : { asset: { ...current, url, thumbnailUrl, width: metadata.proxyWidth, height: metadata.proxyHeight, originalWidth: metadata.originalWidth, originalHeight: metadata.originalHeight, originalBytes: metadata.originalBytes, renderBytes: metadata.renderBytes, profile: metadata.profile }, print: { ...item.print, url, name: current.name } })
-    window.setTimeout(() => { if (current.url) { renderAssetManager.invalidate(current.url); URL.revokeObjectURL(current.url) } if (current.thumbnailUrl) URL.revokeObjectURL(current.thumbnailUrl) }, 1200)
+    useStudioStore.getState().updateCollectionItem(item.id, companion ? { companionAsset: { ...current, url, thumbnailUrl, storageKey, width: metadata.proxyWidth, height: metadata.proxyHeight, originalWidth: metadata.originalWidth, originalHeight: metadata.originalHeight, originalBytes: metadata.originalBytes, renderBytes: metadata.renderBytes, profile: metadata.profile }, companionPrint: { ...item.companionPrint, url, name: current.name } } : { asset: { ...current, url, thumbnailUrl, storageKey, width: metadata.proxyWidth, height: metadata.proxyHeight, originalWidth: metadata.originalWidth, originalHeight: metadata.originalHeight, originalBytes: metadata.originalBytes, renderBytes: metadata.renderBytes, profile: metadata.profile }, print: { ...item.print, url, name: current.name } })
+    if (current.url) renderAssetManager.invalidate(current.url)
   }
   const process = async (requested: Target[]) => {
     const available = requested.filter((target) => statuses[target.key]?.hasSource)
@@ -72,8 +73,9 @@ export function AssetReprocessPanel({ onTaskChange }: { onTaskChange?: (message:
         const file = new File([source], metadata?.originalName ?? target.label, { type: source.type || 'image/png' })
         const prepared = await prepareVideoAsset(file, { profile: studio.assetQualityProfile, alphaMode: studio.alphaPipelineMode })
         if (!prepared.renderBlob.size || !prepared.thumbnailBlob.size) throw new Error(`El nuevo proxy de ${target.label} está vacío.`)
-        await storePreparedMedia(target.key, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, source)
-        replaceUrls(target, prepared); completed += 1
+        const storageKey = createMediaRevisionKey(target.baseKey)
+        await storePreparedMedia(storageKey, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, source)
+        replaceUrls(target, storageKey, prepared); completed += 1
       }
       const result = `${completed} artes actualizadas · ${studio.assetQualityProfile} · ${studio.alphaPipelineMode}`
       setMessage(result); onTaskChange?.(result); await refresh()

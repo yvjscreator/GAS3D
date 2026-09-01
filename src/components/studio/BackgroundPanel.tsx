@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useStudioStore } from '../../store/studioStore'
-import { backgroundMediaKey, removePreparedMedia, storeMedia, storePreparedMedia } from '../../utils/mediaStorage'
+import { backgroundMediaKey, createMediaRevisionKey, storeMedia, storePreparedMedia } from '../../utils/mediaStorage'
 import { prepareVideoAsset } from '../../utils/mediaProcessor'
 import { Pause, Play } from '../icons'
 export function BackgroundPanel() {
@@ -11,14 +11,14 @@ export function BackgroundPanel() {
     if (!(isVideo ? file.type.startsWith('video/') : file.type.startsWith('image/'))) { setError(isVideo ? 'Carga MP4 o WebM.' : 'Carga JPG, PNG o WebP.'); return }
     try {
       let renderBlob: Blob = file
-      if (isVideo) { await removePreparedMedia(backgroundMediaKey); await storeMedia(backgroundMediaKey, file) }
+      const storageKey = createMediaRevisionKey(backgroundMediaKey)
+      if (isVideo) await storeMedia(storageKey, file)
       else {
         const prepared = await prepareVideoAsset(file, { profile: useStudioStore.getState().assetQualityProfile, alphaMode: useStudioStore.getState().alphaPipelineMode, mimeType: file.type === 'image/jpeg' ? 'image/webp' : undefined })
         renderBlob = prepared.renderBlob
-        await storePreparedMedia(backgroundMediaKey, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
+        await storePreparedMedia(storageKey, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
       }
-      if (background.url) URL.revokeObjectURL(background.url)
-      setBackground({ url: URL.createObjectURL(renderBlob), name: file.name, videoPaused: false })
+      setBackground({ url: URL.createObjectURL(renderBlob), storageKey, name: file.name, videoPaused: false })
       if (beatSync.source === 'background') setBeatSync({ analyzedAssetName: null, beats: [], confidence: 0 })
       setError(null)
     } catch { setError('No se pudo procesar el fondo.') }

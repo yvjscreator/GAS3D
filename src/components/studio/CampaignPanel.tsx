@@ -3,7 +3,7 @@ import { createDefaultCamera, createDefaultLabel, isCompleteCollectionItem, isVa
 import { placementFacing } from '../../config/garmentMotions'
 import { useStudioStore } from '../../store/studioStore'
 import type { CampaignMode, CollectionAssetRole, CollectionItem, PrintPlacement, VariantAsset } from '../../types/studio'
-import { collectionMediaKey, removePreparedMedia, storePreparedMedia } from '../../utils/mediaStorage'
+import { collectionMediaKey, createMediaRevisionKey, storePreparedMedia } from '../../utils/mediaStorage'
 import { prepareVideoAsset } from '../../utils/mediaProcessor'
 import { ChevronDown, ChevronUp, GripVertical, ImagePlus, Images, Plus, Split, Trash2 } from '../icons'
 import { IconButton, MasterDetailLayout, SegmentedControl } from '../ui'
@@ -44,27 +44,22 @@ export function CampaignPanel() {
     if (!['image/png', 'image/webp'].includes(file.type)) { setError('Cada estampado debe ser PNG o WebP con transparencia.'); return }
     try {
       const prepared = await prepareVideoAsset(file, { profile: studio.assetQualityProfile, alphaMode: studio.alphaPipelineMode })
+      const storageKey = createMediaRevisionKey(collectionMediaKey(item.id, role))
+      await storePreparedMedia(storageKey, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
       const url = URL.createObjectURL(prepared.renderBlob); const thumbnailUrl = URL.createObjectURL(prepared.thumbnailBlob)
-      const asset = { url, thumbnailUrl, name: file.name, width: prepared.metadata.proxyWidth, height: prepared.metadata.proxyHeight, originalWidth: prepared.metadata.originalWidth, originalHeight: prepared.metadata.originalHeight, originalBytes: prepared.metadata.originalBytes, renderBytes: prepared.metadata.renderBytes, profile: prepared.metadata.profile }
+      const asset = { url, thumbnailUrl, storageKey, name: file.name, width: prepared.metadata.proxyWidth, height: prepared.metadata.proxyHeight, originalWidth: prepared.metadata.originalWidth, originalHeight: prepared.metadata.originalHeight, originalBytes: prepared.metadata.originalBytes, renderBytes: prepared.metadata.renderBytes, profile: prepared.metadata.profile }
       if (role === 'main') {
-        if (item.asset.url) URL.revokeObjectURL(item.asset.url)
-        if (item.asset.thumbnailUrl) URL.revokeObjectURL(item.asset.thumbnailUrl)
         const automaticName = item.asset.name ? item.name : cleanName(file.name)
         studio.updateCollectionItem(item.id, { asset, print: { ...item.print, url, name: file.name }, name: automaticName, label: { ...item.label, text: automaticName } })
       } else {
-        if (item.companionAsset.url) URL.revokeObjectURL(item.companionAsset.url)
-        if (item.companionAsset.thumbnailUrl) URL.revokeObjectURL(item.companionAsset.thumbnailUrl)
         studio.updateCollectionItem(item.id, { companionAsset: asset, companionPrint: { ...item.companionPrint, url, name: file.name } })
       }
       selectItem(item, role); setError(null)
-      await storePreparedMedia(collectionMediaKey(item.id, role), prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
     } catch { setError(`No se pudo procesar ${file.name}.`) }
   }
   const requestUpload = (item: CollectionItem, role: CollectionAssetRole) => { selectItem(item, role); pendingUpload.current = { item, role }; uploadInput.current?.click() }
   const removeItem = (item: CollectionItem) => {
-    if (item.asset.url) URL.revokeObjectURL(item.asset.url); if (item.companionAsset.url) URL.revokeObjectURL(item.companionAsset.url)
-    if (item.asset.thumbnailUrl) URL.revokeObjectURL(item.asset.thumbnailUrl); if (item.companionAsset.thumbnailUrl) URL.revokeObjectURL(item.companionAsset.thumbnailUrl)
-    void removePreparedMedia(collectionMediaKey(item.id, 'main')); void removePreparedMedia(collectionMediaKey(item.id, 'companion')); studio.removeCollectionItem(item.id)
+    studio.removeCollectionItem(item.id)
   }
   const dropOn = (event: DragEvent, targetId: string) => { event.preventDefault(); if (draggingId) studio.reorderCollectionItem(draggingId, targetId); setDraggingId(null) }
   const role = studio.activeCollectionAssetRole

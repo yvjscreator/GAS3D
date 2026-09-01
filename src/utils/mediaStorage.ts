@@ -106,3 +106,4 @@ export const collectionMediaKey = (id: string, role: 'main' | 'companion' = 'mai
 export const backgroundMediaKey = 'background'
 export const overlayMediaKey = (id: string) => `overlay:${id}`
 export const musicMediaKey = 'music'
+export const createMediaRevisionKey = (baseKey: string) => `${baseKey}:revision:${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`

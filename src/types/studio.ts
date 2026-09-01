@@ -65,6 +65,7 @@ export interface LayerTiming {
 
 interface OverlayLayerBase {
   id: string
+  storageKey?: string
   name: string
   x: number
   y: number
@@ -227,6 +228,7 @@ export interface DesignCombination {
 
 export interface AudioTrackSettings {
   url: string | null
+  storageKey?: string
   name: string | null
   volume: number
   start: number
@@ -238,6 +240,7 @@ export interface AudioTrackSettings {
 
 export interface VariantAsset {
   url: string | null
+  storageKey?: string
   thumbnailUrl?: string | null
   name: string | null
   width: number
@@ -273,6 +276,7 @@ export interface BackgroundSettings {
   type: BackgroundType
   color: string
   url: string | null
+  storageKey?: string
   name: string | null
   blur: number
   darkness: number

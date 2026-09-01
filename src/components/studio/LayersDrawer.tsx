@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useStudioStore } from '../../store/studioStore'
 import type { LayerTiming, StageOverlayLayer } from '../../types/studio'
-import { overlayMediaKey, removePreparedMedia, storePreparedMedia } from '../../utils/mediaStorage'
+import { createMediaRevisionKey, overlayMediaKey, storePreparedMedia } from '../../utils/mediaStorage'
 import { prepareVideoAsset } from '../../utils/mediaProcessor'
 import { ChevronDown, ChevronUp, EllipsisVertical, Image as ImageIcon, Layers3, Lock, Plus, Type, X } from '../icons'
 
@@ -20,10 +20,11 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
     const id = newId()
     try {
       const prepared = await prepareVideoAsset(file, { profile: studio.assetQualityProfile, alphaMode: studio.alphaPipelineMode })
+      const storageKey = createMediaRevisionKey(overlayMediaKey(id))
+      await storePreparedMedia(storageKey, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
       const url = URL.createObjectURL(prepared.renderBlob)
-      const layer: StageOverlayLayer = { id, type: 'image', name: file.name, sourceName: file.name, url, naturalWidth: prepared.metadata.proxyWidth, naturalHeight: prepared.metadata.proxyHeight, x: 50, y: 50, width: 28, rotation: 0, opacity: 100, timing: defaultTiming(projectDuration) }
+      const layer: StageOverlayLayer = { id, storageKey, type: 'image', name: file.name, sourceName: file.name, url, naturalWidth: prepared.metadata.proxyWidth, naturalHeight: prepared.metadata.proxyHeight, x: 50, y: 50, width: 28, rotation: 0, opacity: 100, timing: defaultTiming(projectDuration) }
       studio.addOverlayLayer(layer); setOpen(true); setError(null)
-      await storePreparedMedia(overlayMediaKey(id), prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
     } catch { setError('No se pudo procesar la imagen.') }
   }
   const addText = () => {
@@ -32,8 +33,7 @@ export function LayersDrawer({ embedded = false, onRequestClose }: { embedded?: 
   }
   const removeSelected = () => {
     if (!selectedOverlay) return
-    if (selectedOverlay.type === 'image' && selectedOverlay.url) URL.revokeObjectURL(selectedOverlay.url)
-    void removePreparedMedia(overlayMediaKey(selectedOverlay.id)); studio.removeOverlayLayer(selectedOverlay.id)
+    studio.removeOverlayLayer(selectedOverlay.id)
   }
   const orderedLayers = [...studio.layerOrder].reverse()
   const visible = embedded || open

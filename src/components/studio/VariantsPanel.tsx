@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { createDefaultCamera, createDefaultLabel } from '../../config/advancedDirectors'
 import { useStudioStore } from '../../store/studioStore'
 import { printPlacements, type DesignAssetRole, type DesignCombination, type PrintPlacement, type VariantAssetRole } from '../../types/studio'
-import { removePreparedMedia, storePreparedMedia, variantMediaKey } from '../../utils/mediaStorage'
+import { createMediaRevisionKey, storePreparedMedia, variantMediaKey } from '../../utils/mediaStorage'
 import { prepareVideoAsset } from '../../utils/mediaProcessor'
 import { Check, ChevronDown, ChevronUp, Copy, ImagePlus, Plus, Trash2 } from '../icons'
 import { IconButton, MasterDetailLayout } from '../ui'
@@ -39,11 +39,9 @@ export function VariantsPanel() {
   }
   const storeAsset = async (role: VariantAssetRole, file: File) => {
     const prepared = await prepareVideoAsset(file, { profile: studio.assetQualityProfile, alphaMode: studio.alphaPipelineMode })
-    const current = useStudioStore.getState().variantAssets[role]
-    if (current.url) URL.revokeObjectURL(current.url)
-    if (current.thumbnailUrl) URL.revokeObjectURL(current.thumbnailUrl)
-    await storePreparedMedia(variantMediaKey(role), prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
-    studio.setVariantAsset(role, { url: URL.createObjectURL(prepared.renderBlob), thumbnailUrl: URL.createObjectURL(prepared.thumbnailBlob), name: file.name, width: prepared.metadata.proxyWidth, height: prepared.metadata.proxyHeight, originalWidth: prepared.metadata.originalWidth, originalHeight: prepared.metadata.originalHeight, originalBytes: prepared.metadata.originalBytes, renderBytes: prepared.metadata.renderBytes, profile: prepared.metadata.profile })
+    const storageKey = createMediaRevisionKey(variantMediaKey(role))
+    await storePreparedMedia(storageKey, prepared.renderBlob, prepared.thumbnailBlob, prepared.metadata, file)
+    studio.setVariantAsset(role, { url: URL.createObjectURL(prepared.renderBlob), thumbnailUrl: URL.createObjectURL(prepared.thumbnailBlob), storageKey, name: file.name, width: prepared.metadata.proxyWidth, height: prepared.metadata.proxyHeight, originalWidth: prepared.metadata.originalWidth, originalHeight: prepared.metadata.originalHeight, originalBytes: prepared.metadata.originalBytes, renderBytes: prepared.metadata.renderBytes, profile: prepared.metadata.profile })
   }
   const chooseOne = async (role: VariantAssetRole, file?: File) => {
     if (!file) return
@@ -57,10 +55,7 @@ export function VariantsPanel() {
     try { await storeAsset('large', main); await storeAsset('small', companion); selectRole('large'); setError(null) } catch { setError('No se pudieron procesar las imágenes.') }
   }
   const clear = () => (['large', 'small'] as VariantAssetRole[]).forEach((role) => {
-    const asset = studio.variantAssets[role]
-    if (asset.url) URL.revokeObjectURL(asset.url)
-    if (asset.thumbnailUrl) URL.revokeObjectURL(asset.thumbnailUrl)
-    void removePreparedMedia(variantMediaKey(role)); studio.setVariantAsset(role, { url: null, thumbnailUrl: null, name: null, width: 0, height: 0 })
+    studio.setVariantAsset(role, { url: null, thumbnailUrl: null, storageKey: undefined, name: null, width: 0, height: 0 })
   })
   const addCombination = () => {
     const mainPlacement: PrintPlacement = 'frontCenter'; const companionPlacement: PrintPlacement = 'backCenter'

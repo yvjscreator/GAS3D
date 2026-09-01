@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useStudioStore } from '../../store/studioStore'
-import { musicMediaKey, removeMedia, storeMedia } from '../../utils/mediaStorage'
+import { createMediaRevisionKey, musicMediaKey, storeMedia } from '../../utils/mediaStorage'
 import { AudioLines, Music2, Plus, RefreshCw, Trash2, Video, Volume2 } from '../icons'
 import { BeatSyncPanel } from './BeatSyncPanel'
 
@@ -14,21 +14,22 @@ export function AudioPanel() {
     if (!file.type.startsWith('audio/') && !/\.(mp3|wav|ogg|aac|m4a)$/i.test(file.name)) { setError('Carga un archivo MP3, WAV, AAC u OGG.'); return }
     const url = URL.createObjectURL(file)
     const probe = new Audio()
-    probe.onloadedmetadata = () => {
+    probe.onloadedmetadata = async () => {
       const sourceDuration = Number.isFinite(probe.duration) ? probe.duration : studio.advancedProjects[studio.activeDirectorId].duration
-      if (studio.music.url) URL.revokeObjectURL(studio.music.url)
-      studio.setMusic({ url, name: file.name, sourceDuration, start: 0, duration: sourceDuration, fadeIn: .5, fadeOut: .8 })
-      if (studio.beatSync.source === 'music') studio.setBeatSync({ analyzedAssetName: null, beats: [], confidence: 0 })
-      studio.selectLayer('music'); setError(null); probe.removeAttribute('src')
-      void storeMedia(musicMediaKey, file).catch(() => setError('No se pudo guardar la música para la próxima sesión.'))
+      const storageKey = createMediaRevisionKey(musicMediaKey)
+      try {
+        await storeMedia(storageKey, file)
+        studio.setMusic({ url, storageKey, name: file.name, sourceDuration, start: 0, duration: sourceDuration, fadeIn: .5, fadeOut: .8 })
+        if (studio.beatSync.source === 'music') studio.setBeatSync({ analyzedAssetName: null, beats: [], confidence: 0 })
+        studio.selectLayer('music'); setError(null)
+      } catch { URL.revokeObjectURL(url); setError('No se pudo guardar la música para la próxima sesión.') }
+      probe.removeAttribute('src')
     }
     probe.onerror = () => { URL.revokeObjectURL(url); setError('No se pudo leer el archivo de audio.') }
     probe.preload = 'metadata'; probe.src = url
   }
   const removeMusic = () => {
-    if (studio.music.url) URL.revokeObjectURL(studio.music.url)
-    void removeMedia(musicMediaKey)
-    studio.setMusic({ url: null, name: null, sourceDuration: 0 })
+    studio.setMusic({ url: null, storageKey: undefined, name: null, sourceDuration: 0 })
     if (studio.beatSync.source === 'music') studio.setBeatSync({ enabled: false, analyzedAssetName: null, beats: [], confidence: 0 })
     studio.selectLayer('garment')
   }
