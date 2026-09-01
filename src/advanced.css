@@ -170,8 +170,8 @@
 
 @container (max-width:520px) {
   .collection-toolbar { align-items:stretch; flex-direction:column; }.collection-toolbar .collection-add { width:100%; }
-  .collection-card { grid-template-columns:13px 18px 65px minmax(70px,1fr) auto; }
-  .collection-card-actions { display:none; }
+  .collection-card { grid-template-columns:13px 18px 65px minmax(70px,1fr); }
+  .collection-card-actions { grid-column:3/-1; justify-content:flex-end; }
   .collection-inspector-fields { grid-template-columns:1fr; }.collection-name-field { grid-column:auto; }
   .single-variant-fields { grid-template-columns:1fr; }.variant-name-field { grid-column:auto; }
   .combination-list>article { grid-template-columns:24px minmax(0,1fr); }.combination-list>article>div { grid-column:1/-1; justify-content:flex-end; }
