@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -13,13 +14,12 @@ from typing import Literal
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from faster_whisper import WhisperModel
+from google import genai
 from pydantic import BaseModel, Field
 
 APP_NAME = "GAS3D Subtitle Engine"
-MODEL_NAME = os.getenv("WHISPER_MODEL", "large-v3")
-DEVICE = os.getenv("WHISPER_DEVICE", "auto")
-COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "default")
+GEMINI_MODEL = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WORK_ROOT = Path(os.getenv("SUBTITLE_WORK_DIR", Path(tempfile.gettempdir()) / "gas3d-subtitles"))
 WORK_ROOT.mkdir(parents=True, exist_ok=True)
 
@@ -34,12 +34,11 @@ app.add_middleware(
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
-_model: WhisperModel | None = None
-_model_lock = threading.Lock()
-_executor = ThreadPoolExecutor(max_workers=max(1, int(os.getenv("WHISPER_WORKERS", "1"))))
+_executor = ThreadPoolExecutor(max_workers=max(1, int(os.getenv("TRANSCRIBE_WORKERS", "2"))))
 
 
 class ExportOptions(BaseModel):
+    preset: str = "viral"
     baseColor: str = "#FFFFFF"
     activeColor: str = "#FFE347"
     outlineColor: str = "#000000"
@@ -50,24 +49,14 @@ class ExportOptions(BaseModel):
     wordOverrides: dict[int, str] = Field(default_factory=dict)
 
 
-def _get_model() -> WhisperModel:
-    global _model
-    if _model is not None:
-        return _model
-    with _model_lock:
-        if _model is None:
-            _model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type=COMPUTE_TYPE)
-    return _model
-
-
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(command, check=True, capture_output=True, text=True)
     except FileNotFoundError as exc:
-        raise RuntimeError(f"No se encontró {command[0]}. Instalá FFmpeg y asegurate de que esté en PATH.") from exc
+        raise RuntimeError(f"No se encontró {command[0]}.") from exc
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()
-        raise RuntimeError(detail[-1400:] or f"Falló {command[0]}.") from exc
+        raise RuntimeError(detail[-1800:] or f"Falló {command[0]}.") from exc
 
 
 def _parse_rate(rate: str | None) -> float | None:
@@ -98,6 +87,53 @@ def _probe(path: Path) -> dict:
         "height": int(video["height"]) if video.get("height") else None,
         "fps": _parse_rate(video.get("r_frame_rate")),
     }
+
+
+def _extract_audio(input_path: Path, output_path: Path) -> None:
+    _run([
+        "ffmpeg", "-y",
+        "-i", str(input_path),
+        "-vn",
+        "-ac", "1",
+        "-ar", "16000",
+        "-c:a", "flac",
+        str(output_path),
+    ])
+
+
+def _offset_seconds(value: object) -> float:
+    if value is None:
+        return 0.0
+    text = str(value).strip()
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)s", text)
+    if match:
+        return float(match.group(1))
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def _extract_word_annotations(interaction: object) -> list[dict]:
+    words: list[dict] = []
+    for step in getattr(interaction, "steps", []) or []:
+        for content in getattr(step, "content", []) or []:
+            for annotation in getattr(content, "annotations", []) or []:
+                if getattr(annotation, "type", None) != "word_info":
+                    continue
+                text = (getattr(annotation, "text", "") or "").strip()
+                if not text:
+                    continue
+                start = max(0.0, _offset_seconds(getattr(annotation, "start_offset", None)))
+                end = max(start + 0.01, _offset_seconds(getattr(annotation, "end_offset", None)))
+                words.append({
+                    "id": len(words),
+                    "text": text,
+                    "start": start,
+                    "end": end,
+                    "speaker": getattr(annotation, "speaker", None),
+                })
+    return words
 
 
 def _group_words(words: list[dict], max_words: int = 5) -> list[dict]:
@@ -153,60 +189,68 @@ def _update_job(job_id: str, **changes) -> None:
 
 def _transcribe(job_id: str) -> None:
     with _jobs_lock:
-        job = _jobs[job_id]
-        input_path = Path(job["inputPath"])
-        requested_language = job.get("requestedLanguage")
-        duration = job.get("duration") or 0.0
+        job = dict(_jobs[job_id])
+
+    input_path = Path(job["inputPath"])
+    audio_path = input_path.parent / "speech.flac"
+    remote_file = None
 
     try:
-        _update_job(job_id, status="transcribing", progress=0.03, message=f"Cargando Whisper {MODEL_NAME}…")
-        model = _get_model()
-        _update_job(job_id, progress=0.08, message="Analizando audio con timestamps por palabra…")
+        if not GEMINI_API_KEY:
+            raise RuntimeError("Falta configurar GEMINI_API_KEY en Render.")
 
-        segments, info = model.transcribe(
-            str(input_path),
-            language=requested_language or None,
-            task="transcribe",
-            beam_size=5,
-            best_of=5,
-            temperature=0.0,
-            word_timestamps=True,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 250},
-            condition_on_previous_text=True,
+        _update_job(job_id, status="transcribing", progress=0.08, message="Extrayendo audio del video…")
+        _extract_audio(input_path, audio_path)
+
+        _update_job(job_id, progress=0.22, message="Subiendo audio a Gemini…")
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        remote_file = client.files.upload(file=str(audio_path))
+
+        transcription_config: dict = {
+            "mode": {
+                "type": "verbatim",
+                "timestamp_granularities": ["word"],
+            }
+        }
+        requested_language = job.get("requestedLanguage")
+        if requested_language:
+            transcription_config["language_codes"] = [requested_language]
+
+        _update_job(job_id, progress=0.38, message=f"Transcribiendo con {GEMINI_MODEL}…")
+        interaction = client.interactions.create(
+            model=GEMINI_MODEL,
+            input=[{
+                "type": "audio",
+                "uri": remote_file.uri,
+                "mime_type": remote_file.mime_type,
+            }],
+            generation_config={
+                "transcription_config": transcription_config,
+            },
         )
 
-        words: list[dict] = []
-        detected_language = getattr(info, "language", None) or requested_language
-        audio_duration = float(getattr(info, "duration", 0.0) or duration or 0.0)
-
-        for segment in segments:
-            for raw_word in segment.words or []:
-                text = (raw_word.word or "").strip()
-                if not text:
-                    continue
-                start = max(0.0, float(raw_word.start or 0.0))
-                end = max(start + 0.01, float(raw_word.end or start + 0.01))
-                words.append({"id": len(words), "text": text, "start": start, "end": end})
-                if audio_duration > 0:
-                    progress = min(0.96, 0.08 + (end / audio_duration) * 0.88)
-                    _update_job(job_id, progress=progress, message=f"Transcribiendo… {int(progress * 100)}%")
-
+        words = _extract_word_annotations(interaction)
         if not words:
-            raise RuntimeError("Whisper no detectó palabras en el audio.")
+            raise RuntimeError("Gemini terminó la transcripción, pero no devolvió timestamps por palabra.")
 
         _update_job(
             job_id,
             status="ready",
             progress=1.0,
             message=f"Transcripción lista · {len(words)} palabras",
-            language=detected_language,
             words=words,
             captions=_group_words(words),
             error=None,
         )
     except Exception as exc:
         _update_job(job_id, status="error", progress=1.0, message="La transcripción falló.", error=str(exc))
+    finally:
+        if remote_file is not None:
+            try:
+                client.files.delete(name=remote_file.name)
+            except Exception:
+                pass
+        audio_path.unlink(missing_ok=True)
 
 
 def _hex_to_ass(value: str) -> str:
@@ -229,28 +273,45 @@ def _ass_time(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{whole_seconds:02d}.{cs:02d}"
 
 
+def _preset_style(preset: str) -> dict:
+    styles = {
+        "viral": {"outline": 1.0, "shadow": 1.0, "scale": 112, "spacing": 0, "blur": 0, "inactive_alpha": "00"},
+        "clean": {"outline": 0.58, "shadow": 0.25, "scale": 104, "spacing": 0, "blur": 0, "inactive_alpha": "00"},
+        "punch": {"outline": 1.08, "shadow": 1.1, "scale": 116, "spacing": 1.2, "blur": 0, "inactive_alpha": "00"},
+        "neon": {"outline": 0.78, "shadow": 0.45, "scale": 109, "spacing": 0.4, "blur": 1.4, "inactive_alpha": "20"},
+        "karaoke": {"outline": 0.75, "shadow": 0.55, "scale": 107, "spacing": 0, "blur": 0, "inactive_alpha": "50"},
+        "cinema": {"outline": 0.58, "shadow": 0.35, "scale": 103, "spacing": 0.2, "blur": 0, "inactive_alpha": "00"},
+    }
+    return styles.get(preset, styles["viral"])
+
+
 def _build_ass(job: dict, options: ExportOptions, output_path: Path) -> None:
     width = int(job.get("width") or 1080)
     height = int(job.get("height") or 1920)
     words = [dict(word) for word in job["words"]]
+    preset = _preset_style(options.preset)
 
+    force_uppercase = options.uppercase or options.preset == "punch"
     for word in words:
         replacement = options.wordOverrides.get(word["id"])
         if replacement is not None:
             word["text"] = replacement.strip() or word["text"]
-        if options.uppercase:
+        if force_uppercase:
             word["text"] = word["text"].upper()
 
     groups = _group_words(words, options.maxWords)
     by_id = {word["id"]: word for word in words}
     font_size = max(18, round(height * options.fontScale / 100))
-    outline = max(2, round(height * 0.0026))
-    shadow = max(1, round(height * 0.0012))
+    outline = max(1, round(height * 0.0026 * preset["outline"]))
+    shadow = max(0, round(height * 0.0012 * preset["shadow"]))
     margin_v = max(26, round(height * 0.075))
     alignment = {"top": 8, "center": 5, "bottom": 2}[options.position]
     base = _hex_to_ass(options.baseColor)
     active = _hex_to_ass(options.activeColor)
     outline_color = _hex_to_ass(options.outlineColor)
+    font_name = "DejaVu Sans"
+    if options.preset == "cinema":
+        font_name = "DejaVu Serif"
 
     lines = [
         "[Script Info]",
@@ -262,7 +323,7 @@ def _build_ass(job: dict, options: ExportOptions, output_path: Path) -> None:
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Default,Arial,{font_size},{base},{base},{outline_color},&H78000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},{alignment},{round(width * 0.06)},{round(width * 0.06)},{margin_v},1",
+        f"Style: Default,{font_name},{font_size},{base},{base},{outline_color},&H78000000,-1,0,0,0,100,100,{preset['spacing']},0,1,{outline},{shadow},{alignment},{round(width * 0.06)},{round(width * 0.06)},{margin_v},1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -275,12 +336,22 @@ def _build_ass(job: dict, options: ExportOptions, output_path: Path) -> None:
             next_start = group_words[index + 1]["start"] if index + 1 < len(group_words) else group["end"] + 0.20
             end = max(active_word["end"], next_start)
             rendered: list[str] = []
+
             for word in group_words:
                 text = _escape_ass(word["text"])
                 if word["id"] == active_word["id"]:
-                    rendered.append(r"{\1c" + active + r"\fscx106\fscy106}" + text + r"{\fscx100\fscy100}")
+                    blur = f"\\blur{preset['blur']}" if preset["blur"] else ""
+                    rendered.append(
+                        r"{\1c" + active +
+                        rf"\1a&H00&\fscx{preset['scale']}\fscy{preset['scale']}{blur}" +
+                        "}" + text +
+                        r"{\fscx100\fscy100\blur0}"
+                    )
                 else:
-                    rendered.append(r"{\1c" + base + "}" + text)
+                    rendered.append(
+                        r"{\1c" + base + rf"\1a&H{preset['inactive_alpha']}&" + "}" + text
+                    )
+
             lines.append(
                 f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{' '.join(rendered)}"
             )
@@ -292,10 +363,9 @@ def _build_ass(job: dict, options: ExportOptions, output_path: Path) -> None:
 def health() -> dict:
     return {
         "ok": True,
-        "engine": "faster-whisper",
-        "model": MODEL_NAME,
-        "device": DEVICE,
-        "computeType": COMPUTE_TYPE,
+        "engine": "gemini",
+        "model": GEMINI_MODEL,
+        "configured": bool(GEMINI_API_KEY),
     }
 
 
@@ -317,11 +387,17 @@ async def create_job(video: UploadFile = File(...), language: str | None = Form(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if metadata.get("duration") and metadata["duration"] > 30 * 60:
+        raise HTTPException(
+            status_code=400,
+            detail="Gemini permite hasta 30 minutos cuando usamos timestamps por palabra.",
+        )
+
     job = {
         "id": job_id,
         "status": "queued",
         "progress": 0.0,
-        "message": "Video recibido. Preparando Whisper…",
+        "message": "Video recibido. Preparando audio…",
         "fileName": video.filename or input_path.name,
         "requestedLanguage": language or None,
         "language": language or None,
