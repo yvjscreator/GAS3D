@@ -13,34 +13,58 @@ npm run dev
 
 GAS3D incluye una herramienta aislada para añadir subtítulos sincronizados palabra a palabra a videos. Se abre desde el selector superior **Subtítulos** o directamente en `#/subtitles`.
 
-El motor usa `faster-whisper` con `large-v3`, timestamps por palabra, VAD y búsqueda con `beam_size=5`. La exportación usa FFmpeg + ASS para resaltar la palabra activa y genera MP4 sin marca de agua manteniendo las dimensiones y el ritmo de cuadros del video de entrada.
+La transcripción usa **Gemini 3.5 Transcribe** con timestamps por palabra. El backend extrae una pista FLAC temporal mediante FFmpeg, la envía a Gemini y elimina ese archivo remoto al terminar. La exportación usa FFmpeg + ASS para generar MP4 sin marca de agua y sin escalar la imagen del video original.
+
+Incluye presets visuales:
+
+- **Viral Pop**: alto contraste y pop de palabra activa.
+- **Clean**: minimalista para contenido educativo.
+- **Punch**: mayúsculas y énfasis fuerte.
+- **Neon Glow**: acento luminoso para gaming/tech.
+- **Karaoke Focus**: contexto atenuado y palabra activa dominante.
+- **Cinema**: estilo editorial más sobrio.
+
+La transcripción puede corregirse palabra por palabra antes de exportar.
+
+### Desarrollo local
 
 Requisitos adicionales:
 
 - Python 3.10+
 - FFmpeg / FFprobe en `PATH`
-
-Primera instalación:
+- `GEMINI_API_KEY`
 
 ```bash
 python -m venv .venv-subtitles
 source .venv-subtitles/bin/activate
 pip install -r services/subtitle_engine/requirements.txt
-```
-
-Ejecuta el motor en una terminal:
-
-```bash
+export GEMINI_API_KEY="..."
 npm run subtitles:api
 ```
 
-Y Vite en otra:
+En otra terminal:
 
 ```bash
 npm run dev
 ```
 
-El primer uso puede descargar el modelo `large-v3`. En GPU NVIDIA el procesamiento será mucho más rápido; en CPU sigue siendo funcional, pero la transcripción será más lenta.
+### Render
+
+La arquitectura recomendada conserva el frontend Vite ya desplegado y añade un Web Service Python para Subtitle Studio.
+
+El repo incluye `render.yaml` para crear el backend `gas3d-subtitle-api`.
+
+Variables del Web Service:
+
+- `GEMINI_API_KEY`: clave privada de Gemini.
+- `SUBTITLE_CORS_ORIGINS`: URL pública del frontend GAS3D, por ejemplo `https://tu-gas3d.onrender.com`.
+- `GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe`.
+
+En el Static Site existente configura:
+
+- `VITE_SUBTITLE_API_URL=https://gas3d-subtitle-api.onrender.com`
+
+Después vuelve a desplegar el Static Site para que Vite incorpore la URL del backend.
 
 ## Build
 
@@ -56,10 +80,10 @@ Coloca modelos licenciados en `public/assets/models/garments/` y regístralos en
 
 `GarmentViewer` es el visor 3D reutilizable: no depende de la interfaz del estudio y acepta prenda, estampado y animación mediante props. `GarmentAdStudio` compone el editor, controles de medios, preview y exportación.
 
-`SubtitleStudio` es independiente del editor 3D y habla con `services/subtitle_engine` a través de `/api/subtitles`. En desarrollo Vite proxifica esas llamadas al motor local en el puerto `8787`.
+`SubtitleStudio` es independiente del editor 3D y habla con `services/subtitle_engine` mediante `/api/subtitles`. En desarrollo Vite proxifica esas llamadas al motor local en el puerto `8787`; en producción usa `VITE_SUBTITLE_API_URL`.
 
 ## Limitaciones observadas
 
 La exportación del editor 3D usa `MediaRecorder`; en navegadores habituales se genera WebM. La calibración definitiva de zonas de impresión debe hacerse al incorporar el modelo de remera real.
 
-Subtitle Studio requiere FFmpeg con soporte para el filtro `ass`/libass.
+Subtitle Studio requiere FFmpeg con soporte para el filtro `ass`/libass. Gemini 3.5 Transcribe limita a 30 minutos los archivos cuando se solicitan timestamps por palabra.
