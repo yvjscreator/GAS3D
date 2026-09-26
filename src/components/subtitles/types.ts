@@ -3,6 +3,7 @@ export type SubtitleWord = {
   text: string
   start: number
   end: number
+  speaker?: string | null
 }
 
 export type SubtitleCaption = {
@@ -30,7 +31,10 @@ export type SubtitleJob = {
   error: string | null
 }
 
+export type SubtitlePresetId = 'viral' | 'clean' | 'punch' | 'neon' | 'karaoke' | 'cinema'
+
 export type SubtitleExportOptions = {
+  preset: SubtitlePresetId
   baseColor: string
   activeColor: string
   outlineColor: string
