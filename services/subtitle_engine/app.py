@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 APP_NAME = "GAS3D Subtitle Engine"
 MODEL_NAME = os.getenv("WHISPER_MODEL", "large-v3")
 DEVICE = os.getenv("WHISPER_DEVICE", "auto")
-COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "auto")
+COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "default")
 WORK_ROOT = Path(os.getenv("SUBTITLE_WORK_DIR", Path(tempfile.gettempdir()) / "gas3d-subtitles"))
 WORK_ROOT.mkdir(parents=True, exist_ok=True)
 
@@ -47,7 +47,7 @@ class ExportOptions(BaseModel):
     position: Literal["top", "center", "bottom"] = "bottom"
     maxWords: int = Field(default=5, ge=1, le=12)
     uppercase: bool = False
-    wordOverrides: dict[int, str] = {}
+    wordOverrides: dict[int, str] = Field(default_factory=dict)
 
 
 def _get_model() -> WhisperModel:
