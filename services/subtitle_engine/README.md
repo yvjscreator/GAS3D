@@ -28,7 +28,7 @@ Variables opcionales:
 
 - `WHISPER_MODEL=large-v3`
 - `WHISPER_DEVICE=auto`
-- `WHISPER_COMPUTE_TYPE=auto`
+- `WHISPER_COMPUTE_TYPE=default`
 - `WHISPER_WORKERS=1`
 - `SUBTITLE_CRF=18`
 - `SUBTITLE_X264_PRESET=medium`
