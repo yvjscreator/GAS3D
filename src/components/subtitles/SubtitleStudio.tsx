@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { CheckCircle2, Download, FileVideo2, LoaderCircle, Sparkles, Upload, WandSparkles } from 'lucide-react'
 import { createSubtitleJob, exportSubtitleVideo, getSubtitleJob } from './api'
-import type { SubtitleCaption, SubtitleExportOptions, SubtitleJob, SubtitleWord } from './types'
+import type { SubtitleCaption, SubtitleExportOptions, SubtitleJob, SubtitlePresetId, SubtitleWord } from './types'
+import { getSubtitlePreset, subtitlePresets } from './presets'
 import './subtitleStudio.css'
 
 const statusLabel: Record<SubtitleJob['status'], string> = {
@@ -52,6 +53,7 @@ export function SubtitleStudio() {
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [wordOverrides, setWordOverrides] = useState<Record<number, string>>({})
+  const [preset, setPreset] = useState<SubtitlePresetId>('viral')
   const [baseColor, setBaseColor] = useState('#FFFFFF')
   const [activeColor, setActiveColor] = useState('#FFE347')
   const [outlineColor, setOutlineColor] = useState('#000000')
@@ -120,12 +122,25 @@ export function SubtitleStudio() {
     }
   }
 
+  const applyPreset = (id: SubtitlePresetId) => {
+    const selected = getSubtitlePreset(id)
+    setPreset(id)
+    setBaseColor(selected.options.baseColor)
+    setActiveColor(selected.options.activeColor)
+    setOutlineColor(selected.options.outlineColor)
+    setFontScale(selected.options.fontScale)
+    setPosition(selected.options.position)
+    setMaxWords(selected.options.maxWords)
+    setUppercase(selected.options.uppercase)
+  }
+
   const exportVideo = async () => {
     if (!job || job.status !== 'ready') return
     setExporting(true)
     setError(null)
     try {
       const blob = await exportSubtitleVideo(job.id, {
+        preset,
         baseColor,
         activeColor,
         outlineColor,
@@ -169,7 +184,7 @@ export function SubtitleStudio() {
         <h1>Subtitle Studio</h1>
         <p>Subtítulos sincronizados palabra a palabra, listos para redes sociales.</p>
       </div>
-      <div className="subtitle-engine-badge"><Sparkles size={15} /><span>Whisper large-v3</span><b>alta precisión</b></div>
+      <div className="subtitle-engine-badge"><Sparkles size={15} /><span>Gemini 3.5 Transcribe</span><b>timestamps por palabra</b></div>
     </header>
 
     <section className="subtitle-layout">
@@ -204,6 +219,14 @@ export function SubtitleStudio() {
 
         <div className="subtitle-card">
           <h2>2. Estilo</h2>
+          <div className="subtitle-preset-grid">
+            {subtitlePresets.map((item) => <button key={item.id} className={preset === item.id ? `active preset-${item.id}` : `preset-${item.id}`} onClick={() => applyPreset(item.id)} title={item.description}>
+              <span>{item.name}</span>
+              <strong>{item.sample}</strong>
+              <small>{item.description}</small>
+            </button>)}
+          </div>
+          <p className="subtitle-custom-hint">Podés usar un preset y después personalizar colores, tamaño y posición.</p>
           <div className="subtitle-color-grid">
             <label><span>Texto</span><input type="color" value={baseColor} onChange={(event) => setBaseColor(event.target.value)} /></label>
             <label><span>Palabra activa</span><input type="color" value={activeColor} onChange={(event) => setActiveColor(event.target.value)} /></label>
@@ -234,7 +257,7 @@ export function SubtitleStudio() {
         <div className="subtitle-preview-shell">
           {videoUrl ? <div className="subtitle-video-frame">
             <video ref={videoRef} src={videoUrl} controls playsInline onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onSeeked={(event) => setCurrentTime(event.currentTarget.currentTime)} />
-            {activeCaption && <div className={`subtitle-overlay ${position}`} style={{ '--subtitle-size': `${Math.max(20, fontScale * 6)}px`, '--subtitle-outline': outlineColor } as CSSProperties}>
+            {activeCaption && <div className={`subtitle-overlay ${position} preset-${preset}`} style={{ '--subtitle-size': `${Math.max(20, fontScale * 6)}px`, '--subtitle-outline': outlineColor } as CSSProperties}>
               <div>{activeCaption.wordIds.map((id) => {
                 const word = wordsById.get(id)
                 if (!word) return null
@@ -250,7 +273,7 @@ export function SubtitleStudio() {
           <span><WandSparkles size={15} /> Transcripción</span>
           <small>{job?.words.length ?? 0} palabras</small>
         </div>
-        {!job || job.status !== 'ready' ? <div className="subtitle-transcript-empty">Cuando termine Whisper, vas a poder revisar y corregir cada palabra antes de exportar.</div> :
+        {!job || job.status !== 'ready' ? <div className="subtitle-transcript-empty">Cuando termine Gemini, vas a poder revisar y corregir cada palabra antes de exportar.</div> :
           <div className="subtitle-caption-list">
             {captions.map((caption) => <article key={caption.id} onClick={() => seekToCaption(caption)}>
               <time>{formatTime(caption.start)}</time>
