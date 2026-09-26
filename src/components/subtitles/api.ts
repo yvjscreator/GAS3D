@@ -1,6 +1,7 @@
 import type { SubtitleExportOptions, SubtitleJob } from './types'
 
-const apiBase = '/api/subtitles'
+const apiRoot = (import.meta.env.VITE_SUBTITLE_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
+const apiBase = `${apiRoot}/api/subtitles`
 
 const expectJson = async <T>(response: Response): Promise<T> => {
   if (!response.ok) {
