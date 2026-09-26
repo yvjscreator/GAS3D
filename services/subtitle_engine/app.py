@@ -20,14 +20,19 @@ from pydantic import BaseModel, Field
 APP_NAME = "GAS3D Subtitle Engine"
 GEMINI_MODEL = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("SUBTITLE_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if origin.strip()
+]
 WORK_ROOT = Path(os.getenv("SUBTITLE_WORK_DIR", Path(tempfile.gettempdir()) / "gas3d-subtitles"))
 WORK_ROOT.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title=APP_NAME)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
