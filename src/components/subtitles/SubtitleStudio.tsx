@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { CheckCircle2, Download, FileVideo2, LoaderCircle, Sparkles, Upload, WandSparkles } from 'lucide-react'
 import { createSubtitleJob, exportSubtitleVideo, getSubtitleJob } from './api'
 import type { SubtitleCaption, SubtitleExportOptions, SubtitleJob, SubtitleWord } from './types'
@@ -234,7 +234,7 @@ export function SubtitleStudio() {
         <div className="subtitle-preview-shell">
           {videoUrl ? <div className="subtitle-video-frame">
             <video ref={videoRef} src={videoUrl} controls playsInline onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onSeeked={(event) => setCurrentTime(event.currentTarget.currentTime)} />
-            {activeCaption && <div className={`subtitle-overlay ${position}`} style={{ '--subtitle-size': `${Math.max(20, fontScale * 6)}px`, '--subtitle-outline': outlineColor } as React.CSSProperties}>
+            {activeCaption && <div className={`subtitle-overlay ${position}`} style={{ '--subtitle-size': `${Math.max(20, fontScale * 6)}px`, '--subtitle-outline': outlineColor } as CSSProperties}>
               <div>{activeCaption.wordIds.map((id) => {
                 const word = wordsById.get(id)
                 if (!word) return null
