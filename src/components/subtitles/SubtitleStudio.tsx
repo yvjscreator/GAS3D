@@ -1457,7 +1457,7 @@ export function SubtitleStudio() {
         style={{ backgroundColor: `hsl(${colorHue} 100% 50%)` }}
         onPointerDown={handleColorPlane}
         onPointerMove={(event) => {
-          if (event.buttons) handleColorPlane(event)
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) handleColorPlane(event)
         }}
       >
         <i
