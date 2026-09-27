@@ -39,7 +39,10 @@ app.add_middleware(
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
+_exports: dict[str, dict] = {}
+_exports_lock = threading.Lock()
 _executor = ThreadPoolExecutor(max_workers=max(1, int(os.getenv("TRANSCRIBE_WORKERS", "2"))))
+_export_executor = ThreadPoolExecutor(max_workers=max(1, int(os.getenv("EXPORT_WORKERS", "1"))))
 
 
 class ExportOptions(BaseModel):
@@ -190,6 +193,24 @@ def _update_job(job_id: str, **changes) -> None:
     with _jobs_lock:
         if job_id in _jobs:
             _jobs[job_id].update(changes)
+
+
+def _public_export(export: dict) -> dict:
+    return {
+        "id": export["id"],
+        "jobId": export["jobId"],
+        "status": export["status"],
+        "progress": export["progress"],
+        "message": export["message"],
+        "fileName": export.get("fileName"),
+        "error": export.get("error"),
+    }
+
+
+def _update_export(export_id: str, **changes) -> None:
+    with _exports_lock:
+        if export_id in _exports:
+            _exports[export_id].update(changes)
 
 
 def _transcribe(job_id: str) -> None:
@@ -364,6 +385,83 @@ def _build_ass(job: dict, options: ExportOptions, output_path: Path) -> None:
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _render_export(export_id: str, job: dict, options: ExportOptions) -> None:
+    job_dir = Path(job["inputPath"]).parent
+    export_dir = job_dir / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    ass_path = export_dir / f"{export_id}.ass"
+    output_path = export_dir / f"{export_id}.mp4"
+
+    try:
+        _update_export(export_id, status="exporting", progress=0.03, message="Preparando subtítulos…")
+        _build_ass(job, options, ass_path)
+
+        duration = max(float(job.get("duration") or 0), 0.01)
+        command = [
+            "ffmpeg", "-y",
+            "-loglevel", "error",
+            "-i", job["inputPath"],
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-vf", f"ass={ass_path}",
+            "-c:v", "libx264",
+            "-preset", os.getenv("SUBTITLE_X264_PRESET", "veryfast"),
+            "-crf", os.getenv("SUBTITLE_CRF", "18"),
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            "-progress", "pipe:1",
+            "-nostats",
+            str(output_path),
+        ]
+
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+
+        if process.stdout is not None:
+            for raw_line in process.stdout:
+                key, _, value = raw_line.strip().partition("=")
+                if key in {"out_time_us", "out_time_ms"}:
+                    try:
+                        micros = float(value)
+                        progress = min(0.97, max(0.05, micros / 1_000_000 / duration))
+                        _update_export(
+                            export_id,
+                            progress=progress,
+                            message=f"Renderizando video… {round(progress * 100)}%",
+                        )
+                    except ValueError:
+                        pass
+
+        return_code = process.wait()
+        stderr = process.stderr.read().strip() if process.stderr is not None else ""
+        if return_code != 0:
+            raise RuntimeError(stderr[-1800:] or f"FFmpeg terminó con código {return_code}.")
+
+        _update_export(
+            export_id,
+            status="ready",
+            progress=1.0,
+            message="Video listo para descargar.",
+            fileName=f"{Path(job['fileName']).stem}-subtitulado.mp4",
+            outputPath=str(output_path),
+            error=None,
+        )
+    except Exception as exc:
+        _update_export(
+            export_id,
+            status="error",
+            progress=1.0,
+            message="La exportación falló.",
+            error=str(exc),
+        )
+
+
 @app.get("/api/subtitles/health")
 def health() -> dict:
     return {
@@ -427,8 +525,8 @@ def get_job(job_id: str) -> dict:
         return _public_job(dict(job))
 
 
-@app.post("/api/subtitles/jobs/{job_id}/export")
-def export_job(job_id: str, options: ExportOptions) -> FileResponse:
+@app.post("/api/subtitles/jobs/{job_id}/exports")
+def start_export(job_id: str, options: ExportOptions) -> dict:
     with _jobs_lock:
         source = _jobs.get(job_id)
         if not source:
@@ -438,31 +536,50 @@ def export_job(job_id: str, options: ExportOptions) -> FileResponse:
     if job["status"] != "ready":
         raise HTTPException(status_code=409, detail="La transcripción todavía no está lista.")
 
-    job_dir = Path(job["inputPath"]).parent
-    ass_path = job_dir / "captions.ass"
-    output_path = job_dir / "subtitled.mp4"
+    export_id = uuid.uuid4().hex
+    export = {
+        "id": export_id,
+        "jobId": job_id,
+        "status": "queued",
+        "progress": 0.0,
+        "message": "Exportación en cola…",
+        "fileName": None,
+        "outputPath": None,
+        "error": None,
+    }
+    with _exports_lock:
+        _exports[export_id] = export
 
-    try:
-        _build_ass(job, options, ass_path)
-        _run([
-            "ffmpeg", "-y",
-            "-i", job["inputPath"],
-            "-map", "0:v:0",
-            "-map", "0:a?",
-            "-vf", f"ass={ass_path}",
-            "-c:v", "libx264",
-            "-preset", os.getenv("SUBTITLE_X264_PRESET", "medium"),
-            "-crf", os.getenv("SUBTITLE_CRF", "18"),
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-movflags", "+faststart",
-            str(output_path),
-        ])
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"No se pudo exportar: {exc}") from exc
+    _export_executor.submit(_render_export, export_id, job, options)
+    return _public_export(export)
+
+
+@app.get("/api/subtitles/exports/{export_id}")
+def get_export(export_id: str) -> dict:
+    with _exports_lock:
+        export = _exports.get(export_id)
+        if not export:
+            raise HTTPException(status_code=404, detail="Exportación no encontrada.")
+        return _public_export(dict(export))
+
+
+@app.get("/api/subtitles/exports/{export_id}/download")
+def download_export(export_id: str) -> FileResponse:
+    with _exports_lock:
+        source = _exports.get(export_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Exportación no encontrada.")
+        export = dict(source)
+
+    if export["status"] != "ready":
+        raise HTTPException(status_code=409, detail="La exportación todavía no está lista.")
+
+    output_path = Path(export.get("outputPath") or "")
+    if not output_path.is_file():
+        raise HTTPException(status_code=410, detail="El archivo exportado ya no está disponible.")
 
     return FileResponse(
         output_path,
         media_type="video/mp4",
-        filename=f"{Path(job['fileName']).stem}-subtitulado.mp4",
+        filename=export.get("fileName") or "video-subtitulado.mp4",
     )
