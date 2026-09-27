@@ -22,6 +22,15 @@ const defaultPresentationForm = (): PresentationForm => ({
   language: 'es-LATAM',
 })
 
+const presentationSignature = (form: PresentationForm) => JSON.stringify([
+  form.presentationType,
+  form.product.trim(),
+  form.highlights.trim(),
+  form.audience.trim(),
+  form.cta.trim(),
+  form.language,
+])
+
 const effectColorForPreset = (preset: SubtitlePresetId) => {
   const colors: Record<SubtitlePresetId, string> = {
     viral: '#FFE347',
@@ -101,7 +110,11 @@ export function loadSubtitleSession(): SubtitleSavedSession | null {
           : '',
         generatedScriptSignature: typeof legacy.generatedScriptSignature === 'string'
           ? legacy.generatedScriptSignature
-          : '',
+          : hasPresenterState && legacy.presentationScript
+            ? presentationSignature(
+                (legacy.presentationForm ?? defaultPresentationForm()) as PresentationForm,
+              )
+            : '',
         voice: hasPresenterState && typeof legacy.voice === 'string' ? legacy.voice : 'Sulafat',
         voiceStyle: hasPresenterState
           ? (legacy.voiceStyle ?? 'influencer') as VoiceStyleId
