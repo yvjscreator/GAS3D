@@ -1,4 +1,5 @@
 import type {
+  AiLogResponse,
   PresentationForm,
   PresentationScript,
   SubtitleJob,
@@ -7,6 +8,23 @@ import type {
 
 const apiRoot = (import.meta.env.VITE_SUBTITLE_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
 const apiBase = `${apiRoot}/api/subtitles`
+const AI_SESSION_KEY = 'gas3d.ai.session.v1'
+
+export const getAiSessionId = () => {
+  try {
+    const existing = localStorage.getItem(AI_SESSION_KEY)
+    if (existing) return existing
+    const created = crypto.randomUUID()
+    localStorage.setItem(AI_SESSION_KEY, created)
+    return created
+  } catch {
+    return crypto.randomUUID()
+  }
+}
+
+const aiHeaders = () => ({
+  'X-AI-Session-ID': getAiSessionId(),
+})
 
 const readError = async (response: Response, fallback: string) => {
   const body = await response.json().catch(() => null) as { detail?: string } | null
@@ -24,11 +42,17 @@ export async function createSubtitleJob(file: File, language: string) {
   const body = new FormData()
   body.append('video', file)
   if (language !== 'auto') body.append('language', language)
-  return expectJson<SubtitleJob>(await fetch(`${apiBase}/jobs`, { method: 'POST', body }))
+  return expectJson<SubtitleJob>(await fetch(`${apiBase}/jobs`, {
+    method: 'POST',
+    headers: aiHeaders(),
+    body,
+  }))
 }
 
 export async function getSubtitleJob(jobId: string) {
-  return expectJson<SubtitleJob>(await fetch(`${apiBase}/jobs/${jobId}`))
+  return expectJson<SubtitleJob>(await fetch(`${apiBase}/jobs/${jobId}`, {
+    headers: aiHeaders(),
+  }))
 }
 
 export async function generatePresentationScript(file: File, form: PresentationForm) {
@@ -43,6 +67,7 @@ export async function generatePresentationScript(file: File, form: PresentationF
 
   return expectJson<PresentationScript>(await fetch(`${apiBase}/presentation/script`, {
     method: 'POST',
+    headers: aiHeaders(),
     body,
   }))
 }
@@ -55,7 +80,10 @@ export async function generatePresentationVoice(
 ) {
   const response = await fetch(`${apiBase}/presentation/tts`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      ...aiHeaders(),
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({ script, voice, styleId, language }),
   })
 
@@ -63,5 +91,23 @@ export async function generatePresentationVoice(
     throw new Error(await readError(response, 'No se pudo generar la voz.'))
   }
 
-  return response.blob()
+  return {
+    blob: await response.blob(),
+    model: response.headers.get('X-AI-Model'),
+  }
+}
+
+export async function getAiLogs() {
+  const sessionId = getAiSessionId()
+  return expectJson<AiLogResponse>(await fetch(`${apiBase}/ai/logs/${encodeURIComponent(sessionId)}`, {
+    headers: aiHeaders(),
+  }))
+}
+
+export async function clearAiLogs() {
+  const sessionId = getAiSessionId()
+  return expectJson<{ ok: boolean }>(await fetch(`${apiBase}/ai/logs/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+    headers: aiHeaders(),
+  }))
 }
