@@ -128,5 +128,6 @@ export type SubtitleSavedSession = {
   voice: string
   voiceStyle: VoiceStyleId
   generatedVoiceReady: boolean
+  generatedVoiceSignature: string
   videoMode: VideoAudioMode | null
 }
