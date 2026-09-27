@@ -1,7 +1,8 @@
 import type { PresentationForm, SubtitleSavedSession, SubtitlePresetId, VoiceStyleId } from './types'
 
-const SESSION_KEY = 'gas3d.subtitle.session.v6'
+const SESSION_KEY = 'gas3d.subtitle.session.v7'
 const LEGACY_SESSION_KEYS = [
+  'gas3d.subtitle.session.v6',
   'gas3d.subtitle.session.v5',
   'gas3d.subtitle.session.v4',
   'gas3d.subtitle.session.v3',
@@ -57,7 +58,7 @@ export function loadSubtitleSession(): SubtitleSavedSession | null {
     const raw = localStorage.getItem(SESSION_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as SubtitleSavedSession
-      if (parsed?.version === 6) return parsed
+      if (parsed?.version === 7) return parsed
     }
 
     for (const key of LEGACY_SESSION_KEYS) {
@@ -65,13 +66,13 @@ export function loadSubtitleSession(): SubtitleSavedSession | null {
       if (!legacyRaw) continue
       const legacy = JSON.parse(legacyRaw) as Record<string, unknown>
       const version = Number(legacy.version)
-      if (![2, 3, 4, 5].includes(version)) continue
+      if (![2, 3, 4, 5, 6].includes(version)) continue
 
       const preset = (legacy.preset ?? 'viral') as SubtitlePresetId
       const hasPresenterState = version >= 4
 
       const migrated: SubtitleSavedSession = {
-        version: 6,
+        version: 7,
         language: typeof legacy.language === 'string' ? legacy.language : 'auto',
         job: (legacy.job ?? null) as SubtitleSavedSession['job'],
         wordOverrides: (legacy.wordOverrides ?? {}) as Record<number, string>,
@@ -97,6 +98,9 @@ export function loadSubtitleSession(): SubtitleSavedSession | null {
           : null,
         presentationDraft: hasPresenterState && typeof legacy.presentationDraft === 'string'
           ? legacy.presentationDraft
+          : '',
+        generatedScriptSignature: typeof legacy.generatedScriptSignature === 'string'
+          ? legacy.generatedScriptSignature
           : '',
         voice: hasPresenterState && typeof legacy.voice === 'string' ? legacy.voice : 'Sulafat',
         voiceStyle: hasPresenterState
