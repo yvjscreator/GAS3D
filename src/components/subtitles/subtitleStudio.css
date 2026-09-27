@@ -1654,3 +1654,24 @@
     display:none;
   }
 }
+
+
+@media (max-width:720px) {
+  /* This is a visual binary choice, so it also belongs side by side. */
+  .panel-video .subtitle-upload-choice {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+  }
+  .panel-video .subtitle-upload-choice label {
+    min-height:58px;
+    padding:7px 8px;
+    align-content:center;
+  }
+  .panel-video .subtitle-upload-choice strong {
+    font-size:9px;
+  }
+  .panel-video .subtitle-upload-choice small {
+    font-size:7px;
+    line-height:1.25;
+  }
+}
