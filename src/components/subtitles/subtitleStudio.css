@@ -959,3 +959,25 @@
     font-size:13px;
   }
 }
+
+
+/* Keep DOM preview typography identical to the Canvas export renderer. */
+.subtitle-overlay>div {
+  font-family:Manrope, sans-serif;
+  font-weight:800;
+  font-synthesis:none;
+}
+.subtitle-overlay.preset-cinema>div {
+  font-family:"DM Serif Display", serif;
+  font-weight:400;
+  font-synthesis:none;
+}
+.subtitle-preset-grid button>strong {
+  font-family:Manrope, sans-serif;
+  font-weight:800;
+  font-synthesis:none;
+}
+.subtitle-preset-grid .preset-cinema>strong {
+  font-family:"DM Serif Display", serif;
+  font-weight:400;
+}
