@@ -223,29 +223,22 @@ export function SubtitleStudio() {
   useEffect(() => {
     if (videoMode !== 'without_voice' || voiceCatalog.length || voiceCatalogLoading) return
 
-    let cancelled = false
     setVoiceCatalogLoading(true)
     setVoiceCatalogError(null)
 
     void getPresentationVoices()
       .then((response) => {
-        if (cancelled) return
         setVoiceCatalog(response.voices)
         appendClientLog(`Catálogo de voces cargado · ${response.voices.length} voces.`)
       })
       .catch((cause) => {
-        if (cancelled) return
         const message = cause instanceof Error ? cause.message : 'No se pudo cargar el catálogo de voces.'
         setVoiceCatalogError(message)
         appendClientLog(`Error cargando voces: ${message}`)
       })
       .finally(() => {
-        if (!cancelled) setVoiceCatalogLoading(false)
+        setVoiceCatalogLoading(false)
       })
-
-    return () => {
-      cancelled = true
-    }
   }, [videoMode, voiceCatalog.length, voiceCatalogRequest])
 
   const appendClientLog = (message: string) => {
