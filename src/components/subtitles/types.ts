@@ -64,8 +64,50 @@ export type SubtitleLocalExportState = {
   elapsedSeconds: number
 }
 
+export type PresentationType =
+  | 'influencer'
+  | 'product'
+  | 'direct'
+  | 'lifestyle'
+  | 'premium'
+  | 'storytelling'
+
+export type VoiceStyleId =
+  | 'influencer'
+  | 'reels'
+  | 'friendly'
+  | 'premium'
+  | 'casual'
+  | 'commercial'
+
+export type PresentationForm = {
+  presentationType: PresentationType
+  product: string
+  highlights: string
+  audience: string
+  cta: string
+  language: string
+}
+
+export type PresentationSegment = {
+  start: number
+  end: number
+  purpose: string
+  text: string
+}
+
+export type PresentationScript = {
+  title: string
+  detectedProduct: string
+  summary: string
+  script: string
+  estimatedSeconds: number
+  visualNotes: string[]
+  segments: PresentationSegment[]
+}
+
 export type SubtitleSavedSession = {
-  version: 3
+  version: 4
   language: string
   job: SubtitleJob | null
   wordOverrides: Record<number, string>
@@ -78,4 +120,10 @@ export type SubtitleSavedSession = {
   maxWords: number
   uppercase: boolean
   fileName: string | null
+  presentationForm: PresentationForm
+  presentationScript: PresentationScript | null
+  presentationDraft: string
+  voice: string
+  voiceStyle: VoiceStyleId
+  generatedVoiceReady: boolean
 }
