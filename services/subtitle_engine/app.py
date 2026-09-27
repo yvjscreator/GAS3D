@@ -3,29 +3,35 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from google import genai
-from pydantic import BaseModel, Field
 
 APP_NAME = "GAS3D Subtitle Engine"
 GEMINI_MODEL = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 CORS_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("SUBTITLE_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    for origin in os.getenv(
+        "SUBTITLE_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
     if origin.strip()
 ]
-WORK_ROOT = Path(os.getenv("SUBTITLE_WORK_DIR", Path(tempfile.gettempdir()) / "gas3d-subtitles"))
+WORK_ROOT = Path(
+    os.getenv(
+        "SUBTITLE_WORK_DIR",
+        Path(tempfile.gettempdir()) / "gas3d-subtitles",
+    )
+)
 WORK_ROOT.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title=APP_NAME)
@@ -39,22 +45,9 @@ app.add_middleware(
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
-_exports: dict[str, dict] = {}
-_exports_lock = threading.Lock()
-_executor = ThreadPoolExecutor(max_workers=max(1, int(os.getenv("TRANSCRIBE_WORKERS", "2"))))
-_export_executor = ThreadPoolExecutor(max_workers=max(1, int(os.getenv("EXPORT_WORKERS", "1"))))
-
-
-class ExportOptions(BaseModel):
-    preset: str = "viral"
-    baseColor: str = "#FFFFFF"
-    activeColor: str = "#FFE347"
-    outlineColor: str = "#000000"
-    fontScale: float = Field(default=6.0, ge=2.5, le=14.0)
-    position: Literal["top", "center", "bottom"] = "bottom"
-    maxWords: int = Field(default=5, ge=1, le=12)
-    uppercase: bool = False
-    wordOverrides: dict[int, str] = Field(default_factory=dict)
+_executor = ThreadPoolExecutor(
+    max_workers=max(1, int(os.getenv("TRANSCRIBE_WORKERS", "2")))
+)
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -82,12 +75,24 @@ def _parse_rate(rate: str | None) -> float | None:
 
 def _probe(path: Path) -> dict:
     result = _run([
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration:stream=codec_type,width,height,r_frame_rate",
-        "-of", "json", str(path),
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration:stream=codec_type,width,height,r_frame_rate",
+        "-of",
+        "json",
+        str(path),
     ])
     payload = json.loads(result.stdout)
-    video = next((stream for stream in payload.get("streams", []) if stream.get("codec_type") == "video"), {})
+    video = next(
+        (
+            stream
+            for stream in payload.get("streams", [])
+            if stream.get("codec_type") == "video"
+        ),
+        {},
+    )
     duration = payload.get("format", {}).get("duration")
     return {
         "duration": float(duration) if duration is not None else None,
@@ -99,12 +104,17 @@ def _probe(path: Path) -> dict:
 
 def _extract_audio(input_path: Path, output_path: Path) -> None:
     _run([
-        "ffmpeg", "-y",
-        "-i", str(input_path),
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
         "-vn",
-        "-ac", "1",
-        "-ar", "16000",
-        "-c:a", "flac",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "flac",
         str(output_path),
     ])
 
@@ -129,11 +139,19 @@ def _extract_word_annotations(interaction: object) -> list[dict]:
             for annotation in getattr(content, "annotations", []) or []:
                 if getattr(annotation, "type", None) != "word_info":
                     continue
+
                 text = (getattr(annotation, "text", "") or "").strip()
                 if not text:
                     continue
-                start = max(0.0, _offset_seconds(getattr(annotation, "start_offset", None)))
-                end = max(start + 0.01, _offset_seconds(getattr(annotation, "end_offset", None)))
+
+                start = max(
+                    0.0,
+                    _offset_seconds(getattr(annotation, "start_offset", None)),
+                )
+                end = max(
+                    start + 0.01,
+                    _offset_seconds(getattr(annotation, "end_offset", None)),
+                )
                 words.append({
                     "id": len(words),
                     "text": text,
@@ -167,6 +185,7 @@ def _group_words(words: list[dict], max_words: int = 5) -> list[dict]:
         current.append(word)
         if len(current) >= max_words or word["text"].endswith((".", "!", "?", "…")):
             flush()
+
     flush()
     return groups
 
@@ -195,40 +214,33 @@ def _update_job(job_id: str, **changes) -> None:
             _jobs[job_id].update(changes)
 
 
-def _public_export(export: dict) -> dict:
-    return {
-        "id": export["id"],
-        "jobId": export["jobId"],
-        "status": export["status"],
-        "progress": export["progress"],
-        "message": export["message"],
-        "fileName": export.get("fileName"),
-        "error": export.get("error"),
-    }
-
-
-def _update_export(export_id: str, **changes) -> None:
-    with _exports_lock:
-        if export_id in _exports:
-            _exports[export_id].update(changes)
-
-
 def _transcribe(job_id: str) -> None:
     with _jobs_lock:
         job = dict(_jobs[job_id])
 
     input_path = Path(job["inputPath"])
-    audio_path = input_path.parent / "speech.flac"
+    job_dir = input_path.parent
+    audio_path = job_dir / "speech.flac"
     remote_file = None
+    client = None
 
     try:
         if not GEMINI_API_KEY:
             raise RuntimeError("Falta configurar GEMINI_API_KEY en Render.")
 
-        _update_job(job_id, status="transcribing", progress=0.08, message="Extrayendo audio del video…")
+        _update_job(
+            job_id,
+            status="transcribing",
+            progress=0.08,
+            message="Extrayendo audio del video…",
+        )
         _extract_audio(input_path, audio_path)
 
-        _update_job(job_id, progress=0.22, message="Subiendo audio a Gemini…")
+        _update_job(
+            job_id,
+            progress=0.22,
+            message="Subiendo audio a Gemini…",
+        )
         client = genai.Client(api_key=GEMINI_API_KEY)
         remote_file = client.files.upload(file=str(audio_path))
 
@@ -238,11 +250,16 @@ def _transcribe(job_id: str) -> None:
                 "timestamp_granularities": ["word"],
             }
         }
+
         requested_language = job.get("requestedLanguage")
         if requested_language:
             transcription_config["language_codes"] = [requested_language]
 
-        _update_job(job_id, progress=0.38, message=f"Transcribiendo con {GEMINI_MODEL}…")
+        _update_job(
+            job_id,
+            progress=0.38,
+            message=f"Transcribiendo con {GEMINI_MODEL}…",
+        )
         interaction = client.interactions.create(
             model=GEMINI_MODEL,
             input=[{
@@ -257,7 +274,9 @@ def _transcribe(job_id: str) -> None:
 
         words = _extract_word_annotations(interaction)
         if not words:
-            raise RuntimeError("Gemini terminó la transcripción, pero no devolvió timestamps por palabra.")
+            raise RuntimeError(
+                "Gemini terminó la transcripción, pero no devolvió timestamps por palabra."
+            )
 
         _update_job(
             job_id,
@@ -269,197 +288,23 @@ def _transcribe(job_id: str) -> None:
             error=None,
         )
     except Exception as exc:
-        _update_job(job_id, status="error", progress=1.0, message="La transcripción falló.", error=str(exc))
+        _update_job(
+            job_id,
+            status="error",
+            progress=1.0,
+            message="La transcripción falló.",
+            error=str(exc),
+        )
     finally:
-        if remote_file is not None:
+        if remote_file is not None and client is not None:
             try:
                 client.files.delete(name=remote_file.name)
             except Exception:
                 pass
-        audio_path.unlink(missing_ok=True)
 
-
-def _hex_to_ass(value: str) -> str:
-    cleaned = value.strip().lstrip("#")
-    if len(cleaned) != 6:
-        cleaned = "FFFFFF"
-    red, green, blue = cleaned[0:2], cleaned[2:4], cleaned[4:6]
-    return f"&H00{blue}{green}{red}&"
-
-
-def _escape_ass(text: str) -> str:
-    return text.replace("\\", r"\\").replace("{", r"\{").replace("}", r"\}").replace("\n", r"\N")
-
-
-def _ass_time(seconds: float) -> str:
-    centiseconds = max(0, int(round(seconds * 100)))
-    hours, remainder = divmod(centiseconds, 360000)
-    minutes, remainder = divmod(remainder, 6000)
-    whole_seconds, cs = divmod(remainder, 100)
-    return f"{hours}:{minutes:02d}:{whole_seconds:02d}.{cs:02d}"
-
-
-def _preset_style(preset: str) -> dict:
-    styles = {
-        "viral": {"outline": 1.0, "shadow": 1.0, "scale": 112, "spacing": 0, "blur": 0, "inactive_alpha": "00"},
-        "clean": {"outline": 0.58, "shadow": 0.25, "scale": 104, "spacing": 0, "blur": 0, "inactive_alpha": "00"},
-        "punch": {"outline": 1.08, "shadow": 1.1, "scale": 116, "spacing": 1.2, "blur": 0, "inactive_alpha": "00"},
-        "neon": {"outline": 0.78, "shadow": 0.45, "scale": 109, "spacing": 0.4, "blur": 1.4, "inactive_alpha": "20"},
-        "karaoke": {"outline": 0.75, "shadow": 0.55, "scale": 107, "spacing": 0, "blur": 0, "inactive_alpha": "50"},
-        "cinema": {"outline": 0.58, "shadow": 0.35, "scale": 103, "spacing": 0.2, "blur": 0, "inactive_alpha": "00"},
-    }
-    return styles.get(preset, styles["viral"])
-
-
-def _build_ass(job: dict, options: ExportOptions, output_path: Path) -> None:
-    width = int(job.get("width") or 1080)
-    height = int(job.get("height") or 1920)
-    words = [dict(word) for word in job["words"]]
-    preset = _preset_style(options.preset)
-
-    force_uppercase = options.uppercase or options.preset == "punch"
-    for word in words:
-        replacement = options.wordOverrides.get(word["id"])
-        if replacement is not None:
-            word["text"] = replacement.strip() or word["text"]
-        if force_uppercase:
-            word["text"] = word["text"].upper()
-
-    groups = _group_words(words, options.maxWords)
-    by_id = {word["id"]: word for word in words}
-    font_size = max(18, round(height * options.fontScale / 100))
-    outline = max(1, round(height * 0.0026 * preset["outline"]))
-    shadow = max(0, round(height * 0.0012 * preset["shadow"]))
-    margin_v = max(26, round(height * 0.075))
-    alignment = {"top": 8, "center": 5, "bottom": 2}[options.position]
-    base = _hex_to_ass(options.baseColor)
-    active = _hex_to_ass(options.activeColor)
-    outline_color = _hex_to_ass(options.outlineColor)
-    font_name = "DejaVu Sans"
-    if options.preset == "cinema":
-        font_name = "DejaVu Serif"
-
-    lines = [
-        "[Script Info]",
-        "ScriptType: v4.00+",
-        f"PlayResX: {width}",
-        f"PlayResY: {height}",
-        "ScaledBorderAndShadow: yes",
-        "WrapStyle: 2",
-        "",
-        "[V4+ Styles]",
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Default,{font_name},{font_size},{base},{base},{outline_color},&H78000000,-1,0,0,0,100,100,{preset['spacing']},0,1,{outline},{shadow},{alignment},{round(width * 0.06)},{round(width * 0.06)},{margin_v},1",
-        "",
-        "[Events]",
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-    ]
-
-    for group in groups:
-        group_words = [by_id[word_id] for word_id in group["wordIds"] if word_id in by_id]
-        for index, active_word in enumerate(group_words):
-            start = active_word["start"]
-            next_start = group_words[index + 1]["start"] if index + 1 < len(group_words) else group["end"] + 0.20
-            end = max(active_word["end"], next_start)
-            rendered: list[str] = []
-
-            for word in group_words:
-                text = _escape_ass(word["text"])
-                if word["id"] == active_word["id"]:
-                    blur = f"\\blur{preset['blur']}" if preset["blur"] else ""
-                    rendered.append(
-                        r"{\1c" + active +
-                        rf"\1a&H00&\fscx{preset['scale']}\fscy{preset['scale']}{blur}" +
-                        "}" + text +
-                        r"{\fscx100\fscy100\blur0}"
-                    )
-                else:
-                    rendered.append(
-                        r"{\1c" + base + rf"\1a&H{preset['inactive_alpha']}&" + "}" + text
-                    )
-
-            lines.append(
-                f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{' '.join(rendered)}"
-            )
-
-    output_path.write_text("\n".join(lines), encoding="utf-8")
-
-
-def _render_export(export_id: str, job: dict, options: ExportOptions) -> None:
-    job_dir = Path(job["inputPath"]).parent
-    export_dir = job_dir / "exports"
-    export_dir.mkdir(parents=True, exist_ok=True)
-    ass_path = export_dir / f"{export_id}.ass"
-    output_path = export_dir / f"{export_id}.mp4"
-
-    try:
-        _update_export(export_id, status="exporting", progress=0.03, message="Preparando subtítulos…")
-        _build_ass(job, options, ass_path)
-
-        duration = max(float(job.get("duration") or 0), 0.01)
-        command = [
-            "ffmpeg", "-y",
-            "-loglevel", "error",
-            "-i", job["inputPath"],
-            "-map", "0:v:0",
-            "-map", "0:a?",
-            "-vf", f"ass={ass_path}",
-            "-c:v", "libx264",
-            "-preset", os.getenv("SUBTITLE_X264_PRESET", "veryfast"),
-            "-crf", os.getenv("SUBTITLE_CRF", "18"),
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-movflags", "+faststart",
-            "-progress", "pipe:1",
-            "-nostats",
-            str(output_path),
-        ]
-
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
-
-        if process.stdout is not None:
-            for raw_line in process.stdout:
-                key, _, value = raw_line.strip().partition("=")
-                if key in {"out_time_us", "out_time_ms"}:
-                    try:
-                        micros = float(value)
-                        progress = min(0.97, max(0.05, micros / 1_000_000 / duration))
-                        _update_export(
-                            export_id,
-                            progress=progress,
-                            message=f"Renderizando video… {round(progress * 100)}%",
-                        )
-                    except ValueError:
-                        pass
-
-        return_code = process.wait()
-        stderr = process.stderr.read().strip() if process.stderr is not None else ""
-        if return_code != 0:
-            raise RuntimeError(stderr[-1800:] or f"FFmpeg terminó con código {return_code}.")
-
-        _update_export(
-            export_id,
-            status="ready",
-            progress=1.0,
-            message="Video listo para descargar.",
-            fileName=f"{Path(job['fileName']).stem}-subtitulado.mp4",
-            outputPath=str(output_path),
-            error=None,
-        )
-    except Exception as exc:
-        _update_export(
-            export_id,
-            status="error",
-            progress=1.0,
-            message="La exportación falló.",
-            error=str(exc),
-        )
+        # The browser performs the final video render locally. Render only needs
+        # the source video long enough to extract/transcribe its audio.
+        shutil.rmtree(job_dir, ignore_errors=True)
 
 
 @app.get("/api/subtitles/health")
@@ -469,14 +314,19 @@ def health() -> dict:
         "engine": "gemini",
         "model": GEMINI_MODEL,
         "configured": bool(GEMINI_API_KEY),
+        "videoExport": "browser-webcodecs",
     }
 
 
 @app.post("/api/subtitles/jobs")
-async def create_job(video: UploadFile = File(...), language: str | None = Form(default=None)) -> dict:
+async def create_job(
+    video: UploadFile = File(...),
+    language: str | None = Form(default=None),
+) -> dict:
     job_id = uuid.uuid4().hex
     job_dir = WORK_ROOT / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
+
     suffix = Path(video.filename or "video.mp4").suffix or ".mp4"
     input_path = job_dir / f"input{suffix.lower()}"
 
@@ -488,9 +338,11 @@ async def create_job(video: UploadFile = File(...), language: str | None = Form(
     try:
         metadata = _probe(input_path)
     except Exception as exc:
+        shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if metadata.get("duration") and metadata["duration"] > 30 * 60:
+        shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(
             status_code=400,
             detail="Gemini permite hasta 30 minutos cuando usamos timestamps por palabra.",
@@ -510,8 +362,10 @@ async def create_job(video: UploadFile = File(...), language: str | None = Form(
         "error": None,
         **metadata,
     }
+
     with _jobs_lock:
         _jobs[job_id] = job
+
     _executor.submit(_transcribe, job_id)
     return _public_job(job)
 
@@ -521,65 +375,8 @@ def get_job(job_id: str) -> dict:
     with _jobs_lock:
         job = _jobs.get(job_id)
         if not job:
-            raise HTTPException(status_code=404, detail="Trabajo de subtítulos no encontrado.")
+            raise HTTPException(
+                status_code=404,
+                detail="Trabajo de subtítulos no encontrado.",
+            )
         return _public_job(dict(job))
-
-
-@app.post("/api/subtitles/jobs/{job_id}/exports")
-def start_export(job_id: str, options: ExportOptions) -> dict:
-    with _jobs_lock:
-        source = _jobs.get(job_id)
-        if not source:
-            raise HTTPException(status_code=404, detail="Trabajo de subtítulos no encontrado.")
-        job = dict(source)
-
-    if job["status"] != "ready":
-        raise HTTPException(status_code=409, detail="La transcripción todavía no está lista.")
-
-    export_id = uuid.uuid4().hex
-    export = {
-        "id": export_id,
-        "jobId": job_id,
-        "status": "queued",
-        "progress": 0.0,
-        "message": "Exportación en cola…",
-        "fileName": None,
-        "outputPath": None,
-        "error": None,
-    }
-    with _exports_lock:
-        _exports[export_id] = export
-
-    _export_executor.submit(_render_export, export_id, job, options)
-    return _public_export(export)
-
-
-@app.get("/api/subtitles/exports/{export_id}")
-def get_export(export_id: str) -> dict:
-    with _exports_lock:
-        export = _exports.get(export_id)
-        if not export:
-            raise HTTPException(status_code=404, detail="Exportación no encontrada.")
-        return _public_export(dict(export))
-
-
-@app.get("/api/subtitles/exports/{export_id}/download")
-def download_export(export_id: str) -> FileResponse:
-    with _exports_lock:
-        source = _exports.get(export_id)
-        if not source:
-            raise HTTPException(status_code=404, detail="Exportación no encontrada.")
-        export = dict(source)
-
-    if export["status"] != "ready":
-        raise HTTPException(status_code=409, detail="La exportación todavía no está lista.")
-
-    output_path = Path(export.get("outputPath") or "")
-    if not output_path.is_file():
-        raise HTTPException(status_code=410, detail="El archivo exportado ya no está disponible.")
-
-    return FileResponse(
-        output_path,
-        media_type="video/mp4",
-        filename=export.get("fileName") or "video-subtitulado.mp4",
-    )
