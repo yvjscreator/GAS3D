@@ -17,6 +17,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from google import genai
+from google.genai import types as genai_types
 from pydantic import BaseModel, Field
 
 APP_NAME = "GAS3D Subtitle Engine"
@@ -150,6 +151,15 @@ LANGUAGE_STYLES = {
     "en-US": "Speak in natural American English.",
     "pt-BR": "Speak in natural Brazilian Portuguese.",
 }
+
+
+def _new_genai_client() -> genai.Client:
+    return genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options=genai_types.HttpOptions(
+            retry_options=genai_types.HttpRetryOptions(attempts=1),
+        ),
+    )
 
 
 def _session_id(value: str | None) -> str:
@@ -526,7 +536,7 @@ def _transcribe(job_id: str) -> None:
             progress=0.22,
             message="Subiendo audio a Gemini…",
         )
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = _new_genai_client()
         remote_file = client.files.upload(file=str(audio_path))
 
         transcription_config: dict = {
@@ -670,7 +680,7 @@ async def generate_presentation_script(
         target_seconds = max(3.0, duration - min(1.0, duration * 0.06))
         max_words = max(8, round(target_seconds * 2.35))
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = _new_genai_client()
         remote_file = client.files.upload(file=str(input_path))
         remote_file = _wait_for_gemini_file(client, remote_file)
 
@@ -764,7 +774,7 @@ def generate_presentation_voice(
     )
 
     try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = _new_genai_client()
         def synthesize(model: str):
             return client.interactions.create(
                 model=model,
