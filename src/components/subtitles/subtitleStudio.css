@@ -1211,3 +1211,63 @@
   .subtitle-ai-log-list strong { font-size:9px; }
   .subtitle-ai-log-list pre { font-size:8px; }
 }
+
+
+/* v6: direct manipulation + independent effect color */
+.subtitle-color-grid {
+  grid-template-columns:repeat(4,1fr);
+}
+.subtitle-manipulation-hint {
+  margin:10px 0 0;
+  padding:8px 9px;
+  color:#87a6bd;
+  background:#101b24;
+  border:1px solid #2d4354;
+  border-radius:7px;
+  font-size:8px;
+  line-height:1.45;
+}
+.subtitle-overlay.editable {
+  pointer-events:auto;
+  touch-action:none;
+  transform:translateY(-50%);
+  cursor:ns-resize;
+}
+.subtitle-overlay.editable>div {
+  user-select:none;
+  -webkit-user-select:none;
+}
+.subtitle-overlay.editable:active>div {
+  outline:1px dashed #ffffff55;
+  outline-offset:.2em;
+}
+.subtitle-overlay.preset-neon span.active {
+  text-shadow:
+    -2px -2px 0 var(--subtitle-outline),
+     2px -2px 0 var(--subtitle-outline),
+    -2px  2px 0 var(--subtitle-outline),
+     2px  2px 0 var(--subtitle-outline),
+     0 0 12px var(--subtitle-effect),
+     0 0 24px var(--subtitle-effect);
+}
+.subtitle-overlay.preset-punch span.active {
+  background:var(--subtitle-effect);
+}
+.subtitle-overlay.preset-bubble span.active {
+  background:var(--subtitle-effect);
+}
+.subtitle-overlay.preset-focus>div {
+  background:color-mix(in srgb,var(--subtitle-effect) 78%,transparent);
+}
+.subtitle-overlay.preset-karaoke span.active::after {
+  background:var(--subtitle-effect);
+}
+
+@media (max-width:720px) {
+  .subtitle-mobile-panel .subtitle-color-grid {
+    grid-template-columns:repeat(2,1fr);
+  }
+  .subtitle-manipulation-hint {
+    font-size:9px;
+  }
+}
