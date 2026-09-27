@@ -211,11 +211,11 @@ const drawSubtitleFrame = (
 
   const { boxes, lineCount } = buildWordBoxes(ctx, captionWords, width, fontSize, maxWidth, lineHeight)
   const totalHeight = lineCount * lineHeight
-  const baseY = options.position === 'top'
-    ? height * 0.11
-    : options.position === 'center'
-      ? height / 2 - totalHeight / 2
-      : height - height * 0.12 - totalHeight
+  const desiredCenterY = height * Math.min(0.92, Math.max(0.08, options.verticalPosition))
+  const baseY = Math.min(
+    height - totalHeight - fontSize * 0.12,
+    Math.max(fontSize * 0.12, desiredCenterY - totalHeight / 2),
+  )
 
   const entryProgress = easeOutCubic((time - caption.start + 0.05) / 0.2)
   const captionAlpha = options.preset === 'cinema' ? entryProgress : 1
@@ -224,7 +224,7 @@ const drawSubtitleFrame = (
     const padX = fontSize * 0.38
     const padY = fontSize * 0.25
     roundedRect(ctx, width * 0.07, baseY - padY, width * 0.86, totalHeight + padY * 1.35, fontSize * 0.22)
-    ctx.fillStyle = 'rgba(3, 10, 17, .78)'
+    ctx.fillStyle = hexToRgba(options.effectColor, 0.78)
     ctx.fill()
   }
 
@@ -256,7 +256,7 @@ const drawSubtitleFrame = (
       const padX = fontSize * 0.22
       const padY = fontSize * 0.11
       roundedRect(ctx, box.x - padX, baselineY - fontSize - padY, box.width + padX * 2, fontSize + padY * 1.8, fontSize * 0.13)
-      ctx.fillStyle = options.activeColor
+      ctx.fillStyle = options.effectColor
       ctx.fill()
     }
 
@@ -264,7 +264,7 @@ const drawSubtitleFrame = (
       const padX = fontSize * 0.32
       const padY = fontSize * 0.14
       roundedRect(ctx, box.x - padX, baselineY - fontSize - padY, box.width + padX * 2, fontSize + padY * 2, fontSize * 0.5)
-      ctx.fillStyle = '#FFE347'
+      ctx.fillStyle = options.effectColor
       ctx.shadowColor = 'rgba(0,0,0,.35)'
       ctx.shadowBlur = fontSize * 0.2
       ctx.fill()
@@ -272,7 +272,7 @@ const drawSubtitleFrame = (
     }
 
     if (options.preset === 'neon' && isActive) {
-      ctx.shadowColor = options.activeColor
+      ctx.shadowColor = options.effectColor
       ctx.shadowBlur = fontSize * 0.34
     } else {
       ctx.shadowColor = 'rgba(0,0,0,.55)'
@@ -296,7 +296,7 @@ const drawSubtitleFrame = (
     if (options.preset === 'karaoke' && isActive) {
       const underlineY = baselineY + fontSize * 0.11
       const underlineWidth = box.width * Math.min(1, localProgress * 1.3)
-      ctx.strokeStyle = options.activeColor
+      ctx.strokeStyle = options.effectColor
       ctx.lineWidth = Math.max(3, fontSize * 0.055)
       ctx.lineCap = 'round'
       ctx.beginPath()
