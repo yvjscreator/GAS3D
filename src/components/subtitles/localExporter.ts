@@ -19,6 +19,7 @@ export type LocalExportRequest = {
   file: File
   words: SubtitleWord[]
   options: SubtitleExportOptions
+  generatedAudio?: Blob | null
   onProgress?: (state: LocalExportProgress) => void
 }
 
@@ -310,7 +311,7 @@ const drawSubtitleFrame = (
   ctx.restore()
 }
 
-export async function exportSubtitledVideoLocally({ file, words, options, onProgress }: LocalExportRequest) {
+export async function exportSubtitledVideoLocally({ file, words, options, generatedAudio = null, onProgress }: LocalExportRequest) {
   if (!('VideoEncoder' in window) || !('VideoDecoder' in window)) {
     throw new Error('Este navegador no tiene WebCodecs. La exportación local requiere Chrome/Edge/Safari moderno con WebCodecs.')
   }
@@ -358,6 +359,9 @@ export async function exportSubtitledVideoLocally({ file, words, options, onProg
   const conversion = await Conversion.init({
     input,
     output,
+    tracks: 'primary',
+    audio: generatedAudio ? { discard: true } : undefined,
+    composable: Boolean(generatedAudio),
     video: {
       codec: 'avc',
       quality: new Quality('high'),
@@ -382,7 +386,7 @@ export async function exportSubtitledVideoLocally({ file, words, options, onProg
     },
   })
 
-  const discardedAudio = audioTrack
+  const discardedAudio = !generatedAudio && audioTrack
     ? conversion.discardedTracks.find((item) => item.track === audioTrack)
     : null
 
@@ -405,7 +409,48 @@ export async function exportSubtitledVideoLocally({ file, words, options, onProg
     })
   }
 
-  await conversion.execute()
+  if (generatedAudio) {
+    const voiceInput = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(generatedAudio),
+    })
+    const voiceTrack = await voiceInput.getPrimaryAudioTrack()
+    if (!voiceTrack) throw new Error('La voz generada no contiene una pista de audio válida.')
+
+    const videoDuration = await videoTrack.getDurationFromMetadata() ?? await videoTrack.computeDuration()
+    const audioConversion = await Conversion.init({
+      input: voiceInput,
+      output,
+      tracks: 'primary',
+      video: { discard: true },
+      audio: {
+        codec: 'aac',
+        quality: new Quality({ bitrate: 192_000 }),
+      },
+      trim: {
+        end: videoDuration,
+      },
+      composable: true,
+    })
+
+    if (!audioConversion.isValid) {
+      const reasons = audioConversion.discardedTracks.map((item) => item.reason).filter(Boolean).join(' · ')
+      throw new Error(
+        reasons
+          ? `Este dispositivo no puede integrar la voz generada en el MP4: ${reasons}`
+          : 'Este dispositivo no puede integrar la voz generada en el MP4.',
+      )
+    }
+
+    await output.start()
+    await Promise.all([
+      conversion.execute(),
+      audioConversion.execute(),
+    ])
+    await output.finalize()
+  } else {
+    await conversion.execute()
+  }
 
   if (!target.buffer) throw new Error('La exportación terminó, pero no se generó el archivo MP4.')
 
