@@ -55,6 +55,10 @@ AI_RETRY_DELAYS = [
     if item.strip()
 ]
 AI_LOG_LIMIT = max(50, int(os.getenv("AI_LOG_LIMIT", "300")))
+VOICE_CATALOG_TTL_SECONDS = max(
+    300,
+    int(os.getenv("VOICE_CATALOG_TTL_SECONDS", str(24 * 60 * 60))),
+)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 CORS_ORIGINS = [
     origin.strip()
@@ -711,7 +715,7 @@ def list_presentation_voices(
 
         with _voice_catalog_lock:
             _voice_catalog_cache["voices"] = voices
-            _voice_catalog_cache["expiresAt"] = time.monotonic() + 15 * 60
+            _voice_catalog_cache["expiresAt"] = time.monotonic() + VOICE_CATALOG_TTL_SECONDS
 
         return {"voices": voices, "cached": False}
     except Exception as exc:
