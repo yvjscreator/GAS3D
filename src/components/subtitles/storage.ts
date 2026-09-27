@@ -1,6 +1,7 @@
 import type { SubtitleSavedSession } from './types'
 
-const SESSION_KEY = 'gas3d.subtitle.session.v2'
+const SESSION_KEY = 'gas3d.subtitle.session.v3'
+const LEGACY_SESSION_KEY = 'gas3d.subtitle.session.v2'
 const DB_NAME = 'gas3d-subtitle-studio'
 const STORE_NAME = 'media'
 const VIDEO_KEY = 'current-video'
@@ -9,16 +10,41 @@ export function saveSubtitleSession(session: SubtitleSavedSession) {
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
   } catch {
-    // localStorage can be unavailable in private/restricted modes.
+    // Storage can be unavailable in private/restricted modes.
   }
 }
 
 export function loadSubtitleSession(): SubtitleSavedSession | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as SubtitleSavedSession
-    return parsed?.version === 2 ? parsed : null
+    if (raw) {
+      const parsed = JSON.parse(raw) as SubtitleSavedSession
+      if (parsed?.version === 3) return parsed
+    }
+
+    const legacyRaw = localStorage.getItem(LEGACY_SESSION_KEY)
+    if (!legacyRaw) return null
+    const legacy = JSON.parse(legacyRaw) as Record<string, unknown>
+    if (legacy?.version !== 2) return null
+
+    const migrated: SubtitleSavedSession = {
+      version: 3,
+      language: typeof legacy.language === 'string' ? legacy.language : 'auto',
+      job: (legacy.job ?? null) as SubtitleSavedSession['job'],
+      wordOverrides: (legacy.wordOverrides ?? {}) as Record<number, string>,
+      preset: (legacy.preset ?? 'viral') as SubtitleSavedSession['preset'],
+      baseColor: typeof legacy.baseColor === 'string' ? legacy.baseColor : '#FFFFFF',
+      activeColor: typeof legacy.activeColor === 'string' ? legacy.activeColor : '#FFE347',
+      outlineColor: typeof legacy.outlineColor === 'string' ? legacy.outlineColor : '#000000',
+      fontScale: typeof legacy.fontScale === 'number' ? legacy.fontScale : 6,
+      position: (legacy.position ?? 'bottom') as SubtitleSavedSession['position'],
+      maxWords: typeof legacy.maxWords === 'number' ? legacy.maxWords : 5,
+      uppercase: Boolean(legacy.uppercase),
+      fileName: typeof legacy.fileName === 'string' ? legacy.fileName : null,
+    }
+    saveSubtitleSession(migrated)
+    localStorage.removeItem(LEGACY_SESSION_KEY)
+    return migrated
   } catch {
     return null
   }
@@ -27,6 +53,7 @@ export function loadSubtitleSession(): SubtitleSavedSession | null {
 export function clearSubtitleSession() {
   try {
     localStorage.removeItem(SESSION_KEY)
+    localStorage.removeItem(LEGACY_SESSION_KEY)
   } catch {
     // Ignore restricted storage environments.
   }
