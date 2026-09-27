@@ -200,6 +200,7 @@ export function SubtitleStudio() {
   const [voiceCatalog, setVoiceCatalog] = useState<GeminiVoice[]>([])
   const [voiceCatalogLoading, setVoiceCatalogLoading] = useState(false)
   const [voiceCatalogError, setVoiceCatalogError] = useState<string | null>(null)
+  const [voiceCatalogRequest, setVoiceCatalogRequest] = useState(0)
   const [voiceGenderFilter, setVoiceGenderFilter] = useState<'all' | 'female' | 'male' | 'neutral'>('all')
   const [voiceStyle, setVoiceStyle] = useState<VoiceStyleId>('influencer')
   const [generatedVoiceSignature, setGeneratedVoiceSignature] = useState('')
@@ -245,7 +246,7 @@ export function SubtitleStudio() {
     return () => {
       cancelled = true
     }
-  }, [videoMode, voiceCatalog.length, voiceCatalogLoading])
+  }, [videoMode, voiceCatalog.length, voiceCatalogRequest])
 
   const appendClientLog = (message: string) => {
     const line = `[${new Date().toISOString()}] ${message}`
@@ -1203,6 +1204,7 @@ export function SubtitleStudio() {
               <button type="button" onClick={() => {
                 setVoiceCatalogError(null)
                 setVoiceCatalog([])
+                setVoiceCatalogRequest((value) => value + 1)
               }}>Reintentar</button>
             </div>}
 
