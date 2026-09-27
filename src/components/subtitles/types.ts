@@ -108,6 +108,23 @@ export type PresentationScript = {
   segments: PresentationSegment[]
 }
 
+export type AiLogEvent = {
+  time: string
+  operation: string
+  level: 'info' | 'success' | 'warning' | 'error'
+  message: string
+  model: string | null
+  attempt: number | null
+  durationMs: number | null
+  error: string | null
+}
+
+export type AiLogResponse = {
+  sessionId: string
+  items: AiLogEvent[]
+  count: number
+}
+
 export type SubtitleSavedSession = {
   version: 4
   language: string
