@@ -35,7 +35,7 @@ La exportación final **no ocurre en Render**. El teléfono o PC usa WebCodecs y
 
 ### Catálogo de voces Gemini
 
-La selección de voz se carga dinámicamente desde la Gemini Voices API en lugar de mantener una lista fija. El backend solicita hasta 1000 voces y mantiene una caché de 15 minutos.
+La selección de voz se carga dinámicamente desde la Gemini Voices API en lugar de mantener una lista fija. El catálogo se conserva 24 horas en el navegador y también 24 horas en el backend, por lo que reabrir la app durante el día no vuelve a consultar Gemini.
 
 La interfaz muestra:
 - nombre de la voz;
@@ -158,6 +158,7 @@ Backend:
 - `GEMINI_TTS_MODELS=gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts`
 - `AI_RETRIES_PER_MODEL=3`
 - `AI_RETRY_DELAYS=1.5,3,6`
+- `VOICE_CATALOG_TTL_SECONDS=86400`
 
 Frontend:
 
