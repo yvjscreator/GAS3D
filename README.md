@@ -11,45 +11,96 @@ npm run dev
 
 ## Subtitle Studio
 
-GAS3D incluye una herramienta aislada para añadir subtítulos sincronizados palabra a palabra a videos. Se abre desde el selector superior **Subtítulos** o directamente en `#/subtitles`.
+GAS3D incluye una herramienta aislada para crear videos con subtítulos y, cuando corresponde, una presentación completa con voz generada por IA.
 
-La transcripción usa **Gemini 3.5 Transcribe** con timestamps por palabra. Render recibe temporalmente el video, FFmpeg extrae una pista FLAC, Gemini devuelve las palabras con tiempos y el backend elimina el archivo temporal al terminar.
+### Dos flujos explícitos
 
-La exportación final **no ocurre en Render**. El navegador procesa el video localmente mediante **Mediabunny + WebCodecs**, solicita H.264 con aceleración por hardware y compone los subtítulos animados con Canvas. No existe fallback a FFmpeg/Render.
+Al cargar un archivo se elige:
 
-Presets visuales actuales:
+- **Subir video con voz**: Gemini 3.5 Transcribe genera timestamps por palabra y el usuario corrige el texto inline.
+- **Subir video sin voz**: Gemini analiza visualmente el video, propone un guion, Gemini TTS genera la voz y ese audio se vuelve a transcribir para sincronizar los subtítulos reales.
 
-- **Viral Pop**: rebote y palabra activa amarilla.
-- **Clean**: minimalista para aprendizaje.
-- **Punch**: caja activa y golpe visual.
-- **Neon Glow**: brillo dinámico.
-- **Karaoke Focus**: contexto atenuado y subrayado progresivo.
-- **Cinema**: estilo editorial.
-- **Bubble**: cápsula elástica sobre la palabra activa.
-- **Focus Box**: bloque oscuro con foco de lectura.
+En el modo sin voz, cualquier audio original del archivo se ignora en preview/exportación. La voz generada reemplaza la pista.
 
-La transcripción se presenta como párrafos. Las palabras parecen texto normal y solo pasan a modo edición al tocarlas.
+### Pipeline creativo
 
-### Flujo
+1. Gemini analiza el video.
+2. Propone un guion adaptado a duración, producto, público, CTA y estilo.
+3. El usuario puede editar el guion.
+4. Gemini 3.8 TTS genera la voz.
+5. Gemini 3.5 Transcribe obtiene timestamps reales de esa locución.
+6. Mediabunny + WebCodecs renderizan localmente el MP4 con voz y subtítulos animados.
 
-1. Seleccionar video.
-2. Elegir o cambiar idioma.
-3. El botón principal muestra **Generar subtítulos**.
-4. Gemini devuelve palabras + timestamps.
-5. El mismo botón principal cambia a **Exportar MP4**.
-6. El navegador renderiza localmente con WebCodecs.
+La exportación final **no ocurre en Render**. El teléfono o PC usa WebCodecs y Canvas, por lo que no depende de la CPU gratuita de Render para codificar video.
 
-Si se cambia el idioma después de generar, el botón vuelve a **Generar subtítulos** porque la transcripción anterior ya no corresponde al idioma seleccionado.
+### Resiliencia de IA
+
+Las operaciones temporales se reintentan automáticamente ante 408/429/5xx, timeout, saturación o indisponibilidad.
+
+Para análisis/guion:
+
+```text
+gemini-3.8-flash
+→ gemini-3.7-flash
+→ gemini-3.6-flash
+→ gemini-3.5-flash
+```
+
+Para TTS:
+
+```text
+gemini-3.8-flash-tts
+→ gemini-3.8-flash-lite-tts
+```
+
+No existen equivalentes TTS 3.7/3.6/3.5, por eso no se simula una degradación incompatible.
+
+Gemini 3.5 Transcribe se reintenta sobre el modelo especializado porque es el que entrega los timestamps por palabra que necesita Subtitle Studio.
+
+Por defecto hay 3 intentos por modelo y esperas configurables.
+
+### Logs IA
+
+La interfaz incluye **Logs IA** en móvil y escritorio.
+
+Registra:
+
+- operación;
+- modelo;
+- número de intento;
+- tiempo;
+- degradación de modelo;
+- error completo;
+- eventos del frontend.
+
+El panel permite **Copiar todo** para compartir el diagnóstico. No registra la API key.
+
+### Subtítulos y estilos
+
+La transcripción se presenta como párrafos. Las palabras parecen texto normal y solo pasan a edición al tocarlas.
+
+Presets actuales:
+
+- Viral Pop
+- Clean
+- Punch
+- Neon Glow
+- Karaoke Focus
+- Cinema
+- Bubble
+- Focus Box
+
+Preview y exportación usan las mismas fuentes web para evitar diferencias tipográficas entre dispositivos.
 
 ### Persistencia
 
-- Transcripción, correcciones y estilo: `localStorage`.
-- Video original: IndexedDB cuando el navegador lo permite.
+- Proyecto, guion, transcripción, correcciones y estilo: `localStorage`.
+- Video original y voz generada: IndexedDB cuando el navegador lo permite.
 - Al reabrir el navegador se intenta reconstruir el proyecto.
 
 ### Desarrollo local
 
-Requisitos del backend:
+Requisitos:
 
 - Python 3.10+
 - FFmpeg / FFprobe en `PATH`
@@ -71,15 +122,17 @@ npm run dev
 
 ### Render
 
-El frontend Vite sigue siendo un Static Site. El backend `gas3d-subtitle-api` solo se ocupa de transcribir.
-
-Variables del Web Service:
+Backend:
 
 - `GEMINI_API_KEY`
 - `SUBTITLE_CORS_ORIGINS=https://tu-gas3d.onrender.com`
 - `GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe`
+- `GEMINI_SCRIPT_MODELS=gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash`
+- `GEMINI_TTS_MODELS=gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts`
+- `AI_ATTEMPTS_PER_MODEL=3`
+- `AI_RETRY_DELAYS=1.5,3,6`
 
-Variable del Static Site:
+Frontend:
 
 - `VITE_SUBTITLE_API_URL=https://gas3d-subtitle-api.onrender.com`
 
@@ -89,20 +142,10 @@ Variable del Static Site:
 npm run build
 ```
 
-## Modelos
+## Modelos 3D
 
 Coloca modelos licenciados en `public/assets/models/garments/` y regístralos en `src/config/garmentModels.ts`.
 
-## Arquitectura
+## Limitaciones
 
-`GarmentViewer` es el visor 3D reutilizable. `GarmentAdStudio` compone el editor 3D.
-
-`SubtitleStudio` usa `services/subtitle_engine` solamente para la transcripción. `localExporter.ts` hace la composición y exportación final en el dispositivo del usuario.
-
-## Limitaciones observadas
-
-La exportación del editor 3D sigue usando `MediaRecorder`.
-
-Subtitle Studio requiere un navegador moderno con WebCodecs y capacidad de decodificar el codec de entrada y codificar H.264/AVC para el MP4 final. Al no existir fallback, un dispositivo sin soporte mostrará un error claro en lugar de enviar el video a Render.
-
-Gemini 3.5 Transcribe limita a 30 minutos los archivos cuando se solicitan timestamps por palabra.
+Subtitle Studio requiere un navegador moderno con WebCodecs para la exportación local. No existe fallback de renderizado de video en Render.
