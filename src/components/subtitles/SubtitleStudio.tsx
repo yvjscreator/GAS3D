@@ -13,7 +13,7 @@ import {
   Play,
   RefreshCw,
   Sparkles,
-  TerminalSquare,
+  SquareTerminal,
   Type,
   Upload,
   WandSparkles,
@@ -1179,7 +1179,7 @@ export function SubtitleStudio() {
         <button onClick={() => setMobilePanel('voice')} disabled={videoMode !== 'without_voice'}><Mic2 size={22} /><span>Voz IA</span></button>
         <button onClick={() => setMobilePanel('style')}><Palette size={22} /><span>Estilo</span></button>
         <button onClick={() => setMobilePanel('transcript')}><Languages size={22} /><span>Subtítulos</span></button>
-        <button onClick={() => setMobilePanel('logs')}><TerminalSquare size={22} /><span>Logs IA</span></button>
+        <button onClick={() => setMobilePanel('logs')}><SquareTerminal size={22} /><span>Logs IA</span></button>
       </nav>
     }
 
@@ -1315,7 +1315,7 @@ export function SubtitleStudio() {
           <details className="subtitle-desktop-logs" onToggle={(event) => {
             if ((event.currentTarget as HTMLDetailsElement).open) void refreshLogs()
           }}>
-            <summary><TerminalSquare size={14} /> Logs IA</summary>
+            <summary><SquareTerminal size={14} /> Logs IA</summary>
             {renderLogs()}
           </details>
         </aside>
