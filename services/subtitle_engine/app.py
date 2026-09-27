@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -7,16 +8,21 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from google import genai
+from pydantic import BaseModel, Field
 
 APP_NAME = "GAS3D Subtitle Engine"
 GEMINI_MODEL = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe")
+SCRIPT_MODEL = os.getenv("GEMINI_SCRIPT_MODEL", "gemini-3.8-flash")
+TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-3.8-flash-tts")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 CORS_ORIGINS = [
     origin.strip()
@@ -48,6 +54,68 @@ _jobs_lock = threading.Lock()
 _executor = ThreadPoolExecutor(
     max_workers=max(1, int(os.getenv("TRANSCRIBE_WORKERS", "2")))
 )
+
+
+class PresentationSegment(BaseModel):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+    purpose: str
+    text: str
+
+
+class PresentationScriptResult(BaseModel):
+    title: str
+    detectedProduct: str
+    summary: str
+    script: str
+    estimatedSeconds: float = Field(gt=0)
+    visualNotes: list[str] = Field(default_factory=list)
+    segments: list[PresentationSegment] = Field(default_factory=list)
+
+
+class TTSRequest(BaseModel):
+    script: str = Field(min_length=1, max_length=12000)
+    voice: str = Field(default="Sulafat", min_length=1, max_length=128)
+    styleId: str = Field(default="influencer", min_length=1, max_length=64)
+    language: str = Field(default="es-LATAM", min_length=1, max_length=64)
+
+
+TTS_STYLES = {
+    "influencer": (
+        "Natural social-media creator presenting a product to camera. Warm, spontaneous, "
+        "conversational and confident. Sound genuinely impressed, never like a formal announcer. "
+        "Use an engaging medium pace with natural micro-pauses."
+    ),
+    "reels": (
+        "High-energy short-form social media creator. Strong hook, lively inflection, quick but "
+        "clear pace, punchy emphasis on benefits, energetic without shouting."
+    ),
+    "friendly": (
+        "Friendly product recommender speaking directly to one person. Warm, approachable, "
+        "trustworthy and persuasive without sounding scripted. Relaxed medium pace."
+    ),
+    "premium": (
+        "Polished premium product presenter. Elegant, calm confidence, controlled enthusiasm, "
+        "clean articulation and measured pacing. Sophisticated rather than salesy."
+    ),
+    "casual": (
+        "Casual relaxed creator speaking to a friend. Natural rhythm, easygoing delivery, subtle "
+        "smiles in the voice and believable conversational pauses."
+    ),
+    "commercial": (
+        "Professional modern commercial presenter. Clear articulation, confident energy, concise "
+        "pacing and strong benefit-led emphasis while remaining human."
+    ),
+}
+
+LANGUAGE_STYLES = {
+    "es-LATAM": "Speak in natural neutral Latin American Spanish.",
+    "es-CL": "Speak in natural Chilean Spanish with a clear, accessible Chilean accent.",
+    "es-AR": "Speak in natural Rioplatense Spanish from Argentina.",
+    "es-VE": "Speak in natural Venezuelan Spanish.",
+    "en-US": "Speak in natural American English.",
+    "pt-BR": "Speak in natural Brazilian Portuguese.",
+}
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -214,6 +282,36 @@ def _update_job(job_id: str, **changes) -> None:
             _jobs[job_id].update(changes)
 
 
+def _delete_remote_file(client: genai.Client | None, remote_file: object | None) -> None:
+    if client is None or remote_file is None:
+        return
+    try:
+        client.files.delete(name=remote_file.name)
+    except Exception:
+        pass
+
+
+def _wait_for_gemini_file(
+    client: genai.Client,
+    remote_file: object,
+    timeout_seconds: int = 180,
+):
+    deadline = time.monotonic() + timeout_seconds
+    current = remote_file
+
+    while time.monotonic() < deadline:
+        state = getattr(getattr(current, "state", None), "name", None)
+        if state in (None, "ACTIVE"):
+            return current
+        if state == "FAILED":
+            raise RuntimeError("Gemini no pudo procesar el archivo.")
+
+        time.sleep(2)
+        current = client.files.get(name=current.name)
+
+    raise RuntimeError("Gemini tardó demasiado en procesar el archivo.")
+
+
 def _transcribe(job_id: str) -> None:
     with _jobs_lock:
         job = dict(_jobs[job_id])
@@ -232,7 +330,7 @@ def _transcribe(job_id: str) -> None:
             job_id,
             status="transcribing",
             progress=0.08,
-            message="Extrayendo audio del video…",
+            message="Preparando audio…",
         )
         _extract_audio(input_path, audio_path)
 
@@ -296,14 +394,7 @@ def _transcribe(job_id: str) -> None:
             error=str(exc),
         )
     finally:
-        if remote_file is not None and client is not None:
-            try:
-                client.files.delete(name=remote_file.name)
-            except Exception:
-                pass
-
-        # The browser performs the final video render locally. Render only needs
-        # the source video long enough to extract/transcribe its audio.
+        _delete_remote_file(client, remote_file)
         shutil.rmtree(job_dir, ignore_errors=True)
 
 
@@ -313,9 +404,167 @@ def health() -> dict:
         "ok": True,
         "engine": "gemini",
         "model": GEMINI_MODEL,
+        "scriptModel": SCRIPT_MODEL,
+        "ttsModel": TTS_MODEL,
         "configured": bool(GEMINI_API_KEY),
         "videoExport": "browser-webcodecs",
     }
+
+
+@app.post("/api/subtitles/presentation/script")
+async def generate_presentation_script(
+    video: UploadFile = File(...),
+    presentation_type: str = Form(default="influencer"),
+    product: str = Form(default=""),
+    highlights: str = Form(default=""),
+    audience: str = Form(default=""),
+    cta: str = Form(default=""),
+    language: str = Form(default="es-LATAM"),
+) -> dict:
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="Falta configurar GEMINI_API_KEY en Render.")
+
+    work_dir = WORK_ROOT / f"script-{uuid.uuid4().hex}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    suffix = Path(video.filename or "video.mp4").suffix or ".mp4"
+    input_path = work_dir / f"input{suffix.lower()}"
+    client = None
+    remote_file = None
+
+    try:
+        with input_path.open("wb") as target:
+            while chunk := await video.read(1024 * 1024):
+                target.write(chunk)
+        await video.close()
+
+        metadata = _probe(input_path)
+        duration = float(metadata.get("duration") or 0)
+        if duration <= 0:
+            raise RuntimeError("No se pudo determinar la duración del video.")
+
+        target_seconds = max(3.0, duration - min(1.0, duration * 0.06))
+        max_words = max(8, round(target_seconds * 2.35))
+
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        remote_file = client.files.upload(file=str(input_path))
+        remote_file = _wait_for_gemini_file(client, remote_file)
+
+        prompt = f"""
+You are the creative director and UGC product-script writer for a short social-media video.
+
+Analyze the supplied video visually. Write spoken copy that PRESENTS what is on screen like a real creator or influencer showing a product. Do not narrate obvious camera actions shot-by-shot and do not say generic filler. The speech should complement the visuals, call attention to useful visible details, and sound natural when spoken.
+
+VIDEO DURATION: {duration:.2f} seconds
+TARGET SPOKEN DURATION: at most {target_seconds:.2f} seconds
+APPROXIMATE MAX WORDS: {max_words}
+PRESENTATION TYPE: {presentation_type}
+USER PRODUCT DESCRIPTION: {product or "Infer the product from the video"}
+DETAILS TO HIGHLIGHT: {highlights or "Infer only useful, visible or user-supported selling points"}
+TARGET AUDIENCE: {audience or "General social-media audience"}
+CTA: {cta or "Use a short natural CTA only if it fits"}
+VOICE LANGUAGE / LOCALE: {language}
+
+Rules:
+- The field "script" must contain ONLY the exact words that should be spoken.
+- Do not put stage directions, labels, brackets, markdown, timestamps, or quotes in "script".
+- Never invent product claims that cannot be supported by the video or the user's details.
+- Aim to finish the spoken delivery slightly before the video ends.
+- Start with a compelling natural hook.
+- Prefer creator/UGC language over corporate advertising language.
+- Break the concept into segments aligned approximately with meaningful visual moments.
+- Segment text must concatenate naturally into the full script.
+- Keep each segment's start/end within the video duration.
+"""
+
+        interaction = client.interactions.create(
+            model=SCRIPT_MODEL,
+            input=[
+                {
+                    "type": "video",
+                    "uri": remote_file.uri,
+                    "mime_type": remote_file.mime_type,
+                    "processing": {"type": "static", "fps": 1.0},
+                },
+                {"type": "text", "text": prompt},
+            ],
+            response_format={
+                "type": "text",
+                "mime_type": "application/json",
+                "schema": PresentationScriptResult.model_json_schema(),
+            },
+        )
+
+        result = PresentationScriptResult.model_validate_json(interaction.output_text)
+        return result.model_dump()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo crear el guion con Gemini: {exc}",
+        ) from exc
+    finally:
+        _delete_remote_file(client, remote_file)
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@app.post("/api/subtitles/presentation/tts")
+def generate_presentation_voice(request: TTSRequest) -> Response:
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="Falta configurar GEMINI_API_KEY en Render.")
+
+    style = TTS_STYLES.get(request.styleId, TTS_STYLES["influencer"])
+    locale_style = LANGUAGE_STYLES.get(
+        request.language,
+        f"Speak naturally in the language and regional variety indicated by {request.language}.",
+    )
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        interaction = client.interactions.create(
+            model=TTS_MODEL,
+            input=[{
+                "type": "user_input",
+                "content": [{
+                    "type": "text",
+                    "text": request.script.strip(),
+                    "annotations": [{
+                        "type": "speech_metadata",
+                        "style": f"{style} {locale_style}",
+                    }],
+                }],
+            }],
+            response_format={
+                "type": "audio",
+                "mime_type": "audio/wav",
+            },
+            generation_config={
+                "speech_config": [
+                    {"voice": request.voice},
+                ],
+            },
+        )
+
+        output_audio = getattr(interaction, "output_audio", None)
+        encoded = getattr(output_audio, "data", None)
+        if not encoded:
+            raise RuntimeError("Gemini no devolvió audio.")
+
+        if isinstance(encoded, str):
+            audio_bytes = base64.b64decode(encoded)
+        else:
+            audio_bytes = base64.b64decode(bytes(encoded))
+
+        return Response(
+            content=audio_bytes,
+            media_type="audio/wav",
+            headers={"Cache-Control": "no-store"},
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo generar la voz con Gemini: {exc}",
+        ) from exc
 
 
 @app.post("/api/subtitles/jobs")
@@ -327,7 +576,7 @@ async def create_job(
     job_dir = WORK_ROOT / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    suffix = Path(video.filename or "video.mp4").suffix or ".mp4"
+    suffix = Path(video.filename or "media.mp4").suffix or ".mp4"
     input_path = job_dir / f"input{suffix.lower()}"
 
     with input_path.open("wb") as target:
@@ -352,7 +601,7 @@ async def create_job(
         "id": job_id,
         "status": "queued",
         "progress": 0.0,
-        "message": "Video recibido. Preparando audio…",
+        "message": "Archivo recibido. Preparando audio…",
         "fileName": video.filename or input_path.name,
         "requestedLanguage": language or None,
         "language": language or None,
