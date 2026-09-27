@@ -96,6 +96,17 @@ Presets actuales:
 
 Preview y exportación usan las mismas fuentes web para evitar diferencias tipográficas entre dispositivos.
 
+### Layout móvil fijo
+
+El editor móvil ocupa exactamente el viewport disponible:
+- header/acción principal fijo arriba;
+- video ocupa todo el espacio restante;
+- timeline con altura fija;
+- dock de herramientas con altura fija abajo;
+- los mensajes de progreso/error flotan y no alteran el layout;
+- no hay scroll de página durante la edición;
+- los paneles largos se desplazan dentro del dock y el teclado puede reducir temporalmente el viewport.
+
 ### Persistencia
 
 - Proyecto, guion, transcripción, correcciones y estilo: `localStorage`.
