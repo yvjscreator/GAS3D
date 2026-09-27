@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
   ArrowLeft,
   Check,
@@ -33,7 +34,6 @@ import type {
   PresentationForm,
   PresentationScript,
   SubtitleCaption,
-  SubtitleExportOptions,
   SubtitleJob,
   SubtitleLocalExportState,
   SubtitlePresetId,
