@@ -66,6 +66,15 @@ En el Static Site existente configura:
 
 Después vuelve a desplegar el Static Site para que Vite incorpore la URL del backend.
 
+
+### Flujo de proyecto y móvil
+
+- Seleccionar un video ya no inicia la transcripción automáticamente.
+- El idioma puede elegirse o cambiarse después de cargar el archivo; Gemini solo se llama al pulsar **Generar subtítulos**.
+- En móvil se usa un editor compacto inspirado en editores de video: preview superior, transporte/timeline y dock inferior con paneles contextuales de Video, Estilo, Texto y Subtítulos.
+- El estado del proyecto (transcripción, correcciones y estilo) se guarda en `localStorage`. El video se guarda de forma best-effort en IndexedDB para poder restaurar el proyecto después de cerrar el navegador.
+- La exportación es asíncrona: el API devuelve rápido un ID, FFmpeg renderiza en segundo plano, el frontend consulta el progreso y descarga cuando el MP4 está listo. Esto evita mantener una petición HTTP larga abierta durante todo el render.
+
 ## Build
 
 ```bash
