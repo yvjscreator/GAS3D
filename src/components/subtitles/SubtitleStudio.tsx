@@ -988,7 +988,7 @@ export function SubtitleStudio() {
       {activeCaption && <div
         className={`subtitle-overlay editable preset-${preset}`}
         style={{
-          '--subtitle-size': `${Math.max(20, fontScale * (mobile ? 5 : 6))}px`,
+          '--subtitle-size': `${fontScale}cqh`,
           '--subtitle-outline': outlineColor,
           '--subtitle-active': activeColor,
           '--subtitle-effect': effectColor,
