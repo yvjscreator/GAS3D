@@ -82,7 +82,8 @@ const formatTime = (seconds: number) => {
 }
 
 export function SubtitleStudio() {
-  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const mobileVideoRef = useRef<HTMLVideoElement | null>(null)
+  const desktopVideoRef = useRef<HTMLVideoElement | null>(null)
   const restoredRef = useRef(false)
   const [file, setFile] = useState<File | null>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
@@ -221,7 +222,8 @@ export function SubtitleStudio() {
     if (!playing) return
     let frame = 0
     const tick = () => {
-      if (videoRef.current) setCurrentTime(videoRef.current.currentTime)
+      const video = window.matchMedia('(max-width: 720px)').matches ? mobileVideoRef.current : desktopVideoRef.current
+      if (video) setCurrentTime(video.currentTime)
       frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
@@ -361,14 +363,15 @@ export function SubtitleStudio() {
 
   const seekTo = (time: number) => {
     const safe = Math.min(Math.max(time, 0), duration || 0)
-    if (videoRef.current) videoRef.current.currentTime = safe
+    const video = window.matchMedia('(max-width: 720px)').matches ? mobileVideoRef.current : desktopVideoRef.current
+    if (video) video.currentTime = safe
     setCurrentTime(safe)
   }
 
   const seekToCaption = (caption: SubtitleCaption) => seekTo(caption.start)
 
   const togglePlayback = () => {
-    const video = videoRef.current
+    const video = window.matchMedia('(max-width: 720px)').matches ? mobileVideoRef.current : desktopVideoRef.current
     if (!video) return
     if (video.paused) void video.play()
     else video.pause()
@@ -382,7 +385,7 @@ export function SubtitleStudio() {
   const renderPreview = (mobile = false) => videoUrl ? (
     <div className={mobile ? 'subtitle-video-frame mobile' : 'subtitle-video-frame'}>
       <video
-        ref={videoRef}
+        ref={mobile ? mobileVideoRef : desktopVideoRef}
         src={videoUrl}
         controls={!mobile}
         playsInline
