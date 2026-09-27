@@ -573,7 +573,7 @@ export function SubtitleStudio() {
   const startTranscription = async (sourceFile = file, selectedLanguage = language) => {
     if (!sourceFile) {
       setError('Selecciona un video antes de generar los subtítulos.')
-      setMobilePanel('video')
+      openMobilePanel('video')
       return
     }
 
@@ -587,7 +587,7 @@ export function SubtitleStudio() {
       const nextJob = await createSubtitleJob(sourceFile, selectedLanguage)
       setJob(nextJob)
       setWordOverrides({})
-      setMobilePanel('main')
+      closeMobilePanel()
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'No se pudo iniciar la transcripción.'
       setError(message)
@@ -632,7 +632,7 @@ export function SubtitleStudio() {
   const createAiVoice = async () => {
     if (!presentationDraft.trim()) {
       setError('El guion está vacío.')
-      setMobilePanel('voice')
+      openMobilePanel('voice')
       return
     }
 
