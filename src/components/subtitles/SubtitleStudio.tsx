@@ -178,6 +178,7 @@ export function SubtitleStudio() {
   const [baseColor, setBaseColor] = useState('#FFFFFF')
   const [activeColor, setActiveColor] = useState('#FFE347')
   const [outlineColor, setOutlineColor] = useState('#000000')
+  const [effectColor, setEffectColor] = useState('#FFE347')
   const [fontScale, setFontScale] = useState(6)
   const [position, setPosition] = useState<SubtitleExportOptions['position']>('bottom')
   const [maxWords, setMaxWords] = useState(5)
@@ -237,6 +238,7 @@ export function SubtitleStudio() {
         setBaseColor(saved.baseColor)
         setActiveColor(saved.activeColor)
         setOutlineColor(saved.outlineColor)
+        setEffectColor(saved.effectColor)
         setFontScale(saved.fontScale)
         setPosition(saved.position)
         setMaxWords(saved.maxWords)
@@ -286,7 +288,7 @@ export function SubtitleStudio() {
   useEffect(() => {
     if (!hydrated) return
     const session: SubtitleSavedSession = {
-      version: 4,
+      version: 5,
       language,
       job,
       wordOverrides,
@@ -294,6 +296,7 @@ export function SubtitleStudio() {
       baseColor,
       activeColor,
       outlineColor,
+      effectColor,
       fontScale,
       position,
       maxWords,
@@ -318,6 +321,7 @@ export function SubtitleStudio() {
     baseColor,
     activeColor,
     outlineColor,
+    effectColor,
     fontScale,
     position,
     maxWords,
@@ -593,6 +597,7 @@ export function SubtitleStudio() {
     setBaseColor(selected.options.baseColor)
     setActiveColor(selected.options.activeColor)
     setOutlineColor(selected.options.outlineColor)
+    setEffectColor(selected.options.effectColor)
     setFontScale(selected.options.fontScale)
     setPosition(selected.options.position)
     setMaxWords(selected.options.maxWords)
@@ -634,6 +639,7 @@ export function SubtitleStudio() {
           baseColor,
           activeColor,
           outlineColor,
+          effectColor,
           fontScale,
           position,
           maxWords,
@@ -794,6 +800,7 @@ export function SubtitleStudio() {
           '--subtitle-size': `${Math.max(20, fontScale * (mobile ? 5 : 6))}px`,
           '--subtitle-outline': outlineColor,
           '--subtitle-active': activeColor,
+          '--subtitle-effect': effectColor,
         } as CSSProperties}
       >
         <div>{activeCaption.wordIds.map((id) => {
@@ -1012,6 +1019,7 @@ export function SubtitleStudio() {
       <label><span>Texto</span><input type="color" value={baseColor} onChange={(event) => setBaseColor(event.target.value)} /></label>
       <label><span>Palabra activa</span><input type="color" value={activeColor} onChange={(event) => setActiveColor(event.target.value)} /></label>
       <label><span>Contorno</span><input type="color" value={outlineColor} onChange={(event) => setOutlineColor(event.target.value)} /></label>
+      <label><span>Efecto</span><input type="color" value={effectColor} onChange={(event) => setEffectColor(event.target.value)} /></label>
     </div>
 
     <label className="subtitle-field">
