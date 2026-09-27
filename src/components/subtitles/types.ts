@@ -46,6 +46,7 @@ export type SubtitleExportOptions = {
   baseColor: string
   activeColor: string
   outlineColor: string
+  effectColor: string
   fontScale: number
   position: 'top' | 'center' | 'bottom'
   maxWords: number
@@ -126,7 +127,7 @@ export type AiLogResponse = {
 }
 
 export type SubtitleSavedSession = {
-  version: 4
+  version: 5
   language: string
   job: SubtitleJob | null
   wordOverrides: Record<number, string>
@@ -134,6 +135,7 @@ export type SubtitleSavedSession = {
   baseColor: string
   activeColor: string
   outlineColor: string
+  effectColor: string
   fontScale: number
   position: SubtitleExportOptions['position']
   maxWords: number
