@@ -1153,10 +1153,7 @@ export function SubtitleStudio() {
       <label><span>Efecto</span><input type="color" value={effectColor} onChange={(event) => setEffectColor(event.target.value)} /></label>
     </div>
 
-    <label className="subtitle-field">
-      <span>Tamaño <b>{fontScale}%</b></span>
-      <input type="range" min="3.5" max="10" step="0.5" value={fontScale} onChange={(event) => setFontScale(Number(event.target.value))} />
-    </label>
+    <p className="subtitle-manipulation-hint">Sobre el video: arrastra el subtítulo para moverlo y pellizca con dos dedos para cambiar su tamaño.</p>
 
     <label className="subtitle-field">
       <span>Palabras por bloque <b>{maxWords}</b></span>
