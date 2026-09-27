@@ -33,6 +33,18 @@ En el modo sin voz, cualquier audio original del archivo se ignora en preview/ex
 
 La exportación final **no ocurre en Render**. El teléfono o PC usa WebCodecs y Canvas, por lo que no depende de la CPU gratuita de Render para codificar video.
 
+### Catálogo de voces Gemini
+
+La selección de voz se carga dinámicamente desde la Gemini Voices API en lugar de mantener una lista fija. El backend solicita hasta 1000 voces y mantiene una caché de 15 minutos.
+
+La interfaz muestra:
+- nombre de la voz;
+- género percibido: femenina, masculina o neutra;
+- idioma/acento/persona cuando están disponibles;
+- filtros rápidos por género.
+
+Cambiar únicamente la voz invalida la locución y los timestamps, pero no regenera el guion.
+
 ### Resiliencia de IA
 
 Las operaciones temporales se reintentan automáticamente ante 408/429/5xx, timeout, saturación o indisponibilidad.
