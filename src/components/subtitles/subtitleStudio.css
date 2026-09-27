@@ -1278,3 +1278,168 @@
 .subtitle-overlay.preset-bubble span.active {
   color:var(--subtitle-active) !important;
 }
+
+
+/* v7: locked mobile editor viewport — fixed header, timeline and bottom tool area. */
+@media (max-width:720px) {
+  .subtitle-studio {
+    width:100%;
+    height:100dvh;
+    min-height:0;
+    overflow:hidden;
+    overscroll-behavior:none;
+  }
+
+  .subtitle-mobile-editor {
+    --subtitle-header-h:56px;
+    --subtitle-transport-h:84px;
+    --subtitle-dock-h:clamp(138px,22dvh,190px);
+
+    position:fixed;
+    inset:0;
+    width:100%;
+    height:100dvh;
+    min-height:0;
+    max-height:100dvh;
+    display:grid;
+    grid-template-rows:
+      var(--subtitle-header-h)
+      minmax(0,1fr)
+      var(--subtitle-transport-h)
+      var(--subtitle-dock-h);
+    overflow:hidden;
+    overscroll-behavior:none;
+  }
+
+  .subtitle-mobile-header {
+    position:relative;
+    z-index:30;
+    grid-row:1;
+    height:var(--subtitle-header-h) !important;
+    min-height:var(--subtitle-header-h);
+    max-height:var(--subtitle-header-h);
+    background:#242424;
+    box-shadow:0 1px 0 #343434;
+  }
+
+  .subtitle-mobile-export {
+    position:relative;
+    z-index:31;
+    flex:none;
+    white-space:nowrap;
+  }
+
+  .subtitle-mobile-stage {
+    grid-row:2;
+    width:100%;
+    height:100%;
+    min-height:0;
+    max-height:none;
+    padding:8px 10px;
+    overflow:hidden;
+  }
+
+  .subtitle-video-frame.mobile {
+    width:100%;
+    height:100%;
+    min-height:0;
+    max-height:none;
+    display:grid;
+    place-items:center;
+  }
+
+  .subtitle-video-frame.mobile video {
+    width:100%;
+    height:100%;
+    max-width:100%;
+    max-height:100%;
+    object-fit:contain;
+  }
+
+  .subtitle-mobile-stage .subtitle-empty-preview {
+    min-height:0;
+    height:100%;
+  }
+
+  .subtitle-mobile-transport {
+    grid-row:3;
+    height:var(--subtitle-transport-h);
+    min-height:var(--subtitle-transport-h);
+    max-height:var(--subtitle-transport-h);
+    padding:4px 10px 6px;
+    overflow:hidden;
+  }
+
+  .subtitle-mobile-dock {
+    grid-row:4;
+    width:100%;
+    height:var(--subtitle-dock-h);
+    min-height:var(--subtitle-dock-h);
+    max-height:var(--subtitle-dock-h);
+    align-self:stretch;
+    overflow:hidden;
+    background:#252525;
+  }
+
+  .subtitle-mobile-tools,
+  .subtitle-mobile-tools.five {
+    width:100%;
+    height:100%;
+    min-height:0;
+    padding:8px 4px max(8px,env(safe-area-inset-bottom));
+  }
+
+  .subtitle-mobile-tools button,
+  .subtitle-mobile-tools.five button {
+    min-height:0;
+    height:100%;
+    max-height:82px;
+  }
+
+  .subtitle-mobile-panel {
+    width:100%;
+    height:100%;
+    max-height:none;
+    min-height:0;
+    grid-template-rows:44px minmax(0,1fr);
+    overflow:hidden;
+  }
+
+  .subtitle-mobile-panel>header {
+    height:44px !important;
+    min-height:44px;
+    max-height:44px;
+  }
+
+  .subtitle-mobile-panel-body {
+    min-height:0;
+    max-height:100%;
+    overflow-y:auto;
+    overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    scrollbar-width:thin;
+  }
+
+  /* Feedback floats over the stage instead of creating extra layout rows. */
+  .subtitle-mobile-error,
+  .subtitle-mobile-export-progress,
+  .subtitle-mobile-editor>.subtitle-local-export-done {
+    position:absolute;
+    z-index:40;
+    right:12px;
+    left:12px;
+    top:calc(var(--subtitle-header-h) + 8px);
+    margin:0;
+    box-shadow:0 8px 28px #0009;
+  }
+
+  .subtitle-mobile-export-progress + .subtitle-local-export-done {
+    top:calc(var(--subtitle-header-h) + 58px);
+  }
+
+  /* Inputs remain reachable when Android/iOS shrinks the visual viewport for the keyboard. */
+  .subtitle-mobile-panel-body:focus-within {
+    scroll-behavior:smooth;
+  }
+}
