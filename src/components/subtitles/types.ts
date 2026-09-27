@@ -83,6 +83,25 @@ export type VoiceStyleId =
   | 'casual'
   | 'commercial'
 
+export type GeminiVoiceGender = 'female' | 'male' | 'neutral' | string
+
+export type GeminiVoice = {
+  id: string
+  displayName: string
+  gender: GeminiVoiceGender
+  languageCode: string | null
+  accent: string | null
+  pitch: string | null
+  persona: string | null
+  description: string | null
+  type: string
+}
+
+export type GeminiVoiceCatalog = {
+  voices: GeminiVoice[]
+  cached: boolean
+}
+
 export type PresentationForm = {
   presentationType: PresentationType
   product: string
