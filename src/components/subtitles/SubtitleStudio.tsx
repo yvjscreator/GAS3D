@@ -69,6 +69,7 @@ const statusLabel: Record<SubtitleJob['status'], string> = {
 
 type MobilePanel = 'main' | 'video' | 'voice' | 'style' | 'text' | 'transcript' | 'logs'
 type PrimaryMode = 'script' | 'voice' | 'generate' | 'export'
+type SubtitleColorTarget = 'base' | 'active' | 'outline' | 'effect'
 
 const defaultPresentationForm = (): PresentationForm => ({
   presentationType: 'influencer',
@@ -87,6 +88,58 @@ const emptyExportState = (): SubtitleLocalExportState => ({
   error: null,
   elapsedSeconds: 0,
 })
+
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+const hexToHsv = (hex: string) => {
+  const clean = hex.replace('#', '')
+  const r = parseInt(clean.slice(0, 2), 16) / 255
+  const g = parseInt(clean.slice(2, 4), 16) / 255
+  const b = parseInt(clean.slice(4, 6), 16) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const delta = max - min
+  let h = 0
+
+  if (delta) {
+    if (max === r) h = 60 * (((g - b) / delta) % 6)
+    else if (max === g) h = 60 * ((b - r) / delta + 2)
+    else h = 60 * ((r - g) / delta + 4)
+  }
+  if (h < 0) h += 360
+
+  return {
+    h,
+    s: max === 0 ? 0 : delta / max,
+    v: max,
+  }
+}
+
+const hsvToHex = (h: number, s: number, v: number) => {
+  const c = v * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = v - c
+  let r = 0
+  let g = 0
+  let b = 0
+
+  if (h < 60) [r, g] = [c, x]
+  else if (h < 120) [r, g] = [x, c]
+  else if (h < 180) [g, b] = [c, x]
+  else if (h < 240) [g, b] = [x, c]
+  else if (h < 300) [r, b] = [x, c]
+  else [r, b] = [c, x]
+
+  const toHex = (value: number) => Math.round((value + m) * 255).toString(16).padStart(2, '0')
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase()
+}
+
+const quickColors = [
+  '#FFFFFF', '#000000', '#FFE347', '#FF7A45',
+  '#FF58D6', '#8B35FF', '#6EFFA8', '#32D7FF',
+  '#1D7CFF', '#FF3344', '#FF8C00', '#9AA4B2',
+]
 
 const groupWords = (words: SubtitleWord[], maxWords: number): SubtitleCaption[] => {
   const groups: SubtitleCaption[] = []
@@ -191,6 +244,11 @@ export function SubtitleStudio() {
   const [hydrated, setHydrated] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('main')
   const [mobilePanelCollapsed, setMobilePanelCollapsed] = useState(false)
+  const [colorEditorTarget, setColorEditorTarget] = useState<SubtitleColorTarget | null>(null)
+  const [colorHue, setColorHue] = useState(280)
+  const [colorSaturation, setColorSaturation] = useState(0.8)
+  const [colorValue, setColorValue] = useState(0.9)
+  const [voiceRenderLimit, setVoiceRenderLimit] = useState(20)
   const [error, setError] = useState<string | null>(null)
   const [storageNotice, setStorageNotice] = useState<string | null>(null)
   const [wordOverrides, setWordOverrides] = useState<Record<number, string>>({})
@@ -228,11 +286,19 @@ export function SubtitleStudio() {
 
   const openMobilePanel = (panel: Exclude<MobilePanel, 'main'>) => {
     setMobilePanelCollapsed(false)
+    if (panel !== 'text') setColorEditorTarget(null)
+    if (panel === 'voice') {
+      setVoiceRenderLimit(8)
+      requestAnimationFrame(() => {
+        window.setTimeout(() => setVoiceRenderLimit(20), 220)
+      })
+    }
     setMobilePanel(panel)
   }
 
   const closeMobilePanel = () => {
     setMobilePanelCollapsed(false)
+    setColorEditorTarget(null)
     setMobilePanel('main')
   }
 
@@ -476,6 +542,12 @@ export function SubtitleStudio() {
       : orderedVoices.filter((item) => item.gender === voiceGenderFilter),
     [orderedVoices, voiceGenderFilter],
   )
+
+  useEffect(() => {
+    setVoiceRenderLimit(20)
+  }, [voiceGenderFilter, presentationForm.language])
+
+  const renderedVoices = visibleVoices.slice(0, voiceRenderLimit)
 
   const voiceGenderIcon = (gender: string) => gender === 'female' ? '♀' : gender === 'male' ? '♂' : '◉'
   const voiceGenderLabel = (gender: string) => gender === 'female' ? 'Femenina' : gender === 'male' ? 'Masculina' : 'Neutra'
@@ -1257,7 +1329,7 @@ export function SubtitleStudio() {
             </div>}
 
             {!voiceCatalogLoading && visibleVoices.length > 0 && <div className="subtitle-voice-carousel">
-              {visibleVoices.map((item) => <button
+              {renderedVoices.map((item) => <button
                 key={item.id}
                 type="button"
                 className={voice === item.id ? 'active' : ''}
@@ -1272,6 +1344,15 @@ export function SubtitleStudio() {
                 <small>{voiceGenderLabel(item.gender)}</small>
                 <span>{item.accent ?? item.persona ?? item.languageCode ?? item.type}</span>
               </button>)}
+              {visibleVoices.length > voiceRenderLimit && <button
+                type="button"
+                className="subtitle-voice-more"
+                onClick={() => setVoiceRenderLimit((value) => Math.min(visibleVoices.length, value + 20))}
+              >
+                <strong>+{Math.min(20, visibleVoices.length - voiceRenderLimit)}</strong>
+                <small>Más voces</small>
+                <span>{visibleVoices.length - voiceRenderLimit} restantes</span>
+              </button>}
             </div>}
 
             {!voiceCatalogLoading && !voiceCatalogError && !visibleVoices.length && <div className="subtitle-voice-catalog-state">
@@ -1314,55 +1395,132 @@ export function SubtitleStudio() {
     </button>)}
   </div>
 
+  const colorValueFor = (target: SubtitleColorTarget) => {
+    if (target === 'base') return baseColor
+    if (target === 'active') return activeColor
+    if (target === 'outline') return outlineColor
+    return effectColor
+  }
+
+  const setColorValueFor = (target: SubtitleColorTarget, value: string) => {
+    if (target === 'base') setBaseColor(value)
+    else if (target === 'active') setActiveColor(value)
+    else if (target === 'outline') setOutlineColor(value)
+    else setEffectColor(value)
+  }
+
+  const openColorEditor = (target: SubtitleColorTarget) => {
+    const hsv = hexToHsv(colorValueFor(target))
+    setColorHue(hsv.h)
+    setColorSaturation(hsv.s)
+    setColorValue(hsv.v)
+    setColorEditorTarget(target)
+  }
+
+  const applyHsvColor = (h = colorHue, sat = colorSaturation, val = colorValue) => {
+    if (!colorEditorTarget) return
+    setColorValueFor(colorEditorTarget, hsvToHex(h, sat, val))
+  }
+
+  const handleColorPlane = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!colorEditorTarget) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const rect = event.currentTarget.getBoundingClientRect()
+    const sat = clamp((event.clientX - rect.left) / rect.width, 0, 1)
+    const val = clamp(1 - (event.clientY - rect.top) / rect.height, 0, 1)
+    setColorSaturation(sat)
+    setColorValue(val)
+    setColorValueFor(colorEditorTarget, hsvToHex(colorHue, sat, val))
+  }
+
+  const renderMobileColorEditor = () => {
+    if (!colorEditorTarget) return null
+
+    const labels: Record<SubtitleColorTarget, string> = {
+      base: 'Texto',
+      active: 'Palabra activa',
+      outline: 'Contorno',
+      effect: 'Efecto',
+    }
+    const current = colorValueFor(colorEditorTarget)
+
+    return <div className="subtitle-inline-color-editor">
+      <div className="subtitle-color-editor-title">
+        <button type="button" onClick={() => setColorEditorTarget(null)}>← Colores</button>
+        <strong>{labels[colorEditorTarget]}</strong>
+        <i style={{ backgroundColor: current }} />
+      </div>
+
+      <div
+        className="subtitle-sv-plane"
+        style={{ backgroundColor: `hsl(${colorHue} 100% 50%)` }}
+        onPointerDown={handleColorPlane}
+        onPointerMove={(event) => {
+          if (event.buttons) handleColorPlane(event)
+        }}
+      >
+        <i
+          style={{
+            left: `${colorSaturation * 100}%`,
+            top: `${(1 - colorValue) * 100}%`,
+            backgroundColor: current,
+          }}
+        />
+      </div>
+
+      <label className="subtitle-hue-control">
+        <span>Tono</span>
+        <input
+          type="range"
+          min="0"
+          max="360"
+          step="1"
+          value={colorHue}
+          onChange={(event) => {
+            const next = Number(event.target.value)
+            setColorHue(next)
+            applyHsvColor(next, colorSaturation, colorValue)
+          }}
+        />
+      </label>
+
+      <div className="subtitle-quick-colors">
+        {quickColors.map((color) => <button
+          key={color}
+          type="button"
+          className={current.toUpperCase() === color ? 'active' : ''}
+          style={{ backgroundColor: color }}
+          aria-label={color}
+          onClick={() => {
+            const hsv = hexToHsv(color)
+            setColorHue(hsv.h)
+            setColorSaturation(hsv.s)
+            setColorValue(hsv.v)
+            setColorValueFor(colorEditorTarget, color)
+          }}
+        />)}
+      </div>
+    </div>
+  }
+
   const renderTextControls = () => isMobile ? (
     <div className="subtitle-mobile-customize-strip">
-      <label className="subtitle-mobile-control-card color native-color">
-        <input
-          type="color"
-          value={baseColor}
-          aria-label="Color del texto"
-          onChange={(event) => setBaseColor(event.target.value)}
-        />
-        <span>Texto</span>
-        <i className="subtitle-color-swatch" style={{ backgroundColor: baseColor }} />
-        <small>{baseColor.toUpperCase()}</small>
-      </label>
-
-      <label className="subtitle-mobile-control-card color native-color">
-        <input
-          type="color"
-          value={activeColor}
-          aria-label="Color de la palabra activa"
-          onChange={(event) => setActiveColor(event.target.value)}
-        />
-        <span>Activa</span>
-        <i className="subtitle-color-swatch" style={{ backgroundColor: activeColor }} />
-        <small>{activeColor.toUpperCase()}</small>
-      </label>
-
-      <label className="subtitle-mobile-control-card color native-color">
-        <input
-          type="color"
-          value={outlineColor}
-          aria-label="Color del contorno"
-          onChange={(event) => setOutlineColor(event.target.value)}
-        />
-        <span>Contorno</span>
-        <i className="subtitle-color-swatch" style={{ backgroundColor: outlineColor }} />
-        <small>{outlineColor.toUpperCase()}</small>
-      </label>
-
-      <label className="subtitle-mobile-control-card color native-color">
-        <input
-          type="color"
-          value={effectColor}
-          aria-label="Color del efecto"
-          onChange={(event) => setEffectColor(event.target.value)}
-        />
-        <span>Efecto</span>
-        <i className="subtitle-color-swatch" style={{ backgroundColor: effectColor }} />
-        <small>{effectColor.toUpperCase()}</small>
-      </label>
+      {([
+        ['base', 'Texto', baseColor],
+        ['active', 'Activa', activeColor],
+        ['outline', 'Contorno', outlineColor],
+        ['effect', 'Efecto', effectColor],
+      ] as const).map(([target, label, color]) => <button
+        key={target}
+        type="button"
+        className="subtitle-mobile-control-card color custom-color"
+        onClick={() => openColorEditor(target)}
+      >
+        <span>{label}</span>
+        <i className="subtitle-color-swatch" style={{ backgroundColor: color }} />
+        <small>{color.toUpperCase()}</small>
+      </button>)}
 
       <div className="subtitle-mobile-control-card words">
         <span>Palabras</span>
@@ -1581,7 +1739,7 @@ export function SubtitleStudio() {
             <button type="button" onClick={() => openMobilePanel('text')}>Personalizar</button>
           </div>
         </>}
-        {mobilePanel === 'text' && renderTextControls()}
+        {mobilePanel === 'text' && (colorEditorTarget ? renderMobileColorEditor() : renderTextControls())}
         {mobilePanel === 'transcript' && renderTranscript()}
         {mobilePanel === 'logs' && renderLogs()}
       </div>
