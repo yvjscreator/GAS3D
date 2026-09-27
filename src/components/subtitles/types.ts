@@ -64,6 +64,8 @@ export type SubtitleLocalExportState = {
   elapsedSeconds: number
 }
 
+export type VideoAudioMode = 'with_voice' | 'without_voice'
+
 export type PresentationType =
   | 'influencer'
   | 'product'
@@ -126,4 +128,5 @@ export type SubtitleSavedSession = {
   voice: string
   voiceStyle: VoiceStyleId
   generatedVoiceReady: boolean
+  videoMode: VideoAudioMode | null
 }
