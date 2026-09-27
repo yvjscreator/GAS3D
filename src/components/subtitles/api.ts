@@ -1,5 +1,6 @@
 import type {
   AiLogResponse,
+  GeminiVoiceCatalog,
   PresentationForm,
   PresentationScript,
   SubtitleJob,
@@ -69,6 +70,12 @@ export async function generatePresentationScript(file: File, form: PresentationF
     method: 'POST',
     headers: aiHeaders(),
     body,
+  }))
+}
+
+export async function getPresentationVoices() {
+  return expectJson<GeminiVoiceCatalog>(await fetch(`${apiBase}/presentation/voices`, {
+    headers: aiHeaders(),
   }))
 }
 
