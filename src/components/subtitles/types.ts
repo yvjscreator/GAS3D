@@ -146,7 +146,7 @@ export type AiLogResponse = {
 }
 
 export type SubtitleSavedSession = {
-  version: 6
+  version: 7
   language: string
   job: SubtitleJob | null
   wordOverrides: Record<number, string>
@@ -163,6 +163,7 @@ export type SubtitleSavedSession = {
   presentationForm: PresentationForm
   presentationScript: PresentationScript | null
   presentationDraft: string
+  generatedScriptSignature: string
   voice: string
   voiceStyle: VoiceStyleId
   generatedVoiceReady: boolean
