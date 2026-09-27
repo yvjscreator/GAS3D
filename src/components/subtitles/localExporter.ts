@@ -101,14 +101,31 @@ const roundedRect = (ctx: Canvas2D, x: number, y: number, width: number, height:
 }
 
 const fontFamilyForPreset = (preset: SubtitlePresetId) => {
-  if (preset === 'cinema') return 'Georgia, "Times New Roman", serif'
-  return 'Arial, Helvetica, sans-serif'
+  if (preset === 'cinema') return '"DM Serif Display"'
+  return 'Manrope'
 }
 
-const fontWeightForPreset = (preset: SubtitlePresetId) => {
-  if (preset === 'cinema') return 800
-  if (preset === 'clean') return 800
-  return 900
+const fontWeightForPreset = (preset: SubtitlePresetId) => preset === 'cinema' ? 400 : 800
+
+const ensureSubtitleFont = async (preset: SubtitlePresetId) => {
+  if (!('fonts' in document)) {
+    throw new Error('Este navegador no permite verificar la tipografía antes de exportar.')
+  }
+
+  const family = fontFamilyForPreset(preset)
+  const weight = fontWeightForPreset(preset)
+  const descriptor = `${weight} 64px ${family}`
+
+  await document.fonts.load(descriptor)
+  await document.fonts.ready
+
+  if (!document.fonts.check(descriptor)) {
+    throw new Error(
+      preset === 'cinema'
+        ? 'No se pudo cargar DM Serif Display. Revisa la conexión y vuelve a exportar.'
+        : 'No se pudo cargar Manrope. Revisa la conexión y vuelve a exportar.',
+    )
+  }
 }
 
 const buildWordBoxes = (
@@ -298,7 +315,10 @@ export async function exportSubtitledVideoLocally({ file, words, options, onProg
     throw new Error('Este navegador no tiene WebCodecs. La exportación local requiere Chrome/Edge/Safari moderno con WebCodecs.')
   }
 
-  onProgress?.({ progress: 0.01, message: 'Analizando video en el dispositivo…' })
+  onProgress?.({ progress: 0.01, message: 'Cargando tipografía exacta…' })
+  await ensureSubtitleFont(options.preset)
+
+  onProgress?.({ progress: 0.02, message: 'Analizando video en el dispositivo…' })
 
   const resolvedWords: RenderWord[] = words.map((word) => {
     const replacement = options.wordOverrides[word.id]
