@@ -78,6 +78,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-AI-Model"],
 )
 
 _jobs: dict[str, dict] = {}
@@ -580,6 +581,13 @@ def _transcribe(job_id: str) -> None:
             error=None,
         )
     except Exception as exc:
+        _log_ai(
+            job.get("aiSessionId"),
+            "transcription",
+            "error",
+            "El pipeline de transcripción terminó con error.",
+            error=exc,
+        )
         _update_job(
             job_id,
             status="error",
@@ -618,8 +626,10 @@ def health() -> dict:
         "ok": True,
         "engine": "gemini",
         "model": GEMINI_MODEL,
-        "scriptModel": SCRIPT_MODEL,
-        "ttsModel": TTS_MODEL,
+        "scriptModels": SCRIPT_MODELS,
+        "ttsModels": TTS_MODELS,
+        "transcribeModels": TRANSCRIBE_MODELS,
+        "attemptsPerModel": AI_ATTEMPTS_PER_MODEL,
         "configured": bool(GEMINI_API_KEY),
         "videoExport": "browser-webcodecs",
     }
@@ -723,6 +733,13 @@ Rules:
     except HTTPException:
         raise
     except Exception as exc:
+        _log_ai(
+            x_ai_session_id,
+            "presentation_script",
+            "error",
+            "El pipeline de guion terminó con error.",
+            error=exc,
+        )
         raise HTTPException(
             status_code=500,
             detail=f"No se pudo crear el guion con Gemini: {exc}",
@@ -796,6 +813,13 @@ def generate_presentation_voice(
             },
         )
     except Exception as exc:
+        _log_ai(
+            x_ai_session_id,
+            "presentation_tts",
+            "error",
+            "El pipeline TTS terminó con error.",
+            error=exc,
+        )
         raise HTTPException(
             status_code=500,
             detail=f"No se pudo generar la voz con Gemini: {exc}",
