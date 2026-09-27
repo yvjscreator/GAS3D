@@ -22,7 +22,7 @@ export default function App() {
   }
 
   return <>
-    <nav className="gas-tool-switcher" aria-label="Herramientas GAS3D">
+    <nav className={tool === 'subtitles' ? 'gas-tool-switcher subtitle-tool-switcher' : 'gas-tool-switcher'} aria-label="Herramientas GAS3D">
       <button className={tool === 'garment' ? 'active' : ''} onClick={() => openTool('garment')}>3D Studio</button>
       <button className={tool === 'subtitles' ? 'active' : ''} onClick={() => openTool('subtitles')}>Subtítulos</button>
     </nav>
