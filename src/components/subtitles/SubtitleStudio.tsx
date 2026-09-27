@@ -26,11 +26,13 @@ import {
   generatePresentationScript,
   generatePresentationVoice,
   getAiLogs,
+  getPresentationVoices,
   getSubtitleJob,
 } from './api'
 import { exportSubtitledVideoLocally } from './localExporter'
 import type {
   AiLogEvent,
+  GeminiVoice,
   PresentationForm,
   PresentationScript,
   SubtitleCaption,
@@ -145,8 +147,6 @@ const voiceStyles: Array<[VoiceStyleId, string]> = [
   ['commercial', 'Locutor comercial'],
 ]
 
-const voices = ['Sulafat', 'Kore', 'Puck']
-
 export function SubtitleStudio() {
   const mobileVideoRef = useRef<HTMLVideoElement | null>(null)
   const desktopVideoRef = useRef<HTMLVideoElement | null>(null)
@@ -197,6 +197,10 @@ export function SubtitleStudio() {
   const [presentationScript, setPresentationScript] = useState<PresentationScript | null>(null)
   const [presentationDraft, setPresentationDraft] = useState('')
   const [voice, setVoice] = useState('Sulafat')
+  const [voiceCatalog, setVoiceCatalog] = useState<GeminiVoice[]>([])
+  const [voiceCatalogLoading, setVoiceCatalogLoading] = useState(false)
+  const [voiceCatalogError, setVoiceCatalogError] = useState<string | null>(null)
+  const [voiceGenderFilter, setVoiceGenderFilter] = useState<'all' | 'female' | 'male' | 'neutral'>('all')
   const [voiceStyle, setVoiceStyle] = useState<VoiceStyleId>('influencer')
   const [generatedVoiceSignature, setGeneratedVoiceSignature] = useState('')
 
@@ -214,6 +218,34 @@ export function SubtitleStudio() {
     media.addEventListener('change', sync)
     return () => media.removeEventListener('change', sync)
   }, [])
+
+  useEffect(() => {
+    if (videoMode !== 'without_voice' || voiceCatalog.length || voiceCatalogLoading) return
+
+    let cancelled = false
+    setVoiceCatalogLoading(true)
+    setVoiceCatalogError(null)
+
+    void getPresentationVoices()
+      .then((response) => {
+        if (cancelled) return
+        setVoiceCatalog(response.voices)
+        appendClientLog(`Catálogo de voces cargado · ${response.voices.length} voces.`)
+      })
+      .catch((cause) => {
+        if (cancelled) return
+        const message = cause instanceof Error ? cause.message : 'No se pudo cargar el catálogo de voces.'
+        setVoiceCatalogError(message)
+        appendClientLog(`Error cargando voces: ${message}`)
+      })
+      .finally(() => {
+        if (!cancelled) setVoiceCatalogLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [videoMode, voiceCatalog.length, voiceCatalogLoading])
 
   const appendClientLog = (message: string) => {
     const line = `[${new Date().toISOString()}] ${message}`
@@ -381,6 +413,34 @@ export function SubtitleStudio() {
 
   const captions = useMemo(() => groupWords(job?.words ?? [], maxWords), [job?.words, maxWords])
   const wordsById = useMemo(() => new Map((job?.words ?? []).map((word) => [word.id, word])), [job?.words])
+
+  const orderedVoices = useMemo(() => {
+    const locale = presentationForm.language.toLowerCase()
+    const language = locale.split('-')[0]
+
+    return [...voiceCatalog].sort((left, right) => {
+      if (left.id === voice && right.id !== voice) return -1
+      if (right.id === voice && left.id !== voice) return 1
+
+      const leftLanguage = (left.languageCode ?? '').toLowerCase()
+      const rightLanguage = (right.languageCode ?? '').toLowerCase()
+      const leftMatches = leftLanguage === locale || leftLanguage.startsWith(`${language}-`)
+      const rightMatches = rightLanguage === locale || rightLanguage.startsWith(`${language}-`)
+      if (leftMatches !== rightMatches) return leftMatches ? -1 : 1
+
+      return left.displayName.localeCompare(right.displayName)
+    })
+  }, [voiceCatalog, presentationForm.language, voice])
+
+  const visibleVoices = useMemo(
+    () => voiceGenderFilter === 'all'
+      ? orderedVoices
+      : orderedVoices.filter((item) => item.gender === voiceGenderFilter),
+    [orderedVoices, voiceGenderFilter],
+  )
+
+  const voiceGenderIcon = (gender: string) => gender === 'female' ? '♀' : gender === 'male' ? '♂' : '◉'
+  const voiceGenderLabel = (gender: string) => gender === 'female' ? 'Femenina' : gender === 'male' ? 'Masculina' : 'Neutra'
 
   const activeCaption = captions.find(
     (caption) => currentTime >= caption.start - 0.05 && currentTime <= caption.end + 0.35,
@@ -1114,15 +1174,59 @@ export function SubtitleStudio() {
           />
         </label>
 
-        <div className="subtitle-two-fields">
-          <label className="subtitle-field">
-            <span>Voz</span>
-            <select value={voice} onChange={(event) => setVoice(event.target.value)}>
-              {voices.map((item) => <option key={item}>{item}</option>)}
-            </select>
-          </label>
+        <div className="subtitle-voice-and-style">
+          <div className="subtitle-field subtitle-voice-field">
+            <span>Voz <b>{voiceCatalog.length ? `${voiceCatalog.length} disponibles` : ''}</b></span>
 
-          <label className="subtitle-field">
+            <div className="subtitle-voice-gender-filters">
+              {([
+                ['all', 'Todas'],
+                ['female', '♀ Femeninas'],
+                ['male', '♂ Masculinas'],
+                ['neutral', '◉ Neutras'],
+              ] as const).map(([value, label]) => <button
+                key={value}
+                type="button"
+                className={voiceGenderFilter === value ? 'active' : ''}
+                onClick={() => setVoiceGenderFilter(value)}
+              >
+                {label}
+              </button>)}
+            </div>
+
+            {voiceCatalogLoading && <div className="subtitle-voice-catalog-state">
+              <LoaderCircle size={14} className="spin" /> Cargando voces de Gemini…
+            </div>}
+
+            {voiceCatalogError && <div className="subtitle-voice-catalog-state error">
+              {voiceCatalogError}
+              <button type="button" onClick={() => {
+                setVoiceCatalogError(null)
+                setVoiceCatalog([])
+              }}>Reintentar</button>
+            </div>}
+
+            {!voiceCatalogLoading && visibleVoices.length > 0 && <div className="subtitle-voice-carousel">
+              {visibleVoices.map((item) => <button
+                key={item.id}
+                type="button"
+                className={voice === item.id ? 'active' : ''}
+                onClick={() => setVoice(item.id)}
+                title={item.description ?? item.persona ?? item.displayName}
+              >
+                <i className={`gender-${item.gender}`} aria-hidden="true">{voiceGenderIcon(item.gender)}</i>
+                <strong>{item.displayName}</strong>
+                <small>{voiceGenderLabel(item.gender)}</small>
+                <span>{item.accent ?? item.persona ?? item.languageCode ?? item.type}</span>
+              </button>)}
+            </div>}
+
+            {!voiceCatalogLoading && !voiceCatalogError && !visibleVoices.length && <div className="subtitle-voice-catalog-state">
+              No hay voces para este filtro.
+            </div>}
+          </div>
+
+          <label className="subtitle-field subtitle-voice-style-field">
             <span>Estilo</span>
             <select value={voiceStyle} onChange={(event) => setVoiceStyle(event.target.value as VoiceStyleId)}>
               {voiceStyles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
