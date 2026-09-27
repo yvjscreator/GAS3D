@@ -3,21 +3,35 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  Copy,
   Download,
   FileVideo2,
   Languages,
   LoaderCircle,
+  Mic2,
   Palette,
   Play,
+  RefreshCw,
   Sparkles,
+  TerminalSquare,
   Type,
   Upload,
   WandSparkles,
   X,
 } from 'lucide-react'
-import { createSubtitleJob, getSubtitleJob } from './api'
+import {
+  clearAiLogs,
+  createSubtitleJob,
+  generatePresentationScript,
+  generatePresentationVoice,
+  getAiLogs,
+  getSubtitleJob,
+} from './api'
 import { exportSubtitledVideoLocally } from './localExporter'
 import type {
+  AiLogEvent,
+  PresentationForm,
+  PresentationScript,
   SubtitleCaption,
   SubtitleExportOptions,
   SubtitleJob,
@@ -25,13 +39,18 @@ import type {
   SubtitlePresetId,
   SubtitleSavedSession,
   SubtitleWord,
+  VideoAudioMode,
+  VoiceStyleId,
 } from './types'
 import { getSubtitlePreset, subtitlePresets } from './presets'
 import {
+  clearGeneratedPresentationAudio,
   clearSubtitleSession,
   clearSubtitleVideo,
+  loadGeneratedPresentationAudio,
   loadSubtitleSession,
   loadSubtitleVideo,
+  saveGeneratedPresentationAudio,
   saveSubtitleSession,
   saveSubtitleVideo,
 } from './storage'
@@ -44,7 +63,17 @@ const statusLabel: Record<SubtitleJob['status'], string> = {
   error: 'Error',
 }
 
-type MobilePanel = 'main' | 'video' | 'style' | 'text' | 'transcript'
+type MobilePanel = 'main' | 'video' | 'voice' | 'style' | 'text' | 'transcript' | 'logs'
+type PrimaryMode = 'script' | 'voice' | 'generate' | 'export'
+
+const defaultPresentationForm = (): PresentationForm => ({
+  presentationType: 'influencer',
+  product: '',
+  highlights: '',
+  audience: '',
+  cta: '',
+  language: 'es-LATAM',
+})
 
 const emptyExportState = (): SubtitleLocalExportState => ({
   status: 'idle',
@@ -88,20 +117,55 @@ const formatTime = (seconds: number) => {
   return `${minutes}:${rest.toFixed(1).padStart(4, '0')}`
 }
 
+const transcriptionLanguage = (locale: string) => {
+  if (locale.startsWith('es')) return 'es'
+  if (locale.startsWith('en')) return 'en'
+  if (locale.startsWith('pt')) return 'pt'
+  return 'auto'
+}
+
+const voiceSignature = (script: string, voice: string, style: VoiceStyleId, language: string) =>
+  [script.trim(), voice, style, language].join('|')
+
+const presentationTypes = [
+  ['influencer', 'Influencer / UGC'],
+  ['product', 'Presentación de producto'],
+  ['direct', 'Venta directa'],
+  ['lifestyle', 'Lifestyle'],
+  ['premium', 'Premium'],
+  ['storytelling', 'Storytelling'],
+] as const
+
+const voiceStyles: Array<[VoiceStyleId, string]> = [
+  ['influencer', 'Influencer natural'],
+  ['reels', 'Energético para Reels'],
+  ['friendly', 'Vendedor amigable'],
+  ['premium', 'Premium / elegante'],
+  ['casual', 'Casual'],
+  ['commercial', 'Locutor comercial'],
+]
+
+const voices = ['Sulafat', 'Kore', 'Puck']
+
 export function SubtitleStudio() {
   const mobileVideoRef = useRef<HTMLVideoElement | null>(null)
   const desktopVideoRef = useRef<HTMLVideoElement | null>(null)
+  const generatedAudioRef = useRef<HTMLAudioElement | null>(null)
   const restoredRef = useRef(false)
   const exportStartedAtRef = useRef<number | null>(null)
 
   const [file, setFile] = useState<File | null>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [generatedAudio, setGeneratedAudio] = useState<Blob | null>(null)
+  const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null)
   const [mediaDuration, setMediaDuration] = useState(0)
   const [language, setLanguage] = useState('auto')
+  const [videoMode, setVideoMode] = useState<VideoAudioMode | null>(null)
   const [job, setJob] = useState<SubtitleJob | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [aiBusy, setAiBusy] = useState<'script' | 'voice' | null>(null)
   const [restoring, setRestoring] = useState(true)
   const [hydrated, setHydrated] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('main')
@@ -118,6 +182,19 @@ export function SubtitleStudio() {
   const [position, setPosition] = useState<SubtitleExportOptions['position']>('bottom')
   const [maxWords, setMaxWords] = useState(5)
   const [uppercase, setUppercase] = useState(false)
+
+  const [presentationForm, setPresentationForm] = useState<PresentationForm>(defaultPresentationForm)
+  const [presentationScript, setPresentationScript] = useState<PresentationScript | null>(null)
+  const [presentationDraft, setPresentationDraft] = useState('')
+  const [voice, setVoice] = useState('Sulafat')
+  const [voiceStyle, setVoiceStyle] = useState<VoiceStyleId>('influencer')
+  const [generatedVoiceSignature, setGeneratedVoiceSignature] = useState('')
+
+  const [aiLogs, setAiLogs] = useState<AiLogEvent[]>([])
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [logsCopied, setLogsCopied] = useState(false)
+  const [clientAiLogs, setClientAiLogs] = useState<string[]>([])
+
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 720px)').matches)
 
   useEffect(() => {
@@ -128,6 +205,23 @@ export function SubtitleStudio() {
     return () => media.removeEventListener('change', sync)
   }, [])
 
+  const appendClientLog = (message: string) => {
+    const line = `[${new Date().toISOString()}] ${message}`
+    setClientAiLogs((current) => [...current.slice(-79), line])
+  }
+
+  const refreshLogs = async () => {
+    setLogsLoading(true)
+    try {
+      const response = await getAiLogs()
+      setAiLogs(response.items)
+    } catch (cause) {
+      appendClientLog(`No se pudieron recuperar logs del servidor: ${cause instanceof Error ? cause.message : String(cause)}`)
+    } finally {
+      setLogsLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (restoredRef.current) return
     restoredRef.current = true
@@ -136,6 +230,7 @@ export function SubtitleStudio() {
       const saved = loadSubtitleSession()
       if (saved) {
         setLanguage(saved.language)
+        setVideoMode(saved.videoMode)
         setJob(saved.job)
         setWordOverrides(saved.wordOverrides ?? {})
         setPreset(saved.preset)
@@ -146,19 +241,34 @@ export function SubtitleStudio() {
         setPosition(saved.position)
         setMaxWords(saved.maxWords)
         setUppercase(saved.uppercase)
+        setPresentationForm(saved.presentationForm ?? defaultPresentationForm())
+        setPresentationScript(saved.presentationScript)
+        setPresentationDraft(saved.presentationDraft ?? '')
+        setVoice(saved.voice || 'Sulafat')
+        setVoiceStyle(saved.voiceStyle || 'influencer')
+        setGeneratedVoiceSignature(saved.generatedVoiceSignature ?? '')
       }
 
       try {
-        const restoredVideo = await loadSubtitleVideo()
+        const [restoredVideo, restoredAudio] = await Promise.all([
+          loadSubtitleVideo(),
+          loadGeneratedPresentationAudio(),
+        ])
+
         if (restoredVideo) {
           setFile(restoredVideo)
           setVideoUrl(URL.createObjectURL(restoredVideo))
           setStorageNotice('Proyecto restaurado automáticamente.')
         } else if (saved?.job) {
-          setStorageNotice('Se restauró la transcripción. Vuelve a seleccionar el mismo video para previsualizar o exportar.')
+          setStorageNotice('Se restauró el proyecto. Vuelve a seleccionar el mismo video para previsualizar o exportar.')
+        }
+
+        if (restoredAudio) {
+          setGeneratedAudio(restoredAudio)
+          setGeneratedAudioUrl(URL.createObjectURL(restoredAudio))
         }
       } catch {
-        if (saved?.job) setStorageNotice('Se restauró la transcripción, pero el navegador no conservó el archivo de video.')
+        if (saved?.job) setStorageNotice('Se restauró el proyecto, pero el navegador no conservó todos los archivos locales.')
       } finally {
         setRestoring(false)
         setHydrated(true)
@@ -170,12 +280,13 @@ export function SubtitleStudio() {
 
   useEffect(() => () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl)
-  }, [videoUrl])
+    if (generatedAudioUrl) URL.revokeObjectURL(generatedAudioUrl)
+  }, [videoUrl, generatedAudioUrl])
 
   useEffect(() => {
     if (!hydrated) return
     const session: SubtitleSavedSession = {
-      version: 3,
+      version: 4,
       language,
       job,
       wordOverrides,
@@ -188,6 +299,14 @@ export function SubtitleStudio() {
       maxWords,
       uppercase,
       fileName: file?.name ?? job?.fileName ?? null,
+      presentationForm,
+      presentationScript,
+      presentationDraft,
+      voice,
+      voiceStyle,
+      generatedVoiceReady: Boolean(generatedAudio),
+      generatedVoiceSignature,
+      videoMode,
     }
     saveSubtitleSession(session)
   }, [
@@ -204,6 +323,14 @@ export function SubtitleStudio() {
     maxWords,
     uppercase,
     file?.name,
+    presentationForm,
+    presentationScript,
+    presentationDraft,
+    voice,
+    voiceStyle,
+    generatedAudio,
+    generatedVoiceSignature,
+    videoMode,
   ])
 
   useEffect(() => {
@@ -212,9 +339,16 @@ export function SubtitleStudio() {
       try {
         const next = await getSubtitleJob(job.id)
         setJob(next)
-        if (next.status === 'error') setError(next.error ?? next.message)
+        if (next.status === 'error') {
+          setError(next.error ?? next.message)
+          appendClientLog(`Transcripción falló: ${next.error ?? next.message}`)
+          void refreshLogs()
+        }
+        if (next.status === 'ready') void refreshLogs()
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'No se pudo consultar la transcripción.')
+        const message = cause instanceof Error ? cause.message : 'No se pudo consultar la transcripción.'
+        setError(message)
+        appendClientLog(message)
       }
     }, 1200)
     return () => window.clearInterval(timer)
@@ -247,14 +381,44 @@ export function SubtitleStudio() {
     return currentTime >= word.start - 0.03 && currentTime < boundary
   }) ?? null
 
-  const duration = Math.max(job?.duration ?? 0, mediaDuration)
+  const duration = videoMode === 'without_voice'
+    ? (mediaDuration || job?.duration || 0)
+    : Math.max(job?.duration ?? 0, mediaDuration)
+
   const transcribing = Boolean(job && ['queued', 'transcribing'].includes(job.status))
   const exporting = localExport.status === 'checking' || localExport.status === 'exporting'
   const generatedLanguage = job?.language ?? 'auto'
-  const subtitlesCurrent = Boolean(job?.status === 'ready' && generatedLanguage === language)
-  const primaryMode: 'generate' | 'export' = subtitlesCurrent ? 'export' : 'generate'
+  const currentVoiceSignature = voiceSignature(presentationDraft, voice, voiceStyle, presentationForm.language)
+  const voiceIsFresh = Boolean(generatedAudio && generatedVoiceSignature === currentVoiceSignature)
+  const subtitlesCurrent = videoMode === 'without_voice'
+    ? Boolean(job?.status === 'ready' && voiceIsFresh)
+    : Boolean(job?.status === 'ready' && generatedLanguage === language)
 
-  const chooseFile = async (nextFile: File | null) => {
+  const primaryMode: PrimaryMode = videoMode === 'without_voice'
+    ? !presentationScript
+      ? 'script'
+      : !voiceIsFresh || job?.status !== 'ready'
+        ? 'voice'
+        : 'export'
+    : subtitlesCurrent
+      ? 'export'
+      : 'generate'
+
+  const resetGeneratedVoice = async () => {
+    setGeneratedAudio(null)
+    setGeneratedVoiceSignature('')
+    if (generatedAudioUrl) URL.revokeObjectURL(generatedAudioUrl)
+    setGeneratedAudioUrl(null)
+    setJob(null)
+    setWordOverrides({})
+    try {
+      await clearGeneratedPresentationAudio()
+    } catch {
+      // Best effort.
+    }
+  }
+
+  const chooseFile = async (nextFile: File | null, mode: VideoAudioMode) => {
     if (!nextFile) return
 
     const reattachingRestoredVideo = Boolean(job && !file && nextFile.name === job.fileName)
@@ -265,10 +429,14 @@ export function SubtitleStudio() {
     setEditingWordId(null)
     setCurrentTime(0)
     setMediaDuration(0)
+    setVideoMode(mode)
 
     if (!reattachingRestoredVideo) {
       setJob(null)
       setWordOverrides({})
+      setPresentationScript(null)
+      setPresentationDraft('')
+      await resetGeneratedVoice()
     }
 
     if (videoUrl) URL.revokeObjectURL(videoUrl)
@@ -277,18 +445,16 @@ export function SubtitleStudio() {
 
     try {
       await saveSubtitleVideo(nextFile)
-      setStorageNotice(
-        reattachingRestoredVideo
-          ? 'Video reconectado con el proyecto restaurado.'
-          : 'Video guardado en este dispositivo para recuperar el proyecto.',
-      )
+      setStorageNotice('Video guardado en este dispositivo para recuperar el proyecto.')
     } catch {
       setStorageNotice('El navegador no pudo guardar una copia local del video. El resto del proyecto sí se conservará.')
     }
+
+    setMobilePanel(mode === 'without_voice' ? 'voice' : 'video')
   }
 
-  const startTranscription = async () => {
-    if (!file) {
+  const startTranscription = async (sourceFile = file, selectedLanguage = language) => {
+    if (!sourceFile) {
       setError('Selecciona un video antes de generar los subtítulos.')
       setMobilePanel('video')
       return
@@ -298,16 +464,94 @@ export function SubtitleStudio() {
     setUploading(true)
     setLocalExport(emptyExportState())
     setEditingWordId(null)
+    appendClientLog(`Iniciando transcripción · idioma ${selectedLanguage}`)
 
     try {
-      const nextJob = await createSubtitleJob(file, language)
+      const nextJob = await createSubtitleJob(sourceFile, selectedLanguage)
       setJob(nextJob)
       setWordOverrides({})
       setMobilePanel('main')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo iniciar la transcripción.')
+      const message = cause instanceof Error ? cause.message : 'No se pudo iniciar la transcripción.'
+      setError(message)
+      appendClientLog(`Error iniciando transcripción: ${message}`)
+      void refreshLogs()
     } finally {
       setUploading(false)
+    }
+  }
+
+  const createAiScript = async () => {
+    if (!file) {
+      setError('Selecciona un video sin voz.')
+      setMobilePanel('video')
+      return
+    }
+
+    setError(null)
+    setAiBusy('script')
+    appendClientLog('Iniciando análisis visual y generación de guion.')
+
+    try {
+      const result = await generatePresentationScript(file, presentationForm)
+      setPresentationScript(result)
+      setPresentationDraft(result.script)
+      await resetGeneratedVoice()
+      setMobilePanel('voice')
+      appendClientLog('Guion generado correctamente.')
+      void refreshLogs()
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'No se pudo generar el guion.'
+      setError(message)
+      appendClientLog(`Error generando guion: ${message}`)
+      void refreshLogs()
+    } finally {
+      setAiBusy(null)
+    }
+  }
+
+  const createAiVoice = async () => {
+    if (!presentationDraft.trim()) {
+      setError('El guion está vacío.')
+      setMobilePanel('voice')
+      return
+    }
+
+    setError(null)
+    setAiBusy('voice')
+    appendClientLog(`Generando voz · ${voice} · estilo ${voiceStyle}`)
+
+    try {
+      const result = await generatePresentationVoice(
+        presentationDraft,
+        voice,
+        voiceStyle,
+        presentationForm.language,
+      )
+
+      const blob = result.blob
+      const signature = currentVoiceSignature
+      await saveGeneratedPresentationAudio(blob)
+
+      if (generatedAudioUrl) URL.revokeObjectURL(generatedAudioUrl)
+      setGeneratedAudio(blob)
+      setGeneratedAudioUrl(URL.createObjectURL(blob))
+      setGeneratedVoiceSignature(signature)
+      setWordOverrides({})
+
+      appendClientLog(`Voz generada con ${result.model ?? 'modelo TTS disponible'}. Sincronizando subtítulos.`)
+      const audioFile = new File([blob], 'presentacion-gemini.wav', { type: 'audio/wav' })
+      const nextJob = await createSubtitleJob(audioFile, transcriptionLanguage(presentationForm.language))
+      setJob(nextJob)
+      setMobilePanel('main')
+      void refreshLogs()
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'No se pudo generar la voz.'
+      setError(message)
+      appendClientLog(`Error generando voz: ${message}`)
+      void refreshLogs()
+    } finally {
+      setAiBusy(null)
     }
   }
 
@@ -319,17 +563,27 @@ export function SubtitleStudio() {
     setEditingWordId(null)
     setLocalExport(emptyExportState())
     setFile(null)
+    setVideoMode(null)
     setCurrentTime(0)
     setMediaDuration(0)
+    setPresentationForm(defaultPresentationForm())
+    setPresentationScript(null)
+    setPresentationDraft('')
+    setVoice('Sulafat')
+    setVoiceStyle('influencer')
+    setGeneratedAudio(null)
+    setGeneratedVoiceSignature('')
 
     if (videoUrl) URL.revokeObjectURL(videoUrl)
+    if (generatedAudioUrl) URL.revokeObjectURL(generatedAudioUrl)
     setVideoUrl(null)
+    setGeneratedAudioUrl(null)
     clearSubtitleSession()
 
     try {
-      await clearSubtitleVideo()
+      await Promise.all([clearSubtitleVideo(), clearGeneratedPresentationAudio()])
     } catch {
-      // Nothing else to do.
+      // Best effort.
     }
   }
 
@@ -346,14 +600,16 @@ export function SubtitleStudio() {
   }
 
   const exportVideo = async () => {
-    if (!job || job.status !== 'ready') {
-      await startTranscription()
+    if (!job || job.status !== 'ready') return
+    if (!file) {
+      setError('Necesito el video original en este dispositivo para exportar.')
+      setMobilePanel('video')
       return
     }
 
-    if (!file) {
-      setError('Necesito el video original en este dispositivo para exportar. Vuelve a seleccionarlo.')
-      setMobilePanel('video')
+    if (videoMode === 'without_voice' && !voiceIsFresh) {
+      setError('La voz cambió o todavía no está lista. Genérala antes de exportar.')
+      setMobilePanel('voice')
       return
     }
 
@@ -362,7 +618,7 @@ export function SubtitleStudio() {
     setLocalExport({
       status: 'checking',
       progress: 0.01,
-      message: 'Comprobando WebCodecs y el encoder del dispositivo…',
+      message: 'Preparando exportación local…',
       fileName: null,
       error: null,
       elapsedSeconds: 0,
@@ -372,6 +628,7 @@ export function SubtitleStudio() {
       const blob = await exportSubtitledVideoLocally({
         file,
         words: job.words,
+        generatedAudio: videoMode === 'without_voice' ? generatedAudio : null,
         options: {
           preset,
           baseColor,
@@ -422,7 +679,7 @@ export function SubtitleStudio() {
         elapsedSeconds,
       })
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'No se pudo exportar el video en este dispositivo.'
+      const message = cause instanceof Error ? cause.message : 'No se pudo exportar el video.'
       setLocalExport({
         status: 'error',
         progress: 0,
@@ -436,7 +693,9 @@ export function SubtitleStudio() {
   }
 
   const runPrimaryAction = async () => {
-    if (primaryMode === 'generate') await startTranscription()
+    if (primaryMode === 'script') await createAiScript()
+    else if (primaryMode === 'voice') await createAiVoice()
+    else if (primaryMode === 'generate') await startTranscription()
     else await exportVideo()
   }
 
@@ -444,6 +703,9 @@ export function SubtitleStudio() {
     const safe = Math.min(Math.max(time, 0), duration || 0)
     const video = isMobile ? mobileVideoRef.current : desktopVideoRef.current
     if (video) video.currentTime = safe
+    if (generatedAudioRef.current && videoMode === 'without_voice') {
+      generatedAudioRef.current.currentTime = safe
+    }
     setCurrentTime(safe)
   }
 
@@ -454,6 +716,23 @@ export function SubtitleStudio() {
     if (!video) return
     if (video.paused) void video.play()
     else video.pause()
+  }
+
+  const onVideoPlay = async (video: HTMLVideoElement) => {
+    setPlaying(true)
+    if (videoMode === 'without_voice' && generatedAudioRef.current && generatedAudioUrl) {
+      generatedAudioRef.current.currentTime = video.currentTime
+      try {
+        await generatedAudioRef.current.play()
+      } catch {
+        // Mobile browser may require a second explicit gesture for the audio element.
+      }
+    }
+  }
+
+  const onVideoPause = () => {
+    setPlaying(false)
+    generatedAudioRef.current?.pause()
   }
 
   const resolvedWord = (word: SubtitleWord) => {
@@ -496,11 +775,19 @@ export function SubtitleStudio() {
         src={videoUrl}
         controls={!mobile}
         playsInline
+        muted={videoMode === 'without_voice'}
         onLoadedMetadata={(event) => setMediaDuration(event.currentTarget.duration || 0)}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onSeeked={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        onPlay={(event) => void onVideoPlay(event.currentTarget)}
+        onPause={onVideoPause}
+        onSeeked={(event) => {
+          const time = event.currentTarget.currentTime
+          setCurrentTime(time)
+          if (generatedAudioRef.current && videoMode === 'without_voice') {
+            generatedAudioRef.current.currentTime = time
+          }
+        }}
       />
+
       {activeCaption && <div
         className={`subtitle-overlay ${position} preset-${preset}`}
         style={{
@@ -521,12 +808,14 @@ export function SubtitleStudio() {
           </span>
         })}</div>
       </div>}
+
+      {generatedAudioUrl && <audio ref={generatedAudioRef} src={generatedAudioUrl} preload="auto" />}
     </div>
   ) : (
     <div className="subtitle-empty-preview">
       <FileVideo2 size={42} />
-      <strong>{restoring ? 'Restaurando proyecto…' : 'Selecciona un video'}</strong>
-      <span>Después podrás elegir el idioma y generar los subtítulos cuando quieras.</span>
+      <strong>{restoring ? 'Restaurando proyecto…' : 'Elige cómo viene tu video'}</strong>
+      <span>Con voz: transcribimos. Sin voz: Gemini crea guion, voz y subtítulos.</span>
     </div>
   )
 
@@ -541,15 +830,31 @@ export function SubtitleStudio() {
     <b>{Math.round(job.progress * 100)}%</b>
   </div> : null
 
-  const renderVideoControls = () => <div className="subtitle-video-controls">
-    <label className="subtitle-upload">
-      <Upload size={20} />
-      <span>{file ? file.name : 'Seleccionar video'}</span>
-      <small>Elegir el archivo no inicia la transcripción.</small>
-      <input type="file" accept="video/*" onChange={(event) => void chooseFile(event.target.files?.[0] ?? null)} />
+  const renderUploadChoice = () => <div className="subtitle-upload-choice">
+    <label className={videoMode === 'with_voice' ? 'active' : ''}>
+      <Mic2 size={20} />
+      <strong>Subir video con voz</strong>
+      <small>Gemini transcribe la voz existente.</small>
+      <input type="file" accept="video/*" onChange={(event) => void chooseFile(event.target.files?.[0] ?? null, 'with_voice')} />
     </label>
+    <label className={videoMode === 'without_voice' ? 'active' : ''}>
+      <WandSparkles size={20} />
+      <strong>Subir video sin voz</strong>
+      <small>Gemini crea la presentación completa.</small>
+      <input type="file" accept="video/*" onChange={(event) => void chooseFile(event.target.files?.[0] ?? null, 'without_voice')} />
+    </label>
+  </div>
 
-    <label className="subtitle-field">
+  const renderVideoControls = () => <div className="subtitle-video-controls">
+    {renderUploadChoice()}
+
+    {file && <div className="subtitle-selected-file">
+      <FileVideo2 size={16} />
+      <span>{file.name}</span>
+      <b>{videoMode === 'without_voice' ? 'SIN VOZ' : 'CON VOZ'}</b>
+    </div>}
+
+    {videoMode === 'with_voice' && <label className="subtitle-field">
       <span>Idioma del video</span>
       <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled={transcribing}>
         <option value="auto">Detectar automáticamente</option>
@@ -560,21 +865,134 @@ export function SubtitleStudio() {
         <option value="it">Italiano</option>
         <option value="pt">Portugués</option>
       </select>
-    </label>
+    </label>}
 
-    {job?.status === 'ready' && generatedLanguage !== language && (
-      <p className="subtitle-language-dirty">Cambiaste el idioma. El botón principal volverá a generar los subtítulos antes de exportar.</p>
+    {videoMode === 'with_voice' && job?.status === 'ready' && generatedLanguage !== language && (
+      <p className="subtitle-language-dirty">Cambiaste el idioma. El botón principal volverá a generar los subtítulos.</p>
     )}
 
     {renderStatus()}
-    {job?.width && job.height && <p className="subtitle-meta">
-      {job.width}×{job.height}
-      {job.fps ? ` · ${job.fps.toFixed(2)} FPS` : ''}
-      {job.duration ? ` · ${formatTime(job.duration)}` : ''}
-    </p>}
     {storageNotice && <p className="subtitle-storage-note">{storageNotice}</p>}
     {(file || job) && <button className="subtitle-reset-project" onClick={() => void resetProject()}>Nuevo proyecto</button>}
   </div>
+
+  const renderVoiceControls = () => {
+    if (videoMode !== 'without_voice') {
+      return <div className="subtitle-transcript-empty">Este panel se usa cuando subes un video sin voz.</div>
+    }
+
+    return <div className="subtitle-ai-presenter">
+      <div className="subtitle-ai-badge"><Sparkles size={15} /> Gemini Creative Presenter</div>
+
+      <label className="subtitle-field">
+        <span>Tipo de presentación</span>
+        <select
+          value={presentationForm.presentationType}
+          onChange={(event) => setPresentationForm((current) => ({
+            ...current,
+            presentationType: event.target.value as PresentationForm['presentationType'],
+          }))}
+        >
+          {presentationTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+
+      <label className="subtitle-field">
+        <span>Producto</span>
+        <input
+          value={presentationForm.product}
+          onChange={(event) => setPresentationForm((current) => ({ ...current, product: event.target.value }))}
+          placeholder="Ej. polera personalizada de anime"
+        />
+      </label>
+
+      <label className="subtitle-field">
+        <span>Qué quieres destacar</span>
+        <textarea
+          value={presentationForm.highlights}
+          onChange={(event) => setPresentationForm((current) => ({ ...current, highlights: event.target.value }))}
+          placeholder="Ej. estampado grande, colores, personalización"
+        />
+      </label>
+
+      <label className="subtitle-field">
+        <span>Público</span>
+        <input
+          value={presentationForm.audience}
+          onChange={(event) => setPresentationForm((current) => ({ ...current, audience: event.target.value }))}
+          placeholder="Opcional"
+        />
+      </label>
+
+      <label className="subtitle-field">
+        <span>CTA</span>
+        <input
+          value={presentationForm.cta}
+          onChange={(event) => setPresentationForm((current) => ({ ...current, cta: event.target.value }))}
+          placeholder="Ej. Personaliza la tuya"
+        />
+      </label>
+
+      <label className="subtitle-field">
+        <span>Idioma / acento</span>
+        <select
+          value={presentationForm.language}
+          onChange={(event) => setPresentationForm((current) => ({ ...current, language: event.target.value }))}
+        >
+          <option value="es-LATAM">Español latino neutro</option>
+          <option value="es-CL">Español chileno</option>
+          <option value="es-AR">Español argentino</option>
+          <option value="es-VE">Español venezolano</option>
+          <option value="en-US">Inglés estadounidense</option>
+          <option value="pt-BR">Portugués brasileño</option>
+        </select>
+      </label>
+
+      {presentationScript && <>
+        <div className="subtitle-script-summary">
+          <strong>{presentationScript.title}</strong>
+          <span>{presentationScript.summary}</span>
+          <small>Estimado: {presentationScript.estimatedSeconds.toFixed(1)} s · video {mediaDuration ? mediaDuration.toFixed(1) : '—'} s</small>
+        </div>
+
+        <label className="subtitle-field">
+          <span>Guion editable</span>
+          <textarea
+            className="subtitle-script-editor"
+            value={presentationDraft}
+            onChange={(event) => setPresentationDraft(event.target.value)}
+          />
+        </label>
+
+        <div className="subtitle-two-fields">
+          <label className="subtitle-field">
+            <span>Voz</span>
+            <select value={voice} onChange={(event) => setVoice(event.target.value)}>
+              {voices.map((item) => <option key={item}>{item}</option>)}
+            </select>
+          </label>
+
+          <label className="subtitle-field">
+            <span>Estilo</span>
+            <select value={voiceStyle} onChange={(event) => setVoiceStyle(event.target.value as VoiceStyleId)}>
+              {voiceStyles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+
+        {generatedAudioUrl && <div className="subtitle-voice-preview">
+          <span><Mic2 size={15} /> Voz generada</span>
+          <audio controls src={generatedAudioUrl} />
+          {!voiceIsFresh && <small>El guion o la voz cambió. Genera nuevamente antes de exportar.</small>}
+        </div>}
+      </>}
+
+      <button className="subtitle-ai-secondary" disabled={!file || aiBusy !== null} onClick={() => void createAiScript()}>
+        {aiBusy === 'script' ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}
+        {presentationScript ? 'Regenerar guion' : 'Crear guion con Gemini'}
+      </button>
+    </div>
+  }
 
   const renderPresetControls = () => <div className="subtitle-preset-grid">
     {subtitlePresets.map((item) => <button
@@ -625,8 +1043,10 @@ export function SubtitleStudio() {
   const renderTranscript = () => !job || job.status !== 'ready' ? (
     <div className="subtitle-transcript-empty">
       {transcribing
-        ? 'Gemini está generando los timestamps palabra por palabra…'
-        : 'Genera los subtítulos para poder revisar y corregir el texto.'}
+        ? 'Gemini está sincronizando los timestamps palabra por palabra…'
+        : videoMode === 'without_voice'
+          ? 'Primero genera la presentación y la voz.'
+          : 'Genera los subtítulos para poder revisar y corregir el texto.'}
     </div>
   ) : (
     <div className="subtitle-caption-list">
@@ -650,7 +1070,6 @@ export function SubtitleStudio() {
                 onBlur={() => closeWordEditor(id)}
                 onChange={(event) => setWordOverrides((current) => ({ ...current, [id]: event.target.value }))}
                 onKeyDown={(event) => handleWordEditorKey(event, id)}
-                aria-label={`Editar palabra ${word.text}`}
               />
             ) : (
               <button
@@ -671,60 +1090,122 @@ export function SubtitleStudio() {
     </div>
   )
 
-  const primaryDisabled = primaryMode === 'generate'
-    ? !file || uploading || transcribing
-    : !file || exporting
+  const copyLogs = async () => {
+    const server = aiLogs.map((item) => JSON.stringify(item)).join('\n')
+    const client = clientAiLogs.join('\n')
+    const payload = [
+      '=== GAS3D AI LOGS ===',
+      `videoMode=${videoMode ?? 'none'}`,
+      `jobStatus=${job?.status ?? 'none'}`,
+      '',
+      '--- SERVER ---',
+      server || '(sin logs)',
+      '',
+      '--- CLIENT ---',
+      client || '(sin logs)',
+    ].join('\n')
 
-  const primaryLabel = primaryMode === 'generate'
-    ? uploading
-      ? 'Subiendo…'
-      : transcribing
-        ? `Generando ${Math.round((job?.progress ?? 0) * 100)}%`
-        : 'Generar subtítulos'
-    : exporting
-      ? `Exportando ${Math.round(localExport.progress * 100)}%`
-      : 'Exportar MP4'
+    await navigator.clipboard.writeText(payload)
+    setLogsCopied(true)
+    window.setTimeout(() => setLogsCopied(false), 1800)
+  }
 
-  const primaryIcon = primaryMode === 'generate'
-    ? uploading || transcribing
+  const renderLogs = () => <div className="subtitle-ai-logs">
+    <div className="subtitle-ai-log-actions">
+      <button onClick={() => void refreshLogs()} disabled={logsLoading}>
+        <RefreshCw size={14} className={logsLoading ? 'spin' : ''} /> Actualizar
+      </button>
+      <button onClick={() => void copyLogs()}>
+        <Copy size={14} /> {logsCopied ? 'Copiado' : 'Copiar todo'}
+      </button>
+      <button onClick={() => void clearAiLogs().then(() => setAiLogs([]))}>Limpiar</button>
+    </div>
+
+    <p>Incluye modelo, intento, degradación, tiempos y error completo. No incluye tu API key.</p>
+
+    <div className="subtitle-ai-log-list">
+      {[...aiLogs].reverse().map((item, index) => <article key={`${item.time}-${index}`} className={item.level}>
+        <header>
+          <time>{item.time.replace('T', ' ').replace('Z', '')}</time>
+          <b>{item.operation}</b>
+        </header>
+        <div>
+          {item.model && <span>{item.model}</span>}
+          {item.attempt && <span>intento {item.attempt}</span>}
+          {item.durationMs !== null && <span>{item.durationMs} ms</span>}
+        </div>
+        <strong>{item.message}</strong>
+        {item.error && <pre>{item.error}</pre>}
+      </article>)}
+
+      {!aiLogs.length && <div className="subtitle-transcript-empty">Aún no hay eventos de IA registrados.</div>}
+    </div>
+  </div>
+
+  useEffect(() => {
+    if (mobilePanel === 'logs') void refreshLogs()
+  }, [mobilePanel])
+
+  const primaryDisabled =
+    !file ||
+    uploading ||
+    aiBusy !== null ||
+    transcribing ||
+    exporting ||
+    (primaryMode === 'voice' && !presentationDraft.trim()) ||
+    (primaryMode === 'export' && (job?.status !== 'ready' || (videoMode === 'without_voice' && !voiceIsFresh)))
+
+  const primaryLabel =
+    aiBusy === 'script' ? 'Analizando video…' :
+    aiBusy === 'voice' ? 'Generando voz…' :
+    transcribing ? 'Sincronizando…' :
+    primaryMode === 'script' ? 'Crear guion' :
+    primaryMode === 'voice' ? 'Generar voz' :
+    primaryMode === 'generate' ? 'Generar subtítulos' :
+    exporting ? `Exportando ${Math.round(localExport.progress * 100)}%` :
+    'Exportar MP4'
+
+  const primaryIcon =
+    aiBusy || uploading || transcribing || exporting
       ? <LoaderCircle size={17} className="spin" />
-      : <Sparkles size={17} />
-    : exporting
-      ? <LoaderCircle size={17} className="spin" />
-      : <Download size={17} />
+      : primaryMode === 'export'
+        ? <Download size={17} />
+        : <Sparkles size={17} />
 
   const renderMobilePanel = () => {
     if (mobilePanel === 'main') {
-      return <nav className="subtitle-mobile-tools" aria-label="Herramientas de subtítulos">
-        <button onClick={() => setMobilePanel('video')}><Upload size={24} /><span>Video</span></button>
-        <button onClick={() => setMobilePanel('style')}><Palette size={24} /><span>Estilo</span></button>
-        <button onClick={() => setMobilePanel('text')}><Type size={24} /><span>Texto</span></button>
-        <button onClick={() => setMobilePanel('transcript')}><Languages size={24} /><span>Subtítulos</span></button>
+      return <nav className="subtitle-mobile-tools five" aria-label="Herramientas">
+        <button onClick={() => setMobilePanel('video')}><Upload size={22} /><span>Video</span></button>
+        <button onClick={() => setMobilePanel('voice')} disabled={videoMode !== 'without_voice'}><Mic2 size={22} /><span>Voz IA</span></button>
+        <button onClick={() => setMobilePanel('style')}><Palette size={22} /><span>Estilo</span></button>
+        <button onClick={() => setMobilePanel('transcript')}><Languages size={22} /><span>Subtítulos</span></button>
+        <button onClick={() => setMobilePanel('logs')}><TerminalSquare size={22} /><span>Logs IA</span></button>
       </nav>
     }
 
-    const title = mobilePanel === 'video'
-      ? 'Video e idioma'
-      : mobilePanel === 'style'
-        ? 'Estilo'
-        : mobilePanel === 'text'
-          ? 'Texto'
-          : 'Transcripción'
+    const title = mobilePanel === 'video' ? 'Video'
+      : mobilePanel === 'voice' ? 'Presentación IA'
+      : mobilePanel === 'style' ? 'Estilo'
+      : mobilePanel === 'text' ? 'Texto'
+      : mobilePanel === 'transcript' ? 'Subtítulos'
+      : 'Logs IA'
 
     return <div className={`subtitle-mobile-panel panel-${mobilePanel}`}>
       <header>
-        <button onClick={() => setMobilePanel('main')} aria-label="Cerrar opciones"><X size={22} /></button>
+        <button onClick={() => setMobilePanel('main')}><X size={22} /></button>
         <strong>{title}</strong>
-        <button onClick={() => setMobilePanel('main')} aria-label="Aplicar"><Check size={23} /></button>
+        <button onClick={() => setMobilePanel('main')}><Check size={23} /></button>
       </header>
       <div className="subtitle-mobile-panel-body">
         {mobilePanel === 'video' && renderVideoControls()}
+        {mobilePanel === 'voice' && renderVoiceControls()}
         {mobilePanel === 'style' && <>
-          <p className="subtitle-mobile-panel-note">Elige una base y luego personalízala en Texto.</p>
           {renderPresetControls()}
+          <button className="subtitle-open-text-options" onClick={() => setMobilePanel('text')}>Personalizar texto</button>
         </>}
         {mobilePanel === 'text' && renderTextControls()}
         {mobilePanel === 'transcript' && renderTranscript()}
+        {mobilePanel === 'logs' && renderLogs()}
       </div>
     </div>
   }
@@ -732,31 +1213,24 @@ export function SubtitleStudio() {
   return <main className="subtitle-studio">
     {isMobile ? <section className="subtitle-mobile-editor">
       <header className="subtitle-mobile-header">
-        <button onClick={() => { window.location.hash = '' }} aria-label="Volver a 3D Studio">
-          <ArrowLeft size={25} />
-        </button>
-
+        <button onClick={() => { window.location.hash = '' }}><ArrowLeft size={25} /></button>
         <strong>Subtitle Studio</strong>
-
         <button
-          className={primaryMode === 'generate' ? 'subtitle-mobile-export generate' : 'subtitle-mobile-export'}
+          className={primaryMode === 'export' ? 'subtitle-mobile-export' : 'subtitle-mobile-export generate'}
           disabled={primaryDisabled}
           onClick={() => void runPrimaryAction()}
         >
           {primaryIcon}
-          <span>{primaryMode === 'generate' ? 'Generar' : 'Exportar'}</span>
+          <span>{primaryMode === 'export' ? 'Exportar' : primaryMode === 'script' ? 'Guion' : primaryMode === 'voice' ? 'Voz' : 'Generar'}</span>
         </button>
       </header>
 
-      <div className="subtitle-mobile-stage">
-        {renderPreview(true)}
-      </div>
+      <div className="subtitle-mobile-stage">{renderPreview(true)}</div>
 
       <div className="subtitle-mobile-transport">
-        <button disabled={!videoUrl} onClick={togglePlayback} aria-label={playing ? 'Pausar' : 'Reproducir'}>
+        <button disabled={!videoUrl} onClick={togglePlayback}>
           {playing ? <span className="subtitle-pause-icon">Ⅱ</span> : <Play size={22} fill="currentColor" />}
         </button>
-
         <div className="subtitle-mobile-timeline">
           <div className="subtitle-mobile-track">
             {captions.map((caption) => duration > 0 ? <i
@@ -767,7 +1241,6 @@ export function SubtitleStudio() {
               }}
             /> : null)}
           </div>
-
           <input
             type="range"
             min="0"
@@ -777,56 +1250,55 @@ export function SubtitleStudio() {
             disabled={!videoUrl}
             onChange={(event) => seekTo(Number(event.target.value))}
           />
-
           <div><span>{formatTime(currentTime)}</span><span>{formatTime(duration)}</span></div>
         </div>
       </div>
 
       {error && <div className="subtitle-mobile-error">{error}</div>}
-
       {exporting && <div className="subtitle-mobile-export-progress">
         <span>{localExport.message}</span>
         <div><i style={{ width: `${Math.round(localExport.progress * 100)}%` }} /></div>
       </div>}
-
       {localExport.status === 'ready' && <div className="subtitle-local-export-done">
         <CheckCircle2 size={16} />
         <span>Exportado localmente en {localExport.elapsedSeconds.toFixed(1)} s</span>
       </div>}
 
-      <div className="subtitle-mobile-dock">
-        {renderMobilePanel()}
-      </div>
+      <div className="subtitle-mobile-dock">{renderMobilePanel()}</div>
     </section> : <section className="subtitle-desktop-editor">
       <header className="subtitle-header">
         <div>
-          <span className="subtitle-kicker">GAS3D · herramienta aislada</span>
+          <span className="subtitle-kicker">GAS3D · creación asistida</span>
           <h1>Subtitle Studio</h1>
-          <p>Gemini transcribe; tu propio dispositivo renderiza el MP4.</p>
+          <p>Transcripción, presentación IA, voz y exportación local rápida.</p>
         </div>
         <div className="subtitle-engine-badge">
           <Sparkles size={15} />
-          <span>Gemini 3.5 + WebCodecs</span>
-          <b>timestamps + exportación local</b>
+          <span>Gemini Creative Pipeline</span>
+          <b>3.8 → fallback automático</b>
         </div>
       </header>
 
       <section className="subtitle-layout">
         <aside className="subtitle-sidebar">
           <div className="subtitle-card">
-            <h2>1. Video e idioma</h2>
+            <h2>1. Video</h2>
             {renderVideoControls()}
           </div>
 
+          {videoMode === 'without_voice' && <div className="subtitle-card">
+            <h2>2. Presentación IA</h2>
+            {renderVoiceControls()}
+          </div>}
+
           <div className="subtitle-card">
-            <h2>2. Estilo</h2>
+            <h2>{videoMode === 'without_voice' ? '3' : '2'}. Estilo</h2>
             {renderPresetControls()}
-            <p className="subtitle-custom-hint">Usa un preset y después personaliza colores, tamaño y posición.</p>
             {renderTextControls()}
           </div>
 
           <button
-            className={primaryMode === 'generate' ? 'subtitle-export generate' : 'subtitle-export'}
+            className={primaryMode === 'export' ? 'subtitle-export' : 'subtitle-export generate'}
             disabled={primaryDisabled}
             onClick={() => void runPrimaryAction()}
           >
@@ -838,19 +1310,18 @@ export function SubtitleStudio() {
             <span>{localExport.message}</span>
             <div><i style={{ width: `${Math.round(localExport.progress * 100)}%` }} /></div>
           </div>}
-
-          {localExport.status === 'ready' && <div className="subtitle-local-export-done">
-            <CheckCircle2 size={16} />
-            <span>Exportado en {localExport.elapsedSeconds.toFixed(1)} s usando este dispositivo.</span>
-          </div>}
-
           {error && <div className="subtitle-error">{error}</div>}
+
+          <details className="subtitle-desktop-logs" onToggle={(event) => {
+            if ((event.currentTarget as HTMLDetailsElement).open) void refreshLogs()
+          }}>
+            <summary><TerminalSquare size={14} /> Logs IA</summary>
+            {renderLogs()}
+          </details>
         </aside>
 
         <section className="subtitle-preview-column">
-          <div className="subtitle-preview-shell">
-            {renderPreview(false)}
-          </div>
+          <div className="subtitle-preview-shell">{renderPreview(false)}</div>
         </section>
 
         <aside className="subtitle-transcript">
