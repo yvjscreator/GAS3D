@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import {
   ArrowLeft,
   Check,
@@ -15,18 +15,13 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react'
-import {
-  createSubtitleJob,
-  downloadSubtitleExport,
-  getSubtitleExport,
-  getSubtitleJob,
-  startSubtitleExport,
-} from './api'
+import { createSubtitleJob, getSubtitleJob } from './api'
+import { exportSubtitledVideoLocally } from './localExporter'
 import type {
   SubtitleCaption,
-  SubtitleExportJob,
   SubtitleExportOptions,
   SubtitleJob,
+  SubtitleLocalExportState,
   SubtitlePresetId,
   SubtitleSavedSession,
   SubtitleWord,
@@ -51,9 +46,19 @@ const statusLabel: Record<SubtitleJob['status'], string> = {
 
 type MobilePanel = 'main' | 'video' | 'style' | 'text' | 'transcript'
 
+const emptyExportState = (): SubtitleLocalExportState => ({
+  status: 'idle',
+  progress: 0,
+  message: '',
+  fileName: null,
+  error: null,
+  elapsedSeconds: 0,
+})
+
 const groupWords = (words: SubtitleWord[], maxWords: number): SubtitleCaption[] => {
   const groups: SubtitleCaption[] = []
   let current: SubtitleWord[] = []
+
   const flush = () => {
     if (!current.length) return
     groups.push({
@@ -64,12 +69,14 @@ const groupWords = (words: SubtitleWord[], maxWords: number): SubtitleCaption[] 
     })
     current = []
   }
+
   for (const word of words) {
     const previous = current[current.length - 1]
     if (previous && word.start - previous.end > 0.7) flush()
     current.push(word)
     if (current.length >= maxWords || /[.!?…]$/.test(word.text)) flush()
   }
+
   flush()
   return groups
 }
@@ -85,12 +92,13 @@ export function SubtitleStudio() {
   const mobileVideoRef = useRef<HTMLVideoElement | null>(null)
   const desktopVideoRef = useRef<HTMLVideoElement | null>(null)
   const restoredRef = useRef(false)
+  const exportStartedAtRef = useRef<number | null>(null)
+
   const [file, setFile] = useState<File | null>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [mediaDuration, setMediaDuration] = useState(0)
   const [language, setLanguage] = useState('auto')
   const [job, setJob] = useState<SubtitleJob | null>(null)
-  const [exportJob, setExportJob] = useState<SubtitleExportJob | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -100,6 +108,8 @@ export function SubtitleStudio() {
   const [error, setError] = useState<string | null>(null)
   const [storageNotice, setStorageNotice] = useState<string | null>(null)
   const [wordOverrides, setWordOverrides] = useState<Record<number, string>>({})
+  const [editingWordId, setEditingWordId] = useState<number | null>(null)
+  const [localExport, setLocalExport] = useState<SubtitleLocalExportState>(emptyExportState)
   const [preset, setPreset] = useState<SubtitlePresetId>('viral')
   const [baseColor, setBaseColor] = useState('#FFFFFF')
   const [activeColor, setActiveColor] = useState('#FFE347')
@@ -127,7 +137,6 @@ export function SubtitleStudio() {
       if (saved) {
         setLanguage(saved.language)
         setJob(saved.job)
-        setExportJob(saved.exportJob)
         setWordOverrides(saved.wordOverrides ?? {})
         setPreset(saved.preset)
         setBaseColor(saved.baseColor)
@@ -146,7 +155,7 @@ export function SubtitleStudio() {
           setVideoUrl(URL.createObjectURL(restoredVideo))
           setStorageNotice('Proyecto restaurado automáticamente.')
         } else if (saved?.job) {
-          setStorageNotice('Se restauró la transcripción. Para previsualizar el video tendrás que volver a seleccionarlo.')
+          setStorageNotice('Se restauró la transcripción. Vuelve a seleccionar el mismo video para previsualizar o exportar.')
         }
       } catch {
         if (saved?.job) setStorageNotice('Se restauró la transcripción, pero el navegador no conservó el archivo de video.')
@@ -166,10 +175,9 @@ export function SubtitleStudio() {
   useEffect(() => {
     if (!hydrated) return
     const session: SubtitleSavedSession = {
-      version: 2,
+      version: 3,
       language,
       job,
-      exportJob,
       wordOverrides,
       preset,
       baseColor,
@@ -186,7 +194,6 @@ export function SubtitleStudio() {
     hydrated,
     language,
     job,
-    exportJob,
     wordOverrides,
     preset,
     baseColor,
@@ -214,34 +221,24 @@ export function SubtitleStudio() {
   }, [job?.id, job?.status])
 
   useEffect(() => {
-    if (!exportJob || !['queued', 'exporting'].includes(exportJob.status)) return
-    const timer = window.setInterval(async () => {
-      try {
-        const next = await getSubtitleExport(exportJob.id)
-        setExportJob(next)
-        if (next.status === 'error') setError(next.error ?? next.message)
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'No se pudo consultar la exportación.')
-      }
-    }, 1200)
-    return () => window.clearInterval(timer)
-  }, [exportJob?.id, exportJob?.status])
-
-  useEffect(() => {
     if (!playing) return
     let frame = 0
     const tick = () => {
-      const video = window.matchMedia('(max-width: 720px)').matches ? mobileVideoRef.current : desktopVideoRef.current
+      const video = isMobile ? mobileVideoRef.current : desktopVideoRef.current
       if (video) setCurrentTime(video.currentTime)
       frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [playing])
+  }, [playing, isMobile])
 
   const captions = useMemo(() => groupWords(job?.words ?? [], maxWords), [job?.words, maxWords])
   const wordsById = useMemo(() => new Map((job?.words ?? []).map((word) => [word.id, word])), [job?.words])
-  const activeCaption = captions.find((caption) => currentTime >= caption.start - 0.05 && currentTime <= caption.end + 0.35) ?? null
+
+  const activeCaption = captions.find(
+    (caption) => currentTime >= caption.start - 0.05 && currentTime <= caption.end + 0.35,
+  ) ?? null
+
   const activeWordId = activeCaption?.wordIds.find((id, index, ids) => {
     const word = wordsById.get(id)
     const next = wordsById.get(ids[index + 1])
@@ -252,24 +249,39 @@ export function SubtitleStudio() {
 
   const duration = Math.max(job?.duration ?? 0, mediaDuration)
   const transcribing = Boolean(job && ['queued', 'transcribing'].includes(job.status))
-  const exporting = Boolean(exportJob && ['queued', 'exporting'].includes(exportJob.status))
+  const exporting = localExport.status === 'checking' || localExport.status === 'exporting'
+  const generatedLanguage = job?.language ?? 'auto'
+  const subtitlesCurrent = Boolean(job?.status === 'ready' && generatedLanguage === language)
+  const primaryMode: 'generate' | 'export' = subtitlesCurrent ? 'export' : 'generate'
 
   const chooseFile = async (nextFile: File | null) => {
     if (!nextFile) return
+
+    const reattachingRestoredVideo = Boolean(job && !file && nextFile.name === job.fileName)
+
     setError(null)
     setStorageNotice(null)
-    setJob(null)
-    setExportJob(null)
-    setWordOverrides({})
+    setLocalExport(emptyExportState())
+    setEditingWordId(null)
     setCurrentTime(0)
     setMediaDuration(0)
+
+    if (!reattachingRestoredVideo) {
+      setJob(null)
+      setWordOverrides({})
+    }
+
     if (videoUrl) URL.revokeObjectURL(videoUrl)
     setFile(nextFile)
     setVideoUrl(URL.createObjectURL(nextFile))
 
     try {
       await saveSubtitleVideo(nextFile)
-      setStorageNotice('Video guardado en este dispositivo para recuperar el proyecto.')
+      setStorageNotice(
+        reattachingRestoredVideo
+          ? 'Video reconectado con el proyecto restaurado.'
+          : 'Video guardado en este dispositivo para recuperar el proyecto.',
+      )
     } catch {
       setStorageNotice('El navegador no pudo guardar una copia local del video. El resto del proyecto sí se conservará.')
     }
@@ -277,16 +289,20 @@ export function SubtitleStudio() {
 
   const startTranscription = async () => {
     if (!file) {
-      setError('Selecciona un video antes de iniciar la transcripción.')
+      setError('Selecciona un video antes de generar los subtítulos.')
+      setMobilePanel('video')
       return
     }
+
     setError(null)
     setUploading(true)
-    setExportJob(null)
-    setWordOverrides({})
+    setLocalExport(emptyExportState())
+    setEditingWordId(null)
+
     try {
       const nextJob = await createSubtitleJob(file, language)
       setJob(nextJob)
+      setWordOverrides({})
       setMobilePanel('main')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo iniciar la transcripción.')
@@ -299,14 +315,17 @@ export function SubtitleStudio() {
     setError(null)
     setStorageNotice(null)
     setJob(null)
-    setExportJob(null)
     setWordOverrides({})
+    setEditingWordId(null)
+    setLocalExport(emptyExportState())
     setFile(null)
     setCurrentTime(0)
     setMediaDuration(0)
+
     if (videoUrl) URL.revokeObjectURL(videoUrl)
     setVideoUrl(null)
     clearSubtitleSession()
+
     try {
       await clearSubtitleVideo()
     } catch {
@@ -326,53 +345,104 @@ export function SubtitleStudio() {
     setUppercase(selected.options.uppercase)
   }
 
-  const downloadExport = async (currentExport: SubtitleExportJob) => {
-    setError(null)
-    try {
-      const blob = await downloadSubtitleExport(currentExport.id)
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      const original = file?.name.replace(/\.[^.]+$/, '') || job?.fileName.replace(/\.[^.]+$/, '') || 'video'
-      anchor.href = url
-      anchor.download = currentExport.fileName ?? `${original}-subtitulado.mp4`
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo descargar el video.')
-    }
-  }
-
   const exportVideo = async () => {
-    if (!job || job.status !== 'ready') return
-    if (exportJob?.status === 'ready') {
-      await downloadExport(exportJob)
+    if (!job || job.status !== 'ready') {
+      await startTranscription()
+      return
+    }
+
+    if (!file) {
+      setError('Necesito el video original en este dispositivo para exportar. Vuelve a seleccionarlo.')
+      setMobilePanel('video')
       return
     }
 
     setError(null)
+    exportStartedAtRef.current = performance.now()
+    setLocalExport({
+      status: 'checking',
+      progress: 0.01,
+      message: 'Comprobando WebCodecs y el encoder del dispositivo…',
+      fileName: null,
+      error: null,
+      elapsedSeconds: 0,
+    })
+
     try {
-      const next = await startSubtitleExport(job.id, {
-        preset,
-        baseColor,
-        activeColor,
-        outlineColor,
-        fontScale,
-        position,
-        maxWords,
-        uppercase,
-        wordOverrides,
+      const blob = await exportSubtitledVideoLocally({
+        file,
+        words: job.words,
+        options: {
+          preset,
+          baseColor,
+          activeColor,
+          outlineColor,
+          fontScale,
+          position,
+          maxWords,
+          uppercase,
+          wordOverrides,
+        },
+        onProgress: ({ progress, message }) => {
+          const elapsedSeconds = exportStartedAtRef.current
+            ? (performance.now() - exportStartedAtRef.current) / 1000
+            : 0
+          setLocalExport({
+            status: progress >= 1 ? 'ready' : 'exporting',
+            progress,
+            message,
+            fileName: null,
+            error: null,
+            elapsedSeconds,
+          })
+        },
       })
-      setExportJob(next)
+
+      const original = file.name.replace(/\.[^.]+$/, '') || 'video'
+      const fileName = `${original}-subtitulado.mp4`
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = fileName
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+
+      const elapsedSeconds = exportStartedAtRef.current
+        ? (performance.now() - exportStartedAtRef.current) / 1000
+        : 0
+
+      setLocalExport({
+        status: 'ready',
+        progress: 1,
+        message: 'MP4 exportado en este dispositivo.',
+        fileName,
+        error: null,
+        elapsedSeconds,
+      })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo iniciar la exportación.')
+      const message = cause instanceof Error ? cause.message : 'No se pudo exportar el video en este dispositivo.'
+      setLocalExport({
+        status: 'error',
+        progress: 0,
+        message: 'La exportación local falló.',
+        fileName: null,
+        error: message,
+        elapsedSeconds: exportStartedAtRef.current ? (performance.now() - exportStartedAtRef.current) / 1000 : 0,
+      })
+      setError(message)
     }
+  }
+
+  const runPrimaryAction = async () => {
+    if (primaryMode === 'generate') await startTranscription()
+    else await exportVideo()
   }
 
   const seekTo = (time: number) => {
     const safe = Math.min(Math.max(time, 0), duration || 0)
-    const video = window.matchMedia('(max-width: 720px)').matches ? mobileVideoRef.current : desktopVideoRef.current
+    const video = isMobile ? mobileVideoRef.current : desktopVideoRef.current
     if (video) video.currentTime = safe
     setCurrentTime(safe)
   }
@@ -380,7 +450,7 @@ export function SubtitleStudio() {
   const seekToCaption = (caption: SubtitleCaption) => seekTo(caption.start)
 
   const togglePlayback = () => {
-    const video = window.matchMedia('(max-width: 720px)').matches ? mobileVideoRef.current : desktopVideoRef.current
+    const video = isMobile ? mobileVideoRef.current : desktopVideoRef.current
     if (!video) return
     if (video.paused) void video.play()
     else video.pause()
@@ -389,6 +459,34 @@ export function SubtitleStudio() {
   const resolvedWord = (word: SubtitleWord) => {
     const text = wordOverrides[word.id] ?? word.text
     return uppercase ? text.toUpperCase() : text
+  }
+
+  const closeWordEditor = (id: number) => {
+    const value = wordOverrides[id]
+    if (value !== undefined && !value.trim()) {
+      setWordOverrides((current) => {
+        const next = { ...current }
+        delete next[id]
+        return next
+      })
+    }
+    setEditingWordId(null)
+  }
+
+  const handleWordEditorKey = (event: KeyboardEvent<HTMLInputElement>, id: number) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      event.currentTarget.blur()
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setWordOverrides((current) => {
+        const next = { ...current }
+        delete next[id]
+        return next
+      })
+      setEditingWordId(null)
+    }
   }
 
   const renderPreview = (mobile = false) => videoUrl ? (
@@ -405,12 +503,22 @@ export function SubtitleStudio() {
       />
       {activeCaption && <div
         className={`subtitle-overlay ${position} preset-${preset}`}
-        style={{ '--subtitle-size': `${Math.max(20, fontScale * (mobile ? 5 : 6))}px`, '--subtitle-outline': outlineColor } as CSSProperties}
+        style={{
+          '--subtitle-size': `${Math.max(20, fontScale * (mobile ? 5 : 6))}px`,
+          '--subtitle-outline': outlineColor,
+          '--subtitle-active': activeColor,
+        } as CSSProperties}
       >
         <div>{activeCaption.wordIds.map((id) => {
           const word = wordsById.get(id)
           if (!word) return null
-          return <span key={id} className={id === activeWordId ? 'active' : ''} style={{ color: id === activeWordId ? activeColor : baseColor }}>{resolvedWord(word)}</span>
+          return <span
+            key={id}
+            className={id === activeWordId ? 'active' : ''}
+            style={{ color: id === activeWordId ? activeColor : baseColor }}
+          >
+            {resolvedWord(word)}
+          </span>
         })}</div>
       </div>}
     </div>
@@ -418,13 +526,18 @@ export function SubtitleStudio() {
     <div className="subtitle-empty-preview">
       <FileVideo2 size={42} />
       <strong>{restoring ? 'Restaurando proyecto…' : 'Selecciona un video'}</strong>
-      <span>Después podrás elegir el idioma y comenzar cuando quieras.</span>
+      <span>Después podrás elegir el idioma y generar los subtítulos cuando quieras.</span>
     </div>
   )
 
   const renderStatus = () => job ? <div className={`subtitle-job-status ${job.status}`}>
-    {job.status === 'ready' ? <CheckCircle2 size={16} /> : <LoaderCircle size={16} className={job.status !== 'error' ? 'spin' : ''} />}
-    <span><strong>{statusLabel[job.status]}</strong><small>{job.message}</small></span>
+    {job.status === 'ready'
+      ? <CheckCircle2 size={16} />
+      : <LoaderCircle size={16} className={job.status !== 'error' ? 'spin' : ''} />}
+    <span>
+      <strong>{statusLabel[job.status]}</strong>
+      <small>{job.message}</small>
+    </span>
     <b>{Math.round(job.progress * 100)}%</b>
   </div> : null
 
@@ -438,7 +551,7 @@ export function SubtitleStudio() {
 
     <label className="subtitle-field">
       <span>Idioma del video</span>
-      <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+      <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled={transcribing}>
         <option value="auto">Detectar automáticamente</option>
         <option value="es">Español</option>
         <option value="en">Inglés</option>
@@ -449,13 +562,16 @@ export function SubtitleStudio() {
       </select>
     </label>
 
-    <button className="subtitle-transcribe-button" disabled={!file || uploading || transcribing} onClick={() => void startTranscription()}>
-      {uploading || transcribing ? <LoaderCircle size={17} className="spin" /> : <Sparkles size={17} />}
-      {uploading ? 'Subiendo video…' : transcribing ? 'Transcribiendo…' : job?.status === 'ready' ? 'Volver a transcribir' : 'Generar subtítulos'}
-    </button>
+    {job?.status === 'ready' && generatedLanguage !== language && (
+      <p className="subtitle-language-dirty">Cambiaste el idioma. El botón principal volverá a generar los subtítulos antes de exportar.</p>
+    )}
 
     {renderStatus()}
-    {job?.width && job.height && <p className="subtitle-meta">{job.width}×{job.height}{job.fps ? ` · ${job.fps.toFixed(2)} FPS` : ''}{job.duration ? ` · ${formatTime(job.duration)}` : ''}</p>}
+    {job?.width && job.height && <p className="subtitle-meta">
+      {job.width}×{job.height}
+      {job.fps ? ` · ${job.fps.toFixed(2)} FPS` : ''}
+      {job.duration ? ` · ${formatTime(job.duration)}` : ''}
+    </p>}
     {storageNotice && <p className="subtitle-storage-note">{storageNotice}</p>}
     {(file || job) && <button className="subtitle-reset-project" onClick={() => void resetProject()}>Nuevo proyecto</button>}
   </div>
@@ -479,46 +595,103 @@ export function SubtitleStudio() {
       <label><span>Palabra activa</span><input type="color" value={activeColor} onChange={(event) => setActiveColor(event.target.value)} /></label>
       <label><span>Contorno</span><input type="color" value={outlineColor} onChange={(event) => setOutlineColor(event.target.value)} /></label>
     </div>
+
     <label className="subtitle-field">
       <span>Tamaño <b>{fontScale}%</b></span>
       <input type="range" min="3.5" max="10" step="0.5" value={fontScale} onChange={(event) => setFontScale(Number(event.target.value))} />
     </label>
+
     <label className="subtitle-field">
       <span>Palabras por bloque <b>{maxWords}</b></span>
       <input type="range" min="2" max="8" step="1" value={maxWords} onChange={(event) => setMaxWords(Number(event.target.value))} />
     </label>
+
     <div className="subtitle-segmented">
-      {(['top', 'center', 'bottom'] as const).map((value) => <button key={value} className={position === value ? 'active' : ''} onClick={() => setPosition(value)}>{value === 'top' ? 'Arriba' : value === 'center' ? 'Centro' : 'Abajo'}</button>)}
+      {(['top', 'center', 'bottom'] as const).map((value) => <button
+        key={value}
+        className={position === value ? 'active' : ''}
+        onClick={() => setPosition(value)}
+      >
+        {value === 'top' ? 'Arriba' : value === 'center' ? 'Centro' : 'Abajo'}
+      </button>)}
     </div>
-    <label className="subtitle-checkbox"><input type="checkbox" checked={uppercase} onChange={(event) => setUppercase(event.target.checked)} /><span>Todo en mayúsculas</span></label>
+
+    <label className="subtitle-checkbox">
+      <input type="checkbox" checked={uppercase} onChange={(event) => setUppercase(event.target.checked)} />
+      <span>Todo en mayúsculas</span>
+    </label>
   </>
 
   const renderTranscript = () => !job || job.status !== 'ready' ? (
-    <div className="subtitle-transcript-empty">{transcribing ? 'Gemini está generando los timestamps palabra por palabra…' : 'Genera los subtítulos para poder revisar y corregir cada palabra.'}</div>
+    <div className="subtitle-transcript-empty">
+      {transcribing
+        ? 'Gemini está generando los timestamps palabra por palabra…'
+        : 'Genera los subtítulos para poder revisar y corregir el texto.'}
+    </div>
   ) : (
     <div className="subtitle-caption-list">
       {captions.map((caption) => <article key={caption.id} onClick={() => seekToCaption(caption)}>
         <time>{formatTime(caption.start)}</time>
-        <div>{caption.wordIds.map((id) => {
-          const word = wordsById.get(id)
-          if (!word) return null
-          return <input
-            key={id}
-            value={wordOverrides[id] ?? word.text}
-            onClick={(event) => event.stopPropagation()}
-            onChange={(event) => setWordOverrides((current) => ({ ...current, [id]: event.target.value }))}
-            aria-label={`Corregir palabra ${word.text}`}
-          />
-        })}</div>
+        <p>
+          {caption.wordIds.map((id) => {
+            const word = wordsById.get(id)
+            if (!word) return null
+            const value = wordOverrides[id] ?? word.text
+
+            return editingWordId === id ? (
+              <input
+                key={id}
+                className="subtitle-inline-word-editor"
+                autoFocus
+                value={value}
+                size={Math.max(2, value.length)}
+                onClick={(event) => event.stopPropagation()}
+                onFocus={(event) => event.currentTarget.select()}
+                onBlur={() => closeWordEditor(id)}
+                onChange={(event) => setWordOverrides((current) => ({ ...current, [id]: event.target.value }))}
+                onKeyDown={(event) => handleWordEditorKey(event, id)}
+                aria-label={`Editar palabra ${word.text}`}
+              />
+            ) : (
+              <button
+                key={id}
+                type="button"
+                className={wordOverrides[id] !== undefined ? 'subtitle-inline-word corrected' : 'subtitle-inline-word'}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setEditingWordId(id)
+                }}
+              >
+                {value}
+              </button>
+            )
+          })}
+        </p>
       </article>)}
     </div>
   )
 
-  const exportLabel = exportJob?.status === 'ready'
-    ? 'Descargar MP4'
+  const primaryDisabled = primaryMode === 'generate'
+    ? !file || uploading || transcribing
+    : !file || exporting
+
+  const primaryLabel = primaryMode === 'generate'
+    ? uploading
+      ? 'Subiendo…'
+      : transcribing
+        ? `Generando ${Math.round((job?.progress ?? 0) * 100)}%`
+        : 'Generar subtítulos'
     : exporting
-      ? `Exportando ${Math.round((exportJob?.progress ?? 0) * 100)}%`
+      ? `Exportando ${Math.round(localExport.progress * 100)}%`
       : 'Exportar MP4'
+
+  const primaryIcon = primaryMode === 'generate'
+    ? uploading || transcribing
+      ? <LoaderCircle size={17} className="spin" />
+      : <Sparkles size={17} />
+    : exporting
+      ? <LoaderCircle size={17} className="spin" />
+      : <Download size={17} />
 
   const renderMobilePanel = () => {
     if (mobilePanel === 'main') {
@@ -530,7 +703,14 @@ export function SubtitleStudio() {
       </nav>
     }
 
-    const title = mobilePanel === 'video' ? 'Video e idioma' : mobilePanel === 'style' ? 'Estilo' : mobilePanel === 'text' ? 'Texto' : 'Transcripción'
+    const title = mobilePanel === 'video'
+      ? 'Video e idioma'
+      : mobilePanel === 'style'
+        ? 'Estilo'
+        : mobilePanel === 'text'
+          ? 'Texto'
+          : 'Transcripción'
+
     return <div className={`subtitle-mobile-panel panel-${mobilePanel}`}>
       <header>
         <button onClick={() => setMobilePanel('main')} aria-label="Cerrar opciones"><X size={22} /></button>
@@ -552,11 +732,19 @@ export function SubtitleStudio() {
   return <main className="subtitle-studio">
     {isMobile ? <section className="subtitle-mobile-editor">
       <header className="subtitle-mobile-header">
-        <button onClick={() => { window.location.hash = '' }} aria-label="Volver a 3D Studio"><ArrowLeft size={25} /></button>
+        <button onClick={() => { window.location.hash = '' }} aria-label="Volver a 3D Studio">
+          <ArrowLeft size={25} />
+        </button>
+
         <strong>Subtitle Studio</strong>
-        <button className="subtitle-mobile-export" disabled={!job || job.status !== 'ready' || exporting} onClick={() => void exportVideo()}>
-          {exporting ? <LoaderCircle size={16} className="spin" /> : <Download size={17} />}
-          <span>{exportJob?.status === 'ready' ? 'Descargar' : 'Exportar'}</span>
+
+        <button
+          className={primaryMode === 'generate' ? 'subtitle-mobile-export generate' : 'subtitle-mobile-export'}
+          disabled={primaryDisabled}
+          onClick={() => void runPrimaryAction()}
+        >
+          {primaryIcon}
+          <span>{primaryMode === 'generate' ? 'Generar' : 'Exportar'}</span>
         </button>
       </header>
 
@@ -568,13 +756,18 @@ export function SubtitleStudio() {
         <button disabled={!videoUrl} onClick={togglePlayback} aria-label={playing ? 'Pausar' : 'Reproducir'}>
           {playing ? <span className="subtitle-pause-icon">Ⅱ</span> : <Play size={22} fill="currentColor" />}
         </button>
+
         <div className="subtitle-mobile-timeline">
           <div className="subtitle-mobile-track">
             {captions.map((caption) => duration > 0 ? <i
               key={caption.id}
-              style={{ left: `${Math.min(100, caption.start / duration * 100)}%`, width: `${Math.max(1, (caption.end - caption.start) / duration * 100)}%` }}
+              style={{
+                left: `${Math.min(100, caption.start / duration * 100)}%`,
+                width: `${Math.max(1, (caption.end - caption.start) / duration * 100)}%`,
+              }}
             /> : null)}
           </div>
+
           <input
             type="range"
             min="0"
@@ -584,18 +777,22 @@ export function SubtitleStudio() {
             disabled={!videoUrl}
             onChange={(event) => seekTo(Number(event.target.value))}
           />
+
           <div><span>{formatTime(currentTime)}</span><span>{formatTime(duration)}</span></div>
         </div>
       </div>
 
       {error && <div className="subtitle-mobile-error">{error}</div>}
-      {exportJob && exporting && <div className="subtitle-mobile-export-progress">
-        <span>{exportJob.message}</span>
-        <div><i style={{ width: `${Math.round(exportJob.progress * 100)}%` }} /></div>
+
+      {exporting && <div className="subtitle-mobile-export-progress">
+        <span>{localExport.message}</span>
+        <div><i style={{ width: `${Math.round(localExport.progress * 100)}%` }} /></div>
       </div>}
-      {exportJob?.status === 'ready' && <button className="subtitle-mobile-ready-download" onClick={() => void downloadExport(exportJob)}>
-        <Download size={18} /> Video listo · descargar MP4
-      </button>}
+
+      {localExport.status === 'ready' && <div className="subtitle-local-export-done">
+        <CheckCircle2 size={16} />
+        <span>Exportado localmente en {localExport.elapsedSeconds.toFixed(1)} s</span>
+      </div>}
 
       <div className="subtitle-mobile-dock">
         {renderMobilePanel()}
@@ -605,9 +802,13 @@ export function SubtitleStudio() {
         <div>
           <span className="subtitle-kicker">GAS3D · herramienta aislada</span>
           <h1>Subtitle Studio</h1>
-          <p>Subtítulos sincronizados palabra a palabra, listos para redes sociales.</p>
+          <p>Gemini transcribe; tu propio dispositivo renderiza el MP4.</p>
         </div>
-        <div className="subtitle-engine-badge"><Sparkles size={15} /><span>Gemini 3.5 Transcribe</span><b>timestamps por palabra</b></div>
+        <div className="subtitle-engine-badge">
+          <Sparkles size={15} />
+          <span>Gemini 3.5 + WebCodecs</span>
+          <b>timestamps + exportación local</b>
+        </div>
       </header>
 
       <section className="subtitle-layout">
@@ -624,14 +825,25 @@ export function SubtitleStudio() {
             {renderTextControls()}
           </div>
 
-          <button className="subtitle-export" disabled={!job || job.status !== 'ready' || exporting} onClick={() => void exportVideo()}>
-            {exporting ? <LoaderCircle size={18} className="spin" /> : <Download size={18} />}
-            {exportLabel}
+          <button
+            className={primaryMode === 'generate' ? 'subtitle-export generate' : 'subtitle-export'}
+            disabled={primaryDisabled}
+            onClick={() => void runPrimaryAction()}
+          >
+            {primaryIcon}
+            {primaryLabel}
           </button>
-          {exportJob && exporting && <div className="subtitle-export-status">
-            <span>{exportJob.message}</span>
-            <div><i style={{ width: `${Math.round(exportJob.progress * 100)}%` }} /></div>
+
+          {exporting && <div className="subtitle-export-status">
+            <span>{localExport.message}</span>
+            <div><i style={{ width: `${Math.round(localExport.progress * 100)}%` }} /></div>
           </div>}
+
+          {localExport.status === 'ready' && <div className="subtitle-local-export-done">
+            <CheckCircle2 size={16} />
+            <span>Exportado en {localExport.elapsedSeconds.toFixed(1)} s usando este dispositivo.</span>
+          </div>}
+
           {error && <div className="subtitle-error">{error}</div>}
         </aside>
 
