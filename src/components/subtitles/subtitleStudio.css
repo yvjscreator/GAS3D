@@ -1989,3 +1989,36 @@
     transform:scale(.98);
   }
 }
+
+
+/* v11: preview/export typography and spacing parity */
+.subtitle-video-frame {
+  container-type:size;
+}
+
+.subtitle-overlay {
+  left:7%;
+  right:7%;
+}
+
+.subtitle-overlay>div {
+  max-width:100%;
+  line-height:1.12;
+}
+
+.subtitle-overlay span {
+  -webkit-text-stroke:.085em var(--subtitle-outline);
+  paint-order:stroke fill;
+  text-shadow:0 .12em .35em #000c;
+}
+
+.subtitle-overlay.preset-neon span.active {
+  -webkit-text-stroke:.085em var(--subtitle-outline);
+  text-shadow:
+    0 0 .34em var(--subtitle-effect),
+    0 .12em .35em #000c;
+}
+
+.subtitle-overlay.preset-punch>div {
+  letter-spacing:0;
+}
