@@ -17,7 +17,7 @@ services:
         value: gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash
       - key: GEMINI_TTS_MODELS
         value: gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts
-      - key: AI_ATTEMPTS_PER_MODEL
+      - key: AI_RETRIES_PER_MODEL
         value: "3"
       - key: AI_RETRY_DELAYS
         value: 1.5,3,6
