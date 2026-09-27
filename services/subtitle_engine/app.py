@@ -86,6 +86,8 @@ _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 _ai_logs: dict[str, list[dict]] = {}
 _ai_logs_lock = threading.Lock()
+_voice_catalog_cache: dict[str, object] = {"expiresAt": 0.0, "voices": []}
+_voice_catalog_lock = threading.Lock()
 _executor = ThreadPoolExecutor(
     max_workers=max(1, int(os.getenv("TRANSCRIBE_WORKERS", "2")))
 )
@@ -643,6 +645,87 @@ def health() -> dict:
         "configured": bool(GEMINI_API_KEY),
         "videoExport": "browser-webcodecs",
     }
+
+
+def _voice_field(voice: object, name: str):
+    value = getattr(voice, name, None)
+    if value is None:
+        return None
+    enum_value = getattr(value, "value", None)
+    if enum_value is not None:
+        return str(enum_value)
+    enum_name = getattr(value, "name", None)
+    if enum_name is not None and not isinstance(value, str):
+        return str(enum_name).lower()
+    return str(value)
+
+
+@app.get("/api/subtitles/presentation/voices")
+def list_presentation_voices(
+    x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
+) -> dict:
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="Falta configurar GEMINI_API_KEY en Render.")
+
+    now = time.monotonic()
+    with _voice_catalog_lock:
+        cached_voices = list(_voice_catalog_cache.get("voices", []))
+        expires_at = float(_voice_catalog_cache.get("expiresAt", 0.0))
+        if cached_voices and expires_at > now:
+            return {"voices": cached_voices, "cached": True}
+
+    try:
+        client = _new_genai_client()
+
+        def fetch_catalog(_: str):
+            return client.voices.list(page_size=1000)
+
+        response, _ = _run_ai_with_fallback(
+            "voice_catalog",
+            x_ai_session_id,
+            ["voices-api"],
+            fetch_catalog,
+        )
+
+        voices: list[dict] = []
+        for item in getattr(response, "voices", None) or []:
+            voice_id = _voice_field(item, "id")
+            if not voice_id:
+                continue
+            voices.append({
+                "id": voice_id,
+                "displayName": _voice_field(item, "display_name") or voice_id,
+                "gender": (_voice_field(item, "gender") or "neutral").lower(),
+                "languageCode": _voice_field(item, "language_code"),
+                "accent": _voice_field(item, "accent"),
+                "pitch": _voice_field(item, "pitch"),
+                "persona": _voice_field(item, "persona"),
+                "description": _voice_field(item, "description"),
+                "type": (_voice_field(item, "type") or "prebuilt").lower(),
+            })
+
+        voices.sort(key=lambda item: (
+            0 if item["type"] == "prebuilt" else 1,
+            item["displayName"].lower(),
+        ))
+
+        with _voice_catalog_lock:
+            _voice_catalog_cache["voices"] = voices
+            _voice_catalog_cache["expiresAt"] = time.monotonic() + 15 * 60
+
+        return {"voices": voices, "cached": False}
+    except Exception as exc:
+        _log_ai(
+            x_ai_session_id,
+            "voice_catalog",
+            "error",
+            "No se pudo cargar el catálogo de voces.",
+            error=exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo cargar el catálogo de voces de Gemini: {exc}",
+        ) from exc
 
 
 @app.post("/api/subtitles/presentation/script")
