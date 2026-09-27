@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   ArrowLeft,
   Check,
@@ -153,6 +153,14 @@ export function SubtitleStudio() {
   const generatedAudioRef = useRef<HTMLAudioElement | null>(null)
   const restoredRef = useRef(false)
   const exportStartedAtRef = useRef<number | null>(null)
+  const subtitlePointersRef = useRef(new Map<number, { x: number; y: number }>())
+  const subtitleGestureRef = useRef<{
+    mode: 'drag' | 'pinch'
+    startY: number
+    startPosition: number
+    startDistance: number
+    startScale: number
+  } | null>(null)
 
   const [file, setFile] = useState<File | null>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
@@ -180,7 +188,7 @@ export function SubtitleStudio() {
   const [outlineColor, setOutlineColor] = useState('#000000')
   const [effectColor, setEffectColor] = useState('#FFE347')
   const [fontScale, setFontScale] = useState(6)
-  const [position, setPosition] = useState<SubtitleExportOptions['position']>('bottom')
+  const [verticalPosition, setVerticalPosition] = useState(0.82)
   const [maxWords, setMaxWords] = useState(5)
   const [uppercase, setUppercase] = useState(false)
 
@@ -240,7 +248,7 @@ export function SubtitleStudio() {
         setOutlineColor(saved.outlineColor)
         setEffectColor(saved.effectColor)
         setFontScale(saved.fontScale)
-        setPosition(saved.position)
+        setVerticalPosition(saved.verticalPosition)
         setMaxWords(saved.maxWords)
         setUppercase(saved.uppercase)
         setPresentationForm(saved.presentationForm ?? defaultPresentationForm())
@@ -288,7 +296,7 @@ export function SubtitleStudio() {
   useEffect(() => {
     if (!hydrated) return
     const session: SubtitleSavedSession = {
-      version: 5,
+      version: 6,
       language,
       job,
       wordOverrides,
@@ -298,7 +306,7 @@ export function SubtitleStudio() {
       outlineColor,
       effectColor,
       fontScale,
-      position,
+      verticalPosition,
       maxWords,
       uppercase,
       fileName: file?.name ?? job?.fileName ?? null,
@@ -323,7 +331,7 @@ export function SubtitleStudio() {
     outlineColor,
     effectColor,
     fontScale,
-    position,
+    verticalPosition,
     maxWords,
     uppercase,
     file?.name,
@@ -599,7 +607,7 @@ export function SubtitleStudio() {
     setOutlineColor(selected.options.outlineColor)
     setEffectColor(selected.options.effectColor)
     setFontScale(selected.options.fontScale)
-    setPosition(selected.options.position)
+    setVerticalPosition(selected.options.verticalPosition)
     setMaxWords(selected.options.maxWords)
     setUppercase(selected.options.uppercase)
   }
@@ -641,7 +649,7 @@ export function SubtitleStudio() {
           outlineColor,
           effectColor,
           fontScale,
-          position,
+          verticalPosition,
           maxWords,
           uppercase,
           wordOverrides,
@@ -774,6 +782,123 @@ export function SubtitleStudio() {
     }
   }
 
+  const clampSubtitlePosition = (value: number) => Math.min(0.92, Math.max(0.08, value))
+  const clampSubtitleScale = (value: number) => Math.min(10, Math.max(3.5, value))
+
+  const pointerDistance = (points: Array<{ x: number; y: number }>) => {
+    if (points.length < 2) return 0
+    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+  }
+
+  const handleSubtitlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+
+    const pointers = subtitlePointersRef.current
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    const points = [...pointers.values()]
+
+    if (points.length === 1) {
+      subtitleGestureRef.current = {
+        mode: 'drag',
+        startY: event.clientY,
+        startPosition: verticalPosition,
+        startDistance: 0,
+        startScale: fontScale,
+      }
+      return
+    }
+
+    if (points.length >= 2) {
+      subtitleGestureRef.current = {
+        mode: 'pinch',
+        startY: (points[0].y + points[1].y) / 2,
+        startPosition: verticalPosition,
+        startDistance: pointerDistance(points),
+        startScale: fontScale,
+      }
+    }
+  }
+
+  const handleSubtitlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const pointers = subtitlePointersRef.current
+    if (!pointers.has(event.pointerId)) return
+
+    event.preventDefault()
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    const gesture = subtitleGestureRef.current
+    if (!gesture) return
+
+    const frame = event.currentTarget.closest('.subtitle-video-frame') as HTMLElement | null
+    const frameHeight = frame?.getBoundingClientRect().height || 1
+    const points = [...pointers.values()]
+
+    if (points.length >= 2) {
+      if (gesture.mode !== 'pinch') {
+        subtitleGestureRef.current = {
+          mode: 'pinch',
+          startY: (points[0].y + points[1].y) / 2,
+          startPosition: verticalPosition,
+          startDistance: pointerDistance(points),
+          startScale: fontScale,
+        }
+        return
+      }
+
+      const distance = pointerDistance(points)
+      const ratio = gesture.startDistance > 0 ? distance / gesture.startDistance : 1
+      const midpointY = (points[0].y + points[1].y) / 2
+      setFontScale(clampSubtitleScale(gesture.startScale * ratio))
+      setVerticalPosition(clampSubtitlePosition(
+        gesture.startPosition + (midpointY - gesture.startY) / frameHeight,
+      ))
+      return
+    }
+
+    if (points.length === 1) {
+      if (gesture.mode !== 'drag') {
+        subtitleGestureRef.current = {
+          mode: 'drag',
+          startY: points[0].y,
+          startPosition: verticalPosition,
+          startDistance: 0,
+          startScale: fontScale,
+        }
+        return
+      }
+
+      setVerticalPosition(clampSubtitlePosition(
+        gesture.startPosition + (points[0].y - gesture.startY) / frameHeight,
+      ))
+    }
+  }
+
+  const handleSubtitlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const pointers = subtitlePointersRef.current
+    pointers.delete(event.pointerId)
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture may already be released by the browser.
+    }
+
+    const points = [...pointers.values()]
+    if (!points.length) {
+      subtitleGestureRef.current = null
+      return
+    }
+
+    subtitleGestureRef.current = {
+      mode: 'drag',
+      startY: points[0].y,
+      startPosition: verticalPosition,
+      startDistance: 0,
+      startScale: fontScale,
+    }
+  }
+
   const renderPreview = (mobile = false) => videoUrl ? (
     <div className={mobile ? 'subtitle-video-frame mobile' : 'subtitle-video-frame'}>
       <video
@@ -795,13 +920,19 @@ export function SubtitleStudio() {
       />
 
       {activeCaption && <div
-        className={`subtitle-overlay ${position} preset-${preset}`}
+        className={`subtitle-overlay editable preset-${preset}`}
         style={{
           '--subtitle-size': `${Math.max(20, fontScale * (mobile ? 5 : 6))}px`,
           '--subtitle-outline': outlineColor,
           '--subtitle-active': activeColor,
           '--subtitle-effect': effectColor,
+          top: `${verticalPosition * 100}%`,
         } as CSSProperties}
+        onPointerDown={handleSubtitlePointerDown}
+        onPointerMove={handleSubtitlePointerMove}
+        onPointerUp={handleSubtitlePointerEnd}
+        onPointerCancel={handleSubtitlePointerEnd}
+        aria-label="Subtítulos: arrastra verticalmente o pellizca para cambiar tamaño"
       >
         <div>{activeCaption.wordIds.map((id) => {
           const word = wordsById.get(id)
@@ -1031,16 +1162,6 @@ export function SubtitleStudio() {
       <span>Palabras por bloque <b>{maxWords}</b></span>
       <input type="range" min="2" max="8" step="1" value={maxWords} onChange={(event) => setMaxWords(Number(event.target.value))} />
     </label>
-
-    <div className="subtitle-segmented">
-      {(['top', 'center', 'bottom'] as const).map((value) => <button
-        key={value}
-        className={position === value ? 'active' : ''}
-        onClick={() => setPosition(value)}
-      >
-        {value === 'top' ? 'Arriba' : value === 'center' ? 'Centro' : 'Abajo'}
-      </button>)}
-    </div>
 
     <label className="subtitle-checkbox">
       <input type="checkbox" checked={uppercase} onChange={(event) => setUppercase(event.target.checked)} />
