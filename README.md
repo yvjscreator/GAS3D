@@ -79,6 +79,10 @@ El panel permite **Copiar todo** para compartir el diagnóstico. No registra la 
 
 La transcripción se presenta como párrafos. Las palabras parecen texto normal y solo pasan a edición al tocarlas.
 
+En el preview, los subtítulos se manipulan directamente: un dedo los mueve verticalmente y un gesto de pellizco cambia su tamaño. No se aplica rotación. La posición y escala se conservan en el proyecto y se reproducen en la exportación.
+
+Los colores se separan en texto, palabra activa, contorno y efecto. El color de efecto controla elementos como glow Neon, caja Punch, cápsula Bubble, subrayado Karaoke y fondo Focus.
+
 Presets actuales:
 
 - Viral Pop
