@@ -1034,9 +1034,21 @@ export function SubtitleStudio() {
     return <div className="subtitle-ai-presenter">
       <div className="subtitle-ai-badge"><Sparkles size={15} /> Gemini Creative Presenter</div>
 
-      <label className="subtitle-field">
+      <div className="subtitle-field">
         <span>Tipo de presentación</span>
-        <select
+        {isMobile ? <div className="subtitle-horizontal-options" role="list">
+          {presentationTypes.map(([value, label]) => <button
+            key={value}
+            type="button"
+            className={presentationForm.presentationType === value ? 'active' : ''}
+            onClick={() => setPresentationForm((current) => ({
+              ...current,
+              presentationType: value,
+            }))}
+          >
+            {label}
+          </button>)}
+        </div> : <select
           value={presentationForm.presentationType}
           onChange={(event) => setPresentationForm((current) => ({
             ...current,
@@ -1044,8 +1056,8 @@ export function SubtitleStudio() {
           }))}
         >
           {presentationTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-      </label>
+        </select>}
+      </div>
 
       <label className="subtitle-field">
         <span>Producto</span>
@@ -1083,9 +1095,25 @@ export function SubtitleStudio() {
         />
       </label>
 
-      <label className="subtitle-field">
+      <div className="subtitle-field">
         <span>Idioma / acento</span>
-        <select
+        {isMobile ? <div className="subtitle-horizontal-options" role="list">
+          {[
+            ['es-LATAM', 'Latino neutro'],
+            ['es-CL', 'Chile'],
+            ['es-AR', 'Argentina'],
+            ['es-VE', 'Venezuela'],
+            ['en-US', 'English US'],
+            ['pt-BR', 'Português BR'],
+          ].map(([value, label]) => <button
+            key={value}
+            type="button"
+            className={presentationForm.language === value ? 'active' : ''}
+            onClick={() => setPresentationForm((current) => ({ ...current, language: value }))}
+          >
+            {label}
+          </button>)}
+        </div> : <select
           value={presentationForm.language}
           onChange={(event) => setPresentationForm((current) => ({ ...current, language: event.target.value }))}
         >
@@ -1095,8 +1123,8 @@ export function SubtitleStudio() {
           <option value="es-VE">Español venezolano</option>
           <option value="en-US">Inglés estadounidense</option>
           <option value="pt-BR">Portugués brasileño</option>
-        </select>
-      </label>
+        </select>}
+      </div>
 
       {presentationScript && <>
         <div className="subtitle-script-summary">
@@ -1114,7 +1142,35 @@ export function SubtitleStudio() {
           />
         </label>
 
-        <div className="subtitle-two-fields">
+        {isMobile ? <>
+          <div className="subtitle-field">
+            <span>Voz</span>
+            <div className="subtitle-horizontal-options" role="list">
+              {voices.map((item) => <button
+                key={item}
+                type="button"
+                className={voice === item ? 'active' : ''}
+                onClick={() => setVoice(item)}
+              >
+                {item}
+              </button>)}
+            </div>
+          </div>
+
+          <div className="subtitle-field">
+            <span>Estilo</span>
+            <div className="subtitle-horizontal-options" role="list">
+              {voiceStyles.map(([value, label]) => <button
+                key={value}
+                type="button"
+                className={voiceStyle === value ? 'active' : ''}
+                onClick={() => setVoiceStyle(value)}
+              >
+                {label}
+              </button>)}
+            </div>
+          </div>
+        </> : <div className="subtitle-two-fields">
           <label className="subtitle-field">
             <span>Voz</span>
             <select value={voice} onChange={(event) => setVoice(event.target.value)}>
@@ -1128,7 +1184,7 @@ export function SubtitleStudio() {
               {voiceStyles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-        </div>
+        </div>}
 
         {generatedAudioUrl && <div className="subtitle-voice-preview">
           <span><Mic2 size={15} /> Voz generada</span>
