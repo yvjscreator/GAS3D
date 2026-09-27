@@ -167,6 +167,7 @@ export function SubtitleStudio() {
   const [generatedAudio, setGeneratedAudio] = useState<Blob | null>(null)
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null)
   const [mediaDuration, setMediaDuration] = useState(0)
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number | null>(null)
   const [language, setLanguage] = useState('auto')
   const [videoMode, setVideoMode] = useState<VideoAudioMode | null>(null)
   const [job, setJob] = useState<SubtitleJob | null>(null)
@@ -441,6 +442,7 @@ export function SubtitleStudio() {
     setEditingWordId(null)
     setCurrentTime(0)
     setMediaDuration(0)
+    setVideoAspectRatio(null)
     setVideoMode(mode)
 
     if (!reattachingRestoredVideo) {
@@ -578,6 +580,7 @@ export function SubtitleStudio() {
     setVideoMode(null)
     setCurrentTime(0)
     setMediaDuration(0)
+    setVideoAspectRatio(null)
     setPresentationForm(defaultPresentationForm())
     setPresentationScript(null)
     setPresentationDraft('')
@@ -900,14 +903,23 @@ export function SubtitleStudio() {
   }
 
   const renderPreview = (mobile = false) => videoUrl ? (
-    <div className={mobile ? 'subtitle-video-frame mobile' : 'subtitle-video-frame'}>
+    <div
+      className={mobile ? 'subtitle-video-frame mobile' : 'subtitle-video-frame'}
+      style={mobile && videoAspectRatio ? { aspectRatio: String(videoAspectRatio) } : undefined}
+    >
       <video
         ref={mobile ? mobileVideoRef : desktopVideoRef}
         src={videoUrl}
         controls={!mobile}
         playsInline
         muted={videoMode === 'without_voice'}
-        onLoadedMetadata={(event) => setMediaDuration(event.currentTarget.duration || 0)}
+        onLoadedMetadata={(event) => {
+          const video = event.currentTarget
+          setMediaDuration(video.duration || 0)
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            setVideoAspectRatio(video.videoWidth / video.videoHeight)
+          }
+        }}
         onPlay={(event) => void onVideoPlay(event.currentTarget)}
         onPause={onVideoPause}
         onSeeked={(event) => {
