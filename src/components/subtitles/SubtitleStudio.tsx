@@ -168,6 +168,7 @@ export function SubtitleStudio() {
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null)
   const [mediaDuration, setMediaDuration] = useState(0)
   const [videoAspectRatio, setVideoAspectRatio] = useState<number | null>(null)
+  const [previewVideoHeight, setPreviewVideoHeight] = useState(0)
   const [language, setLanguage] = useState('auto')
   const [videoMode, setVideoMode] = useState<VideoAudioMode | null>(null)
   const [job, setJob] = useState<SubtitleJob | null>(null)
@@ -404,6 +405,23 @@ export function SubtitleStudio() {
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
   }, [playing, isMobile])
+
+  useEffect(() => {
+    const video = isMobile ? mobileVideoRef.current : desktopVideoRef.current
+    if (!video) return
+
+    const sync = () => setPreviewVideoHeight(video.getBoundingClientRect().height)
+    sync()
+
+    if (!('ResizeObserver' in window)) {
+      window.addEventListener('resize', sync)
+      return () => window.removeEventListener('resize', sync)
+    }
+
+    const observer = new ResizeObserver(sync)
+    observer.observe(video)
+    return () => observer.disconnect()
+  }, [videoUrl, isMobile, mobilePanel])
 
   const captions = useMemo(() => groupWords(job?.words ?? [], maxWords), [job?.words, maxWords])
   const wordsById = useMemo(() => new Map((job?.words ?? []).map((word) => [word.id, word])), [job?.words])
@@ -988,7 +1006,7 @@ export function SubtitleStudio() {
       {activeCaption && <div
         className={`subtitle-overlay editable preset-${preset}`}
         style={{
-          '--subtitle-size': `${fontScale}cqh`,
+          '--subtitle-size': `${Math.max(1, (previewVideoHeight || 500) * fontScale / 100)}px`,
           '--subtitle-outline': outlineColor,
           '--subtitle-active': activeColor,
           '--subtitle-effect': effectColor,
