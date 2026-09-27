@@ -28,7 +28,7 @@ export const subtitlePresets: SubtitlePreset[] = [
     name: 'Punch',
     description: 'Mayúsculas, caja activa y golpe visual fuerte.',
     sample: 'NO HAGAS ESTO',
-    options: { baseColor: '#FFFFFF', activeColor: '#FF7A45', outlineColor: '#050505', effectColor: '#FF7A45', fontScale: 6.4, verticalPosition: 0.5, maxWords: 3, uppercase: true },
+    options: { baseColor: '#FFFFFF', activeColor: '#FFFFFF', outlineColor: '#050505', effectColor: '#FF7A45', fontScale: 6.4, verticalPosition: 0.5, maxWords: 3, uppercase: true },
   },
   {
     id: 'neon',
