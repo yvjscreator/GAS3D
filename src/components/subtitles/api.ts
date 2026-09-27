@@ -1,4 +1,4 @@
-import type { SubtitleExportJob, SubtitleExportOptions, SubtitleJob } from './types'
+import type { SubtitleJob } from './types'
 
 const apiRoot = (import.meta.env.VITE_SUBTITLE_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
 const apiBase = `${apiRoot}/api/subtitles`
@@ -20,26 +20,4 @@ export async function createSubtitleJob(file: File, language: string) {
 
 export async function getSubtitleJob(jobId: string) {
   return expectJson<SubtitleJob>(await fetch(`${apiBase}/jobs/${jobId}`))
-}
-
-export async function startSubtitleExport(jobId: string, options: SubtitleExportOptions) {
-  const response = await fetch(`${apiBase}/jobs/${jobId}/exports`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(options),
-  })
-  return expectJson<SubtitleExportJob>(response)
-}
-
-export async function getSubtitleExport(exportId: string) {
-  return expectJson<SubtitleExportJob>(await fetch(`${apiBase}/exports/${exportId}`))
-}
-
-export async function downloadSubtitleExport(exportId: string) {
-  const response = await fetch(`${apiBase}/exports/${exportId}/download`)
-  if (!response.ok) {
-    const body = await response.json().catch(() => null) as { detail?: string } | null
-    throw new Error(body?.detail ?? 'No se pudo descargar el video exportado.')
-  }
-  return response.blob()
 }
