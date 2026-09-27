@@ -13,7 +13,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from google import genai
@@ -23,6 +23,37 @@ APP_NAME = "GAS3D Subtitle Engine"
 GEMINI_MODEL = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe")
 SCRIPT_MODEL = os.getenv("GEMINI_SCRIPT_MODEL", "gemini-3.8-flash")
 TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-3.8-flash-tts")
+SCRIPT_MODELS = [
+    item.strip()
+    for item in os.getenv(
+        "GEMINI_SCRIPT_MODELS",
+        "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash",
+    ).split(",")
+    if item.strip()
+]
+TTS_MODELS = [
+    item.strip()
+    for item in os.getenv(
+        "GEMINI_TTS_MODELS",
+        "gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts",
+    ).split(",")
+    if item.strip()
+]
+TRANSCRIBE_MODELS = [
+    item.strip()
+    for item in os.getenv(
+        "GEMINI_TRANSCRIBE_MODELS",
+        GEMINI_MODEL,
+    ).split(",")
+    if item.strip()
+]
+AI_ATTEMPTS_PER_MODEL = max(1, int(os.getenv("AI_ATTEMPTS_PER_MODEL", "3")))
+AI_RETRY_DELAYS = [
+    float(item.strip())
+    for item in os.getenv("AI_RETRY_DELAYS", "1.5,3,6").split(",")
+    if item.strip()
+]
+AI_LOG_LIMIT = max(50, int(os.getenv("AI_LOG_LIMIT", "300")))
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 CORS_ORIGINS = [
     origin.strip()
@@ -51,6 +82,8 @@ app.add_middleware(
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
+_ai_logs: dict[str, list[dict]] = {}
+_ai_logs_lock = threading.Lock()
 _executor = ThreadPoolExecutor(
     max_workers=max(1, int(os.getenv("TRANSCRIBE_WORKERS", "2")))
 )
@@ -116,6 +149,159 @@ LANGUAGE_STYLES = {
     "en-US": "Speak in natural American English.",
     "pt-BR": "Speak in natural Brazilian Portuguese.",
 }
+
+
+def _session_id(value: str | None) -> str:
+    clean = (value or "").strip()
+    return clean[:96] if clean else "anonymous"
+
+
+def _log_ai(
+    session_id: str | None,
+    operation: str,
+    level: str,
+    message: str,
+    *,
+    model: str | None = None,
+    attempt: int | None = None,
+    error: object | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    sid = _session_id(session_id)
+    event = {
+        "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "operation": operation,
+        "level": level,
+        "message": message,
+        "model": model,
+        "attempt": attempt,
+        "durationMs": duration_ms,
+        "error": str(error) if error is not None else None,
+    }
+    with _ai_logs_lock:
+        bucket = _ai_logs.setdefault(sid, [])
+        bucket.append(event)
+        if len(bucket) > AI_LOG_LIMIT:
+            del bucket[:-AI_LOG_LIMIT]
+
+
+def _retryable_ai_error(exc: Exception) -> bool:
+    code = (
+        getattr(exc, "status_code", None)
+        or getattr(exc, "code", None)
+        or getattr(getattr(exc, "response", None), "status_code", None)
+    )
+    try:
+        numeric = int(code) if code is not None else None
+    except (TypeError, ValueError):
+        numeric = None
+
+    if numeric in {408, 429, 500, 502, 503, 504}:
+        return True
+
+    text = str(exc).lower()
+    transient_terms = (
+        "resource_exhausted",
+        "rate limit",
+        "rate_limit",
+        "too many requests",
+        "unavailable",
+        "service unavailable",
+        "overloaded",
+        "deadline",
+        "timeout",
+        "timed out",
+        "temporarily",
+        "connection reset",
+        "internal server error",
+    )
+    return any(term in text for term in transient_terms)
+
+
+def _retry_delay(attempt: int) -> float:
+    if not AI_RETRY_DELAYS:
+        return 1.5
+    index = min(max(0, attempt - 1), len(AI_RETRY_DELAYS) - 1)
+    return AI_RETRY_DELAYS[index]
+
+
+def _run_ai_with_fallback(
+    operation: str,
+    session_id: str | None,
+    models: list[str],
+    call,
+):
+    if not models:
+        raise RuntimeError(f"No hay modelos configurados para {operation}.")
+
+    last_error: Exception | None = None
+
+    for model_index, model in enumerate(models):
+        for attempt in range(1, AI_ATTEMPTS_PER_MODEL + 1):
+            started = time.monotonic()
+            _log_ai(
+                session_id,
+                operation,
+                "info",
+                "Iniciando solicitud.",
+                model=model,
+                attempt=attempt,
+            )
+            try:
+                result = call(model)
+                elapsed = int((time.monotonic() - started) * 1000)
+                _log_ai(
+                    session_id,
+                    operation,
+                    "success",
+                    "Solicitud completada.",
+                    model=model,
+                    attempt=attempt,
+                    duration_ms=elapsed,
+                )
+                return result, model
+            except Exception as exc:
+                last_error = exc
+                elapsed = int((time.monotonic() - started) * 1000)
+                retryable = _retryable_ai_error(exc)
+                _log_ai(
+                    session_id,
+                    operation,
+                    "warning" if retryable else "error",
+                    "Solicitud fallida.",
+                    model=model,
+                    attempt=attempt,
+                    error=exc,
+                    duration_ms=elapsed,
+                )
+
+                if not retryable:
+                    raise
+
+                if attempt < AI_ATTEMPTS_PER_MODEL:
+                    delay = _retry_delay(attempt)
+                    _log_ai(
+                        session_id,
+                        operation,
+                        "info",
+                        f"Reintentando en {delay:g} s.",
+                        model=model,
+                        attempt=attempt,
+                    )
+                    time.sleep(delay)
+
+        if model_index < len(models) - 1:
+            _log_ai(
+                session_id,
+                operation,
+                "warning",
+                f"Degradando al siguiente modelo: {models[model_index + 1]}.",
+                model=model,
+                attempt=AI_ATTEMPTS_PER_MODEL,
+                error=last_error,
+            )
+
+    raise last_error or RuntimeError(f"{operation} falló sin un error detallado.")
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -358,16 +544,24 @@ def _transcribe(job_id: str) -> None:
             progress=0.38,
             message=f"Transcribiendo con {GEMINI_MODEL}…",
         )
-        interaction = client.interactions.create(
-            model=GEMINI_MODEL,
-            input=[{
-                "type": "audio",
-                "uri": remote_file.uri,
-                "mime_type": remote_file.mime_type,
-            }],
-            generation_config={
-                "transcription_config": transcription_config,
-            },
+        def transcribe_with_model(model: str):
+            return client.interactions.create(
+                model=model,
+                input=[{
+                    "type": "audio",
+                    "uri": remote_file.uri,
+                    "mime_type": remote_file.mime_type,
+                }],
+                generation_config={
+                    "transcription_config": transcription_config,
+                },
+            )
+
+        interaction, used_model = _run_ai_with_fallback(
+            "transcription",
+            job.get("aiSessionId"),
+            TRANSCRIBE_MODELS,
+            transcribe_with_model,
         )
 
         words = _extract_word_annotations(interaction)
@@ -380,7 +574,7 @@ def _transcribe(job_id: str) -> None:
             job_id,
             status="ready",
             progress=1.0,
-            message=f"Transcripción lista · {len(words)} palabras",
+            message=f"Transcripción lista · {len(words)} palabras · {used_model}",
             words=words,
             captions=_group_words(words),
             error=None,
@@ -396,6 +590,26 @@ def _transcribe(job_id: str) -> None:
     finally:
         _delete_remote_file(client, remote_file)
         shutil.rmtree(job_dir, ignore_errors=True)
+
+
+@app.get("/api/subtitles/ai/logs/{session_id}")
+def get_ai_logs(session_id: str) -> dict:
+    sid = _session_id(session_id)
+    with _ai_logs_lock:
+        items = list(_ai_logs.get(sid, []))
+    return {
+        "sessionId": sid,
+        "items": items,
+        "count": len(items),
+    }
+
+
+@app.delete("/api/subtitles/ai/logs/{session_id}")
+def clear_ai_logs(session_id: str) -> dict:
+    sid = _session_id(session_id)
+    with _ai_logs_lock:
+        _ai_logs.pop(sid, None)
+    return {"ok": True, "sessionId": sid}
 
 
 @app.get("/api/subtitles/health")
@@ -414,6 +628,7 @@ def health() -> dict:
 @app.post("/api/subtitles/presentation/script")
 async def generate_presentation_script(
     video: UploadFile = File(...),
+    x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
     presentation_type: str = Form(default="influencer"),
     product: str = Form(default=""),
     highlights: str = Form(default=""),
@@ -476,26 +691,35 @@ Rules:
 - Keep each segment's start/end within the video duration.
 """
 
-        interaction = client.interactions.create(
-            model=SCRIPT_MODEL,
-            input=[
-                {
-                    "type": "video",
-                    "uri": remote_file.uri,
-                    "mime_type": remote_file.mime_type,
-                    "processing": {"type": "static", "fps": 1.0},
+        def create_script(model: str):
+            return client.interactions.create(
+                model=model,
+                input=[
+                    {
+                        "type": "video",
+                        "uri": remote_file.uri,
+                        "mime_type": remote_file.mime_type,
+                        "processing": {"type": "static", "fps": 1.0},
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+                response_format={
+                    "type": "text",
+                    "mime_type": "application/json",
+                    "schema": PresentationScriptResult.model_json_schema(),
                 },
-                {"type": "text", "text": prompt},
-            ],
-            response_format={
-                "type": "text",
-                "mime_type": "application/json",
-                "schema": PresentationScriptResult.model_json_schema(),
-            },
-        )
+            )
 
+        interaction, used_model = _run_ai_with_fallback(
+            "presentation_script",
+            x_ai_session_id,
+            SCRIPT_MODELS,
+            create_script,
+        )
         result = PresentationScriptResult.model_validate_json(interaction.output_text)
-        return result.model_dump()
+        payload = result.model_dump()
+        payload["_aiModel"] = used_model
+        return payload
     except HTTPException:
         raise
     except Exception as exc:
@@ -509,7 +733,10 @@ Rules:
 
 
 @app.post("/api/subtitles/presentation/tts")
-def generate_presentation_voice(request: TTSRequest) -> Response:
+def generate_presentation_voice(
+    request: TTSRequest,
+    x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
+) -> Response:
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=503, detail="Falta configurar GEMINI_API_KEY en Render.")
 
@@ -521,28 +748,33 @@ def generate_presentation_voice(request: TTSRequest) -> Response:
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
-        interaction = client.interactions.create(
-            model=TTS_MODEL,
-            input=[{
-                "type": "user_input",
-                "content": [{
-                    "type": "text",
-                    "text": request.script.strip(),
-                    "annotations": [{
-                        "type": "speech_metadata",
-                        "style": f"{style} {locale_style}",
+        def synthesize(model: str):
+            return client.interactions.create(
+                model=model,
+                input=[{
+                    "type": "user_input",
+                    "content": [{
+                        "type": "text",
+                        "text": request.script.strip(),
+                        "annotations": [{
+                            "type": "speech_metadata",
+                            "style": f"{style} {locale_style}",
+                        }],
                     }],
                 }],
-            }],
-            response_format={
-                "type": "audio",
-                "mime_type": "audio/wav",
-            },
-            generation_config={
-                "speech_config": [
-                    {"voice": request.voice},
-                ],
-            },
+                response_format={"type": "audio"},
+                generation_config={
+                    "speech_config": [
+                        {"voice": request.voice},
+                    ],
+                },
+            )
+
+        interaction, used_model = _run_ai_with_fallback(
+            "presentation_tts",
+            x_ai_session_id,
+            TTS_MODELS,
+            synthesize,
         )
 
         output_audio = getattr(interaction, "output_audio", None)
@@ -558,7 +790,10 @@ def generate_presentation_voice(request: TTSRequest) -> Response:
         return Response(
             content=audio_bytes,
             media_type="audio/wav",
-            headers={"Cache-Control": "no-store"},
+            headers={
+                "Cache-Control": "no-store",
+                "X-AI-Model": used_model,
+            },
         )
     except Exception as exc:
         raise HTTPException(
@@ -571,6 +806,7 @@ def generate_presentation_voice(request: TTSRequest) -> Response:
 async def create_job(
     video: UploadFile = File(...),
     language: str | None = Form(default=None),
+    x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
 ) -> dict:
     job_id = uuid.uuid4().hex
     job_dir = WORK_ROOT / job_id
@@ -605,6 +841,7 @@ async def create_job(
         "fileName": video.filename or input_path.name,
         "requestedLanguage": language or None,
         "language": language or None,
+        "aiSessionId": _session_id(x_ai_session_id),
         "inputPath": str(input_path),
         "words": [],
         "captions": [],
