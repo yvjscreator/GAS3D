@@ -1454,3 +1454,203 @@
     scroll-behavior:smooth;
   }
 }
+
+
+/* v8: horizontal visual editor controls for the constrained mobile dock. */
+@media (max-width:720px) {
+  .panel-style .subtitle-mobile-panel-body,
+  .panel-text .subtitle-mobile-panel-body {
+    overflow-y:hidden;
+    padding:6px 8px max(6px,env(safe-area-inset-bottom));
+  }
+
+  .panel-style .subtitle-preset-grid {
+    display:flex;
+    gap:6px;
+    margin:0;
+    overflow-x:auto;
+    overflow-y:hidden;
+    scroll-snap-type:x mandatory;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+  }
+  .panel-style .subtitle-preset-grid::-webkit-scrollbar { display:none; }
+
+  .panel-style .subtitle-preset-grid button {
+    flex:0 0 calc((100vw - 42px) / 4);
+    min-width:0;
+    min-height:52px;
+    height:52px;
+    padding:5px 6px;
+    display:grid;
+    grid-template-rows:auto 1fr;
+    align-content:center;
+    gap:3px;
+    scroll-snap-align:start;
+    text-align:center;
+    border-radius:7px;
+  }
+  .panel-style .subtitle-preset-grid button>span {
+    overflow:hidden;
+    font-size:7px;
+    line-height:1.1;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .panel-style .subtitle-preset-grid button>strong {
+    overflow:hidden;
+    align-self:center;
+    font-size:8px;
+    line-height:1.05;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .panel-style .subtitle-preset-grid button>small {
+    display:none;
+  }
+
+  .subtitle-style-selection-bar {
+    height:28px;
+    margin-top:5px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    padding:0 2px 0 6px;
+    color:#9aa8b5;
+  }
+  .subtitle-style-selection-bar>span {
+    min-width:0;
+    display:flex;
+    align-items:baseline;
+    gap:6px;
+  }
+  .subtitle-style-selection-bar small {
+    color:#6e7f8d;
+    font-size:6px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+  }
+  .subtitle-style-selection-bar strong {
+    overflow:hidden;
+    color:#e6edf3;
+    font-size:8px;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .subtitle-style-selection-bar button {
+    flex:none;
+    min-height:26px;
+    padding:0 10px;
+    color:#0c2118;
+    background:#88dfbb;
+    border:0;
+    border-radius:6px;
+    font-size:8px;
+    font-weight:900;
+  }
+
+  .subtitle-mobile-customize-strip {
+    height:100%;
+    min-height:0;
+    display:flex;
+    align-items:stretch;
+    gap:6px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    scroll-snap-type:x proximity;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+  }
+  .subtitle-mobile-customize-strip::-webkit-scrollbar { display:none; }
+
+  .subtitle-mobile-control-card {
+    flex:0 0 78px;
+    min-width:78px;
+    min-height:0;
+    height:100%;
+    max-height:84px;
+    display:grid;
+    place-items:center;
+    align-content:center;
+    gap:4px;
+    padding:5px;
+    color:#b9c5cf;
+    background:#202020;
+    border:1px solid #414141;
+    border-radius:8px;
+    scroll-snap-align:start;
+    text-align:center;
+  }
+  .subtitle-mobile-control-card>span {
+    max-width:100%;
+    overflow:hidden;
+    color:#cbd4dc;
+    font-size:7px;
+    font-weight:800;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .subtitle-mobile-control-card small {
+    color:#6f7f8c;
+    font:6px 'DM Mono',monospace;
+  }
+  .subtitle-mobile-control-card.color input[type=color] {
+    width:36px;
+    height:28px;
+    padding:0;
+    overflow:hidden;
+    background:transparent;
+    border:0;
+    border-radius:6px;
+  }
+  .subtitle-mobile-control-card.words>div {
+    display:grid;
+    grid-template-columns:22px 24px 22px;
+    align-items:center;
+    gap:2px;
+  }
+  .subtitle-mobile-control-card.words button {
+    width:22px;
+    height:22px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    color:#eef4f8;
+    background:#303030;
+    border:1px solid #4b4b4b;
+    border-radius:5px;
+    font-size:13px;
+  }
+  .subtitle-mobile-control-card.words strong {
+    color:#fff;
+    font:10px 'DM Mono',monospace;
+  }
+  .subtitle-mobile-control-card.toggle {
+    appearance:none;
+  }
+  .subtitle-mobile-control-card.toggle strong {
+    color:#e9eef2;
+    font-size:18px;
+    line-height:1;
+  }
+  .subtitle-mobile-control-card.toggle.active {
+    background:#18362b;
+    border-color:#5cbc92;
+  }
+  .subtitle-mobile-control-card.toggle.active strong {
+    color:#91e2bb;
+  }
+
+  /* Visual editing panels should not require vertical scrolling. */
+  .panel-style .subtitle-mobile-panel-body,
+  .panel-text .subtitle-mobile-panel-body {
+    scrollbar-width:none;
+  }
+  .panel-style .subtitle-mobile-panel-body::-webkit-scrollbar,
+  .panel-text .subtitle-mobile-panel-body::-webkit-scrollbar {
+    display:none;
+  }
+}
