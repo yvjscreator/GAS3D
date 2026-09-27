@@ -129,6 +129,17 @@ const ensureSubtitleFont = async (preset: SubtitlePresetId) => {
   }
 }
 
+const activeLayoutPaddingX = (
+  preset: SubtitlePresetId,
+  isActive: boolean,
+  fontSize: number,
+) => {
+  if (!isActive) return 0
+  if (preset === 'bubble') return fontSize * 0.26
+  if (preset === 'punch') return fontSize * 0.16
+  return 0
+}
+
 const buildWordBoxes = (
   ctx: Canvas2D,
   words: RenderWord[],
@@ -136,39 +147,56 @@ const buildWordBoxes = (
   fontSize: number,
   maxWidth: number,
   lineHeight: number,
+  preset: SubtitlePresetId,
+  activeWordId: number,
 ) => {
   const gap = Math.max(7, fontSize * 0.22)
-  const lines: Array<Array<{ word: RenderWord; width: number }>> = []
-  let line: Array<{ word: RenderWord; width: number }> = []
+  const lines: Array<Array<{
+    word: RenderWord
+    width: number
+    padX: number
+    layoutWidth: number
+  }>> = []
+  let line: Array<{
+    word: RenderWord
+    width: number
+    padX: number
+    layoutWidth: number
+  }> = []
   let lineWidth = 0
 
   for (const word of words) {
     const measured = ctx.measureText(word.text).width
-    const addition = (line.length ? gap : 0) + measured
+    const padX = activeLayoutPaddingX(preset, word.id === activeWordId, fontSize)
+    const layoutWidth = measured + padX * 2
+    const addition = (line.length ? gap : 0) + layoutWidth
+
     if (line.length && lineWidth + addition > maxWidth) {
       lines.push(line)
       line = []
       lineWidth = 0
     }
-    line.push({ word, width: measured })
-    lineWidth += (line.length > 1 ? gap : 0) + measured
+
+    line.push({ word, width: measured, padX, layoutWidth })
+    lineWidth += (line.length > 1 ? gap : 0) + layoutWidth
   }
   if (line.length) lines.push(line)
 
   const boxes: WordBox[] = []
   lines.forEach((items, lineIndex) => {
-    const total = items.reduce((sum, item, index) => sum + item.width + (index ? gap : 0), 0)
+    const total = items.reduce((sum, item, index) => sum + item.layoutWidth + (index ? gap : 0), 0)
     let cursor = width / 2 - total / 2
+
     for (const item of items) {
       boxes.push({
         word: item.word,
-        x: cursor,
+        x: cursor + item.padX,
         y: lineIndex * lineHeight,
         width: item.width,
         lineHeight,
         lineIndex,
       })
-      cursor += item.width + gap
+      cursor += item.layoutWidth + gap
     }
   })
 
@@ -209,7 +237,16 @@ const drawSubtitleFrame = (
   ctx.lineJoin = 'round'
   ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`
 
-  const { boxes, lineCount } = buildWordBoxes(ctx, captionWords, width, fontSize, maxWidth, lineHeight)
+  const { boxes, lineCount } = buildWordBoxes(
+    ctx,
+    captionWords,
+    width,
+    fontSize,
+    maxWidth,
+    lineHeight,
+    options.preset,
+    active.id,
+  )
   const totalHeight = lineCount * lineHeight
   const desiredCenterY = height * Math.min(0.92, Math.max(0.08, options.verticalPosition))
   const baseY = Math.min(
@@ -221,9 +258,19 @@ const drawSubtitleFrame = (
   const captionAlpha = options.preset === 'cinema' ? entryProgress : 1
 
   if (options.preset === 'focus') {
-    const padX = fontSize * 0.38
-    const padY = fontSize * 0.25
-    roundedRect(ctx, width * 0.07, baseY - padY, width * 0.86, totalHeight + padY * 1.35, fontSize * 0.22)
+    const padX = fontSize * 0.32
+    const padY = fontSize * 0.18
+    const minX = Math.min(...boxes.map((box) => box.x))
+    const maxX = Math.max(...boxes.map((box) => box.x + box.width))
+    const contentWidth = Math.max(fontSize, maxX - minX)
+    roundedRect(
+      ctx,
+      minX - padX,
+      baseY - padY,
+      contentWidth + padX * 2,
+      totalHeight + padY * 2,
+      fontSize * 0.22,
+    )
     ctx.fillStyle = hexToRgba(options.effectColor, 0.78)
     ctx.fill()
   }
@@ -244,7 +291,7 @@ const drawSubtitleFrame = (
 
     const centerX = box.x + box.width / 2
     const baselineY = baseY + box.y + fontSize
-    const inactiveAlpha = options.preset === 'karaoke' ? 0.42 : options.preset === 'focus' ? 0.68 : 1
+    const inactiveAlpha = options.preset === 'karaoke' ? 0.46 : options.preset === 'focus' ? 0.68 : 1
 
     ctx.save()
     ctx.globalAlpha = captionAlpha * (isActive ? 1 : inactiveAlpha)
@@ -253,16 +300,23 @@ const drawSubtitleFrame = (
     ctx.translate(-centerX, -(baselineY - fontSize * 0.42))
 
     if (options.preset === 'punch' && isActive) {
-      const padX = fontSize * 0.22
-      const padY = fontSize * 0.11
-      roundedRect(ctx, box.x - padX, baselineY - fontSize - padY, box.width + padX * 2, fontSize + padY * 1.8, fontSize * 0.13)
+      const padX = fontSize * 0.16
+      const padY = fontSize * 0.04
+      roundedRect(
+        ctx,
+        box.x - padX,
+        baselineY - fontSize - padY,
+        box.width + padX * 2,
+        fontSize + padY * 2,
+        fontSize * 0.12,
+      )
       ctx.fillStyle = options.effectColor
       ctx.fill()
     }
 
     if (options.preset === 'bubble' && isActive) {
-      const padX = fontSize * 0.32
-      const padY = fontSize * 0.14
+      const padX = fontSize * 0.26
+      const padY = fontSize * 0.05
       roundedRect(ctx, box.x - padX, baselineY - fontSize - padY, box.width + padX * 2, fontSize + padY * 2, fontSize * 0.5)
       ctx.fillStyle = options.effectColor
       ctx.shadowColor = 'rgba(0,0,0,.35)'
@@ -294,10 +348,10 @@ const drawSubtitleFrame = (
     ctx.fillText(box.word.text, box.x, baselineY)
 
     if (options.preset === 'karaoke' && isActive) {
-      const underlineY = baselineY + fontSize * 0.11
+      const underlineY = baselineY + fontSize * 0.12
       const underlineWidth = box.width * Math.min(1, localProgress * 1.3)
       ctx.strokeStyle = options.effectColor
-      ctx.lineWidth = Math.max(3, fontSize * 0.055)
+      ctx.lineWidth = Math.max(3, fontSize * 0.07)
       ctx.lineCap = 'round'
       ctx.beginPath()
       ctx.moveTo(box.x, underlineY)
