@@ -425,7 +425,7 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
       video: { discard: true },
       audio: {
         codec: 'aac',
-        quality: new Quality({ bitrate: 192_000 }),
+        bitrate: 192_000,
       },
       trim: {
         end: videoDuration,
