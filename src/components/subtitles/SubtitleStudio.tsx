@@ -505,7 +505,7 @@ export function SubtitleStudio() {
     const sync = () => setPreviewVideoHeight(video.getBoundingClientRect().height)
     sync()
 
-    if (!('ResizeObserver' in window)) {
+    if (typeof ResizeObserver === 'undefined') {
       window.addEventListener('resize', sync)
       return () => window.removeEventListener('resize', sync)
     }
