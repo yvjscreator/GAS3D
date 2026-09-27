@@ -1946,3 +1946,46 @@
     overflow-y:hidden;
   }
 }
+
+
+/* v10: Android-friendly native color cards */
+@media (max-width:720px) {
+  .subtitle-mobile-control-card.native-color {
+    position:relative;
+    overflow:hidden;
+    cursor:pointer;
+  }
+
+  .subtitle-mobile-control-card.native-color input[type=color] {
+    position:absolute;
+    inset:0;
+    z-index:3;
+    width:100%;
+    height:100%;
+    padding:0;
+    opacity:0;
+    cursor:pointer;
+  }
+
+  .subtitle-color-swatch {
+    width:32px;
+    height:32px;
+    display:block;
+    border:2px solid #ffffffd9;
+    border-radius:50%;
+    box-shadow:
+      0 0 0 1px #0008,
+      0 2px 8px #0008;
+    pointer-events:none;
+  }
+
+  .subtitle-mobile-control-card.native-color>span,
+  .subtitle-mobile-control-card.native-color>small {
+    pointer-events:none;
+  }
+
+  .subtitle-mobile-control-card.native-color:active {
+    background:#2a2a2a;
+    transform:scale(.98);
+  }
+}
