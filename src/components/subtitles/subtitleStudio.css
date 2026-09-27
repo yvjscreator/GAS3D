@@ -1835,3 +1835,114 @@
     font-size:7px;
   }
 }
+
+
+/* v9: compact chrome + half-screen active tool workspace */
+@media (max-width:720px) {
+  .subtitle-mobile-editor {
+    --subtitle-header-h:32px;
+    --subtitle-transport-h:72px;
+    --subtitle-dock-h:88px;
+  }
+
+  .subtitle-mobile-editor.tool-active {
+    --subtitle-dock-h:50dvh;
+  }
+
+  .subtitle-mobile-header {
+    padding:0 8px !important;
+    grid-template-columns:30px minmax(0,1fr) auto;
+    gap:5px;
+  }
+  .subtitle-mobile-header>button {
+    height:28px;
+    min-width:28px;
+    padding:0 5px;
+    border-radius:6px;
+  }
+  .subtitle-mobile-header>button svg {
+    width:19px;
+    height:19px;
+  }
+  .subtitle-mobile-header>strong {
+    font-size:11px;
+  }
+  .subtitle-mobile-export {
+    font-size:10px;
+  }
+  .subtitle-mobile-export svg {
+    width:15px !important;
+    height:15px !important;
+  }
+
+  .subtitle-mobile-stage {
+    padding:6px 8px;
+  }
+
+  .subtitle-mobile-transport {
+    padding:2px 8px 4px;
+    grid-template-columns:42px minmax(0,1fr);
+  }
+  .subtitle-mobile-transport>button {
+    width:38px;
+    height:38px;
+  }
+  .subtitle-mobile-timeline input[type=range] {
+    height:44px;
+  }
+  .subtitle-mobile-track {
+    top:7px;
+    height:29px;
+  }
+
+  .subtitle-mobile-dock {
+    transition:height .18s ease,min-height .18s ease,max-height .18s ease;
+  }
+
+  .subtitle-mobile-tools,
+  .subtitle-mobile-tools.five {
+    padding:4px 3px max(4px,env(safe-area-inset-bottom));
+  }
+  .subtitle-mobile-tools button,
+  .subtitle-mobile-tools.five button {
+    max-height:none;
+    gap:4px;
+  }
+  .subtitle-mobile-tools button svg,
+  .subtitle-mobile-tools.five button svg {
+    width:20px;
+    height:20px;
+  }
+  .subtitle-mobile-tools span,
+  .subtitle-mobile-tools.five span {
+    font-size:7px;
+  }
+
+  .subtitle-mobile-editor.tool-active .subtitle-mobile-panel {
+    height:100%;
+  }
+  .subtitle-mobile-editor.tool-active .subtitle-mobile-panel>header {
+    height:38px !important;
+    min-height:38px;
+    max-height:38px;
+    grid-template-columns:36px minmax(0,1fr) 36px;
+  }
+  .subtitle-mobile-editor.tool-active .subtitle-mobile-panel>header button {
+    width:34px;
+    height:34px;
+  }
+  .subtitle-mobile-editor.tool-active .subtitle-mobile-panel>header strong {
+    font-size:10px;
+  }
+
+  .subtitle-mobile-editor.tool-active .subtitle-mobile-panel-body {
+    height:100%;
+    max-height:none;
+    overflow-y:auto;
+  }
+
+  .subtitle-mobile-editor.tool-active .panel-style .subtitle-mobile-panel-body,
+  .subtitle-mobile-editor.tool-active .panel-text .subtitle-mobile-panel-body {
+    overflow-y:hidden;
+  }
+}
