@@ -13,7 +13,3 @@ services:
         sync: false
       - key: GEMINI_TRANSCRIBE_MODEL
         value: gemini-3.5-transcribe
-      - key: SUBTITLE_X264_PRESET
-        value: veryfast
-      - key: SUBTITLE_CRF
-        value: "18"
