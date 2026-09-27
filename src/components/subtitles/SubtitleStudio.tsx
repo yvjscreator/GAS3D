@@ -1258,27 +1258,51 @@ export function SubtitleStudio() {
 
   const renderTextControls = () => isMobile ? (
     <div className="subtitle-mobile-customize-strip">
-      <label className="subtitle-mobile-control-card color">
+      <label className="subtitle-mobile-control-card color native-color">
+        <input
+          type="color"
+          value={baseColor}
+          aria-label="Color del texto"
+          onChange={(event) => setBaseColor(event.target.value)}
+        />
         <span>Texto</span>
-        <input type="color" value={baseColor} onChange={(event) => setBaseColor(event.target.value)} />
+        <i className="subtitle-color-swatch" style={{ backgroundColor: baseColor }} />
         <small>{baseColor.toUpperCase()}</small>
       </label>
 
-      <label className="subtitle-mobile-control-card color">
+      <label className="subtitle-mobile-control-card color native-color">
+        <input
+          type="color"
+          value={activeColor}
+          aria-label="Color de la palabra activa"
+          onChange={(event) => setActiveColor(event.target.value)}
+        />
         <span>Activa</span>
-        <input type="color" value={activeColor} onChange={(event) => setActiveColor(event.target.value)} />
+        <i className="subtitle-color-swatch" style={{ backgroundColor: activeColor }} />
         <small>{activeColor.toUpperCase()}</small>
       </label>
 
-      <label className="subtitle-mobile-control-card color">
+      <label className="subtitle-mobile-control-card color native-color">
+        <input
+          type="color"
+          value={outlineColor}
+          aria-label="Color del contorno"
+          onChange={(event) => setOutlineColor(event.target.value)}
+        />
         <span>Contorno</span>
-        <input type="color" value={outlineColor} onChange={(event) => setOutlineColor(event.target.value)} />
+        <i className="subtitle-color-swatch" style={{ backgroundColor: outlineColor }} />
         <small>{outlineColor.toUpperCase()}</small>
       </label>
 
-      <label className="subtitle-mobile-control-card color">
+      <label className="subtitle-mobile-control-card color native-color">
+        <input
+          type="color"
+          value={effectColor}
+          aria-label="Color del efecto"
+          onChange={(event) => setEffectColor(event.target.value)}
+        />
         <span>Efecto</span>
-        <input type="color" value={effectColor} onChange={(event) => setEffectColor(event.target.value)} />
+        <i className="subtitle-color-swatch" style={{ backgroundColor: effectColor }} />
         <small>{effectColor.toUpperCase()}</small>
       </label>
 
