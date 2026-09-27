@@ -380,7 +380,7 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
     const text = replacement?.trim() || word.text
     return {
       id: word.id,
-      text: options.uppercase || options.preset === 'punch' || options.preset === 'bubble' ? text.toUpperCase() : text,
+      text: options.uppercase ? text.toUpperCase() : text,
       start: word.start,
       end: word.end,
     }
