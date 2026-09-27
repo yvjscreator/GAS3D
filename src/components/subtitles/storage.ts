@@ -1,7 +1,8 @@
 import type { PresentationForm, SubtitleSavedSession, SubtitlePresetId, VoiceStyleId } from './types'
 
-const SESSION_KEY = 'gas3d.subtitle.session.v5'
+const SESSION_KEY = 'gas3d.subtitle.session.v6'
 const LEGACY_SESSION_KEYS = [
+  'gas3d.subtitle.session.v5',
   'gas3d.subtitle.session.v4',
   'gas3d.subtitle.session.v3',
   'gas3d.subtitle.session.v2',
@@ -34,6 +35,15 @@ const effectColorForPreset = (preset: SubtitlePresetId) => {
   return colors[preset] ?? '#FFE347'
 }
 
+const verticalPositionFromLegacy = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.min(0.92, Math.max(0.08, value))
+  }
+  if (value === 'top') return 0.15
+  if (value === 'center') return 0.5
+  return 0.82
+}
+
 export function saveSubtitleSession(session: SubtitleSavedSession) {
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -47,20 +57,21 @@ export function loadSubtitleSession(): SubtitleSavedSession | null {
     const raw = localStorage.getItem(SESSION_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as SubtitleSavedSession
-      if (parsed?.version === 5) return parsed
+      if (parsed?.version === 6) return parsed
     }
 
     for (const key of LEGACY_SESSION_KEYS) {
       const legacyRaw = localStorage.getItem(key)
       if (!legacyRaw) continue
       const legacy = JSON.parse(legacyRaw) as Record<string, unknown>
-      if (![2, 3, 4].includes(Number(legacy.version))) continue
+      const version = Number(legacy.version)
+      if (![2, 3, 4, 5].includes(version)) continue
 
       const preset = (legacy.preset ?? 'viral') as SubtitlePresetId
-      const isV4 = legacy.version === 4
+      const hasPresenterState = version >= 4
 
       const migrated: SubtitleSavedSession = {
-        version: 5,
+        version: 6,
         language: typeof legacy.language === 'string' ? legacy.language : 'auto',
         job: (legacy.job ?? null) as SubtitleSavedSession['job'],
         wordOverrides: (legacy.wordOverrides ?? {}) as Record<number, string>,
@@ -72,28 +83,30 @@ export function loadSubtitleSession(): SubtitleSavedSession | null {
           ? legacy.effectColor
           : effectColorForPreset(preset),
         fontScale: typeof legacy.fontScale === 'number' ? legacy.fontScale : 6,
-        position: (legacy.position ?? 'bottom') as SubtitleSavedSession['position'],
+        verticalPosition: verticalPositionFromLegacy(
+          legacy.verticalPosition ?? legacy.position,
+        ),
         maxWords: typeof legacy.maxWords === 'number' ? legacy.maxWords : 5,
         uppercase: Boolean(legacy.uppercase),
         fileName: typeof legacy.fileName === 'string' ? legacy.fileName : null,
-        presentationForm: isV4
+        presentationForm: hasPresenterState
           ? (legacy.presentationForm ?? defaultPresentationForm()) as PresentationForm
           : defaultPresentationForm(),
-        presentationScript: isV4
+        presentationScript: hasPresenterState
           ? (legacy.presentationScript ?? null) as SubtitleSavedSession['presentationScript']
           : null,
-        presentationDraft: isV4 && typeof legacy.presentationDraft === 'string'
+        presentationDraft: hasPresenterState && typeof legacy.presentationDraft === 'string'
           ? legacy.presentationDraft
           : '',
-        voice: isV4 && typeof legacy.voice === 'string' ? legacy.voice : 'Sulafat',
-        voiceStyle: isV4
+        voice: hasPresenterState && typeof legacy.voice === 'string' ? legacy.voice : 'Sulafat',
+        voiceStyle: hasPresenterState
           ? (legacy.voiceStyle ?? 'influencer') as VoiceStyleId
           : 'influencer',
-        generatedVoiceReady: isV4 ? Boolean(legacy.generatedVoiceReady) : false,
-        generatedVoiceSignature: isV4 && typeof legacy.generatedVoiceSignature === 'string'
+        generatedVoiceReady: hasPresenterState ? Boolean(legacy.generatedVoiceReady) : false,
+        generatedVoiceSignature: hasPresenterState && typeof legacy.generatedVoiceSignature === 'string'
           ? legacy.generatedVoiceSignature
           : '',
-        videoMode: isV4
+        videoMode: hasPresenterState
           ? (legacy.videoMode ?? null) as SubtitleSavedSession['videoMode']
           : null,
       }
