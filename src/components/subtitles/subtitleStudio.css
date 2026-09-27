@@ -1271,3 +1271,10 @@
     font-size:9px;
   }
 }
+
+.subtitle-overlay.preset-punch span.active {
+  color:var(--subtitle-active) !important;
+}
+.subtitle-overlay.preset-bubble span.active {
+  color:var(--subtitle-active) !important;
+}
