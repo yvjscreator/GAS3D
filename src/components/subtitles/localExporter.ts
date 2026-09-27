@@ -319,6 +319,7 @@ export async function exportSubtitledVideoLocally({ file, words, options, onProg
 
   const videoTrack = await input.getPrimaryVideoTrack()
   if (!videoTrack) throw new Error('El archivo no contiene una pista de video.')
+  const audioTrack = await input.getPrimaryAudioTrack()
 
   const width = await videoTrack.getDisplayWidth()
   const height = await videoTrack.getDisplayHeight()
@@ -361,12 +362,18 @@ export async function exportSubtitledVideoLocally({ file, words, options, onProg
     },
   })
 
-  if (!conversion.isValid) {
+  const discardedAudio = audioTrack
+    ? conversion.discardedTracks.find((item) => item.track === audioTrack)
+    : null
+
+  if (!conversion.isValid || discardedAudio) {
     const reasons = conversion.discardedTracks.map((item) => item.reason).filter(Boolean).join(' · ')
     throw new Error(
-      reasons
-        ? `Este dispositivo no puede exportar este video en MP4/H.264: ${reasons}`
-        : 'Este dispositivo no puede exportar este video en MP4/H.264 mediante WebCodecs.',
+      discardedAudio
+        ? `Este dispositivo no puede conservar el audio del video en MP4: ${discardedAudio.reason}`
+        : reasons
+          ? `Este dispositivo no puede exportar este video en MP4/H.264: ${reasons}`
+          : 'Este dispositivo no puede exportar este video en MP4/H.264 mediante WebCodecs.',
     )
   }
 
