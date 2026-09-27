@@ -1454,7 +1454,7 @@ export function SubtitleStudio() {
 
       <div
         className="subtitle-sv-plane"
-        style={{ backgroundColor: `hsl(${colorHue} 100% 50%)` }}
+        style={{ backgroundColor: `hsl(${colorHue}, 100%, 50%)` }}
         onPointerDown={handleColorPlane}
         onPointerMove={(event) => {
           if (event.currentTarget.hasPointerCapture(event.pointerId)) handleColorPlane(event)
