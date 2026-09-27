@@ -981,3 +981,233 @@
   font-family:"DM Serif Display", serif;
   font-weight:400;
 }
+
+
+/* AI presenter: explicit source mode, generated voice and diagnostics */
+.subtitle-upload-choice {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.subtitle-upload-choice label {
+  position:relative;
+  min-height:92px;
+  display:grid;
+  align-content:center;
+  justify-items:start;
+  gap:5px;
+  padding:11px;
+  color:#b9c5d1;
+  background:#111922;
+  border:1px solid #2e3b48;
+  border-radius:9px;
+  cursor:pointer;
+}
+.subtitle-upload-choice label:hover,
+.subtitle-upload-choice label.active {
+  color:#eff8ff;
+  background:#183047;
+  border-color:#559ed5;
+}
+.subtitle-upload-choice label:nth-child(2).active {
+  background:#17352a;
+  border-color:#55bb8c;
+}
+.subtitle-upload-choice input { position:absolute; opacity:0; pointer-events:none; }
+.subtitle-upload-choice strong { font-size:9px; }
+.subtitle-upload-choice small { color:#758697; font-size:8px; line-height:1.4; }
+.subtitle-selected-file {
+  min-width:0;
+  display:grid;
+  grid-template-columns:18px minmax(0,1fr) auto;
+  align-items:center;
+  gap:6px;
+  margin-top:8px;
+  padding:7px 8px;
+  color:#9fb0c1;
+  background:#0e161e;
+  border:1px solid #2a3946;
+  border-radius:7px;
+  font-size:8px;
+}
+.subtitle-selected-file span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.subtitle-selected-file b {
+  color:#80cdae;
+  font:7px 'DM Mono',monospace;
+  letter-spacing:.05em;
+}
+.subtitle-ai-presenter { display:grid; gap:9px; }
+.subtitle-ai-badge {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:8px;
+  color:#a7e4c8;
+  background:#13271f;
+  border:1px solid #2b6049;
+  border-radius:7px;
+  font-size:9px;
+  font-weight:800;
+}
+.subtitle-ai-presenter textarea,
+.subtitle-ai-presenter input {
+  width:100%;
+  padding:8px;
+  color:#e9f0f7;
+  background:#0f171f;
+  border:1px solid #31404d;
+  border-radius:6px;
+  outline:none;
+  font-size:9px;
+}
+.subtitle-ai-presenter textarea { min-height:58px; resize:vertical; line-height:1.45; }
+.subtitle-ai-presenter .subtitle-script-editor { min-height:130px; font-size:10px; line-height:1.6; }
+.subtitle-script-summary {
+  display:grid;
+  gap:4px;
+  padding:9px;
+  color:#9eb4c6;
+  background:#121d27;
+  border-left:2px solid #65b8f0;
+}
+.subtitle-script-summary strong { color:#eef6fc; font-size:10px; }
+.subtitle-script-summary span { font-size:8px; line-height:1.45; }
+.subtitle-script-summary small { color:#72a4c5; font:7px 'DM Mono',monospace; }
+.subtitle-two-fields { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.subtitle-voice-preview {
+  display:grid;
+  gap:6px;
+  padding:9px;
+  background:#101d18;
+  border:1px solid #2a5845;
+  border-radius:7px;
+}
+.subtitle-voice-preview>span { display:flex; align-items:center; gap:5px; color:#9de0bf; font-size:9px; font-weight:800; }
+.subtitle-voice-preview audio { width:100%; height:34px; }
+.subtitle-voice-preview small { color:#d5ad6d; font-size:8px; }
+.subtitle-ai-secondary,
+.subtitle-open-text-options {
+  min-height:36px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  padding:7px;
+  color:#c6d6e4;
+  background:#18232d;
+  border:1px solid #34495a;
+  border-radius:7px;
+  font-size:9px;
+  font-weight:800;
+}
+
+.subtitle-ai-logs { display:grid; gap:9px; }
+.subtitle-ai-log-actions { display:flex; flex-wrap:wrap; gap:5px; }
+.subtitle-ai-log-actions button {
+  min-height:31px;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  padding:0 8px;
+  color:#cbd8e4;
+  background:#18232d;
+  border:1px solid #354655;
+  border-radius:6px;
+  font-size:8px;
+}
+.subtitle-ai-logs>p { margin:0; color:#718495; font-size:8px; line-height:1.4; }
+.subtitle-ai-log-list {
+  display:grid;
+  gap:7px;
+  max-height:420px;
+  overflow:auto;
+}
+.subtitle-ai-log-list article {
+  display:grid;
+  gap:5px;
+  padding:8px;
+  color:#a9b9c7;
+  background:#0d141b;
+  border:1px solid #293743;
+  border-left:3px solid #55758f;
+  border-radius:6px;
+}
+.subtitle-ai-log-list article.success { border-left-color:#4db580; }
+.subtitle-ai-log-list article.warning { border-left-color:#cf9843; }
+.subtitle-ai-log-list article.error { border-left-color:#d25b64; }
+.subtitle-ai-log-list header {
+  height:auto;
+  min-height:0;
+  display:flex;
+  justify-content:space-between;
+  margin:0;
+  padding:0;
+  border:0;
+}
+.subtitle-ai-log-list time,
+.subtitle-ai-log-list div {
+  color:#728596;
+  font:7px 'DM Mono',monospace;
+}
+.subtitle-ai-log-list div { display:flex; flex-wrap:wrap; gap:6px; }
+.subtitle-ai-log-list strong { color:#dce5ec; font-size:8px; }
+.subtitle-ai-log-list pre {
+  max-height:150px;
+  margin:0;
+  padding:6px;
+  overflow:auto;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  color:#ffb5b9;
+  background:#251217;
+  border-radius:4px;
+  font:7px/1.45 'DM Mono',monospace;
+}
+.subtitle-desktop-logs {
+  margin-top:2px;
+  color:#93a8b9;
+  background:#0e151c;
+  border:1px solid #293844;
+  border-radius:8px;
+}
+.subtitle-desktop-logs summary {
+  min-height:36px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:0 9px;
+  cursor:pointer;
+  font-size:8px;
+  font-weight:800;
+}
+.subtitle-desktop-logs .subtitle-ai-logs { padding:0 9px 9px; }
+
+@media (max-width:720px) {
+  .subtitle-mobile-tools.five { grid-template-columns:repeat(5,1fr); }
+  .subtitle-mobile-tools.five button { min-height:76px; }
+  .subtitle-mobile-tools.five button:disabled { opacity:.28; }
+  .subtitle-mobile-tools.five span { font-size:8px; }
+  .subtitle-mobile-tools.five button:nth-child(2) svg { color:#9ae0bd; }
+  .subtitle-mobile-tools.five button:nth-child(5) svg { color:#9ca9ff; }
+
+  .subtitle-upload-choice { grid-template-columns:1fr; }
+  .subtitle-upload-choice label { min-height:68px; }
+  .subtitle-upload-choice strong { font-size:11px; }
+  .subtitle-upload-choice small { font-size:9px; }
+
+  .panel-voice .subtitle-mobile-panel-body,
+  .panel-logs .subtitle-mobile-panel-body {
+    padding:12px 14px max(18px,env(safe-area-inset-bottom));
+  }
+  .subtitle-ai-presenter input,
+  .subtitle-ai-presenter textarea,
+  .subtitle-ai-presenter .subtitle-field select {
+    font-size:11px;
+  }
+  .subtitle-ai-presenter .subtitle-script-editor { min-height:150px; font-size:12px; }
+  .subtitle-script-summary strong { font-size:12px; }
+  .subtitle-script-summary span { font-size:10px; }
+  .subtitle-ai-log-list { max-height:31dvh; }
+  .subtitle-ai-log-list strong { font-size:9px; }
+  .subtitle-ai-log-list pre { font-size:8px; }
+}
