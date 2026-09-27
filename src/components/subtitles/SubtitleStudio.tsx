@@ -1475,7 +1475,7 @@ export function SubtitleStudio() {
 
     return <div className={`subtitle-mobile-panel panel-${mobilePanel}`}>
       <header>
-        <button onClick={() => setMobilePanel('main')}><X size={22} /></button>
+        <button onClick={() => setMobilePanel('main')}><ArrowLeft size={20} /></button>
         <strong>{title}</strong>
         <button onClick={() => setMobilePanel('main')}><Check size={23} /></button>
       </header>
@@ -1500,7 +1500,7 @@ export function SubtitleStudio() {
   }
 
   return <main className="subtitle-studio">
-    {isMobile ? <section className="subtitle-mobile-editor">
+    {isMobile ? <section className={mobilePanel === 'main' ? 'subtitle-mobile-editor' : 'subtitle-mobile-editor tool-active'}>
       <header className="subtitle-mobile-header">
         <button onClick={() => { window.location.hash = '' }}><ArrowLeft size={25} /></button>
         <strong>Subtitle Studio</strong>
