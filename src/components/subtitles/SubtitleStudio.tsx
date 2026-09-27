@@ -1034,21 +1034,9 @@ export function SubtitleStudio() {
     return <div className="subtitle-ai-presenter">
       <div className="subtitle-ai-badge"><Sparkles size={15} /> Gemini Creative Presenter</div>
 
-      <div className="subtitle-field">
+      <label className="subtitle-field">
         <span>Tipo de presentación</span>
-        {isMobile ? <div className="subtitle-horizontal-options" role="list">
-          {presentationTypes.map(([value, label]) => <button
-            key={value}
-            type="button"
-            className={presentationForm.presentationType === value ? 'active' : ''}
-            onClick={() => setPresentationForm((current) => ({
-              ...current,
-              presentationType: value,
-            }))}
-          >
-            {label}
-          </button>)}
-        </div> : <select
+        <select
           value={presentationForm.presentationType}
           onChange={(event) => setPresentationForm((current) => ({
             ...current,
@@ -1056,8 +1044,8 @@ export function SubtitleStudio() {
           }))}
         >
           {presentationTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>}
-      </div>
+        </select>
+      </label>
 
       <label className="subtitle-field">
         <span>Producto</span>
@@ -1095,25 +1083,9 @@ export function SubtitleStudio() {
         />
       </label>
 
-      <div className="subtitle-field">
+      <label className="subtitle-field">
         <span>Idioma / acento</span>
-        {isMobile ? <div className="subtitle-horizontal-options" role="list">
-          {[
-            ['es-LATAM', 'Latino neutro'],
-            ['es-CL', 'Chile'],
-            ['es-AR', 'Argentina'],
-            ['es-VE', 'Venezuela'],
-            ['en-US', 'English US'],
-            ['pt-BR', 'Português BR'],
-          ].map(([value, label]) => <button
-            key={value}
-            type="button"
-            className={presentationForm.language === value ? 'active' : ''}
-            onClick={() => setPresentationForm((current) => ({ ...current, language: value }))}
-          >
-            {label}
-          </button>)}
-        </div> : <select
+        <select
           value={presentationForm.language}
           onChange={(event) => setPresentationForm((current) => ({ ...current, language: event.target.value }))}
         >
@@ -1123,8 +1095,8 @@ export function SubtitleStudio() {
           <option value="es-VE">Español venezolano</option>
           <option value="en-US">Inglés estadounidense</option>
           <option value="pt-BR">Portugués brasileño</option>
-        </select>}
-      </div>
+        </select>
+      </label>
 
       {presentationScript && <>
         <div className="subtitle-script-summary">
@@ -1142,35 +1114,7 @@ export function SubtitleStudio() {
           />
         </label>
 
-        {isMobile ? <>
-          <div className="subtitle-field">
-            <span>Voz</span>
-            <div className="subtitle-horizontal-options" role="list">
-              {voices.map((item) => <button
-                key={item}
-                type="button"
-                className={voice === item ? 'active' : ''}
-                onClick={() => setVoice(item)}
-              >
-                {item}
-              </button>)}
-            </div>
-          </div>
-
-          <div className="subtitle-field">
-            <span>Estilo</span>
-            <div className="subtitle-horizontal-options" role="list">
-              {voiceStyles.map(([value, label]) => <button
-                key={value}
-                type="button"
-                className={voiceStyle === value ? 'active' : ''}
-                onClick={() => setVoiceStyle(value)}
-              >
-                {label}
-              </button>)}
-            </div>
-          </div>
-        </> : <div className="subtitle-two-fields">
+        <div className="subtitle-two-fields">
           <label className="subtitle-field">
             <span>Voz</span>
             <select value={voice} onChange={(event) => setVoice(event.target.value)}>
@@ -1184,7 +1128,7 @@ export function SubtitleStudio() {
               {voiceStyles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-        </div>}
+        </div>
 
         {generatedAudioUrl && <div className="subtitle-voice-preview">
           <span><Mic2 size={15} /> Voz generada</span>
@@ -1213,7 +1157,53 @@ export function SubtitleStudio() {
     </button>)}
   </div>
 
-  const renderTextControls = () => <>
+  const renderTextControls = () => isMobile ? (
+    <div className="subtitle-mobile-customize-strip">
+      <label className="subtitle-mobile-control-card color">
+        <span>Texto</span>
+        <input type="color" value={baseColor} onChange={(event) => setBaseColor(event.target.value)} />
+        <small>{baseColor.toUpperCase()}</small>
+      </label>
+
+      <label className="subtitle-mobile-control-card color">
+        <span>Activa</span>
+        <input type="color" value={activeColor} onChange={(event) => setActiveColor(event.target.value)} />
+        <small>{activeColor.toUpperCase()}</small>
+      </label>
+
+      <label className="subtitle-mobile-control-card color">
+        <span>Contorno</span>
+        <input type="color" value={outlineColor} onChange={(event) => setOutlineColor(event.target.value)} />
+        <small>{outlineColor.toUpperCase()}</small>
+      </label>
+
+      <label className="subtitle-mobile-control-card color">
+        <span>Efecto</span>
+        <input type="color" value={effectColor} onChange={(event) => setEffectColor(event.target.value)} />
+        <small>{effectColor.toUpperCase()}</small>
+      </label>
+
+      <div className="subtitle-mobile-control-card words">
+        <span>Palabras</span>
+        <div>
+          <button type="button" onClick={() => setMaxWords((value) => Math.max(2, value - 1))}>−</button>
+          <strong>{maxWords}</strong>
+          <button type="button" onClick={() => setMaxWords((value) => Math.min(8, value + 1))}>+</button>
+        </div>
+        <small>por bloque</small>
+      </div>
+
+      <button
+        type="button"
+        className={uppercase ? 'subtitle-mobile-control-card toggle active' : 'subtitle-mobile-control-card toggle'}
+        onClick={() => setUppercase((value) => !value)}
+      >
+        <span>Mayúsculas</span>
+        <strong>Aa</strong>
+        <small>{uppercase ? 'Activado' : 'Desactivado'}</small>
+      </button>
+    </div>
+  ) : <>
     <div className="subtitle-color-grid">
       <label><span>Texto</span><input type="color" value={baseColor} onChange={(event) => setBaseColor(event.target.value)} /></label>
       <label><span>Palabra activa</span><input type="color" value={activeColor} onChange={(event) => setActiveColor(event.target.value)} /></label>
@@ -1395,7 +1385,13 @@ export function SubtitleStudio() {
         {mobilePanel === 'voice' && renderVoiceControls()}
         {mobilePanel === 'style' && <>
           {renderPresetControls()}
-          <button className="subtitle-open-text-options" onClick={() => setMobilePanel('text')}>Personalizar texto</button>
+          <div className="subtitle-style-selection-bar">
+            <span>
+              <small>Seleccionado</small>
+              <strong>{getSubtitlePreset(preset).name}</strong>
+            </span>
+            <button type="button" onClick={() => setMobilePanel('text')}>Personalizar</button>
+          </div>
         </>}
         {mobilePanel === 'text' && renderTextControls()}
         {mobilePanel === 'transcript' && renderTranscript()}
