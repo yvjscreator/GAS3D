@@ -58,6 +58,7 @@ export function loadSubtitleSession(): SubtitleSavedSession | null {
         voice: 'Sulafat',
         voiceStyle: 'influencer' as VoiceStyleId,
         generatedVoiceReady: false,
+        generatedVoiceSignature: '',
         videoMode: null,
       }
 
