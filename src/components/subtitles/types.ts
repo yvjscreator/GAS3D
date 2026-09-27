@@ -31,6 +31,18 @@ export type SubtitleJob = {
   error: string | null
 }
 
+export type SubtitleExportStatus = 'queued' | 'exporting' | 'ready' | 'error'
+
+export type SubtitleExportJob = {
+  id: string
+  jobId: string
+  status: SubtitleExportStatus
+  progress: number
+  message: string
+  fileName: string | null
+  error: string | null
+}
+
 export type SubtitlePresetId = 'viral' | 'clean' | 'punch' | 'neon' | 'karaoke' | 'cinema'
 
 export type SubtitleExportOptions = {
@@ -43,4 +55,21 @@ export type SubtitleExportOptions = {
   maxWords: number
   uppercase: boolean
   wordOverrides: Record<number, string>
+}
+
+export type SubtitleSavedSession = {
+  version: 2
+  language: string
+  job: SubtitleJob | null
+  exportJob: SubtitleExportJob | null
+  wordOverrides: Record<number, string>
+  preset: SubtitlePresetId
+  baseColor: string
+  activeColor: string
+  outlineColor: string
+  fontScale: number
+  position: SubtitleExportOptions['position']
+  maxWords: number
+  uppercase: boolean
+  fileName: string | null
 }
