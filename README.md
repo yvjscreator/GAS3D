@@ -57,7 +57,7 @@ No existen equivalentes TTS 3.7/3.6/3.5, por eso no se simula una degradación i
 
 Gemini 3.5 Transcribe se reintenta sobre el modelo especializado porque es el que entrega los timestamps por palabra que necesita Subtitle Studio.
 
-Por defecto hay 3 intentos por modelo y esperas configurables.
+Por defecto hay 1 intento inicial + 3 reintentos por modelo, con esperas configurables.
 
 ### Logs IA
 
@@ -129,7 +129,7 @@ Backend:
 - `GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe`
 - `GEMINI_SCRIPT_MODELS=gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash`
 - `GEMINI_TTS_MODELS=gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts`
-- `AI_ATTEMPTS_PER_MODEL=3`
+- `AI_RETRIES_PER_MODEL=3`
 - `AI_RETRY_DELAYS=1.5,3,6`
 
 Frontend:
