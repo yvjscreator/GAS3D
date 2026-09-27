@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  ChevronsDown,
+  ChevronsUp,
   Copy,
   Download,
   FileVideo2,
@@ -126,6 +128,15 @@ const transcriptionLanguage = (locale: string) => {
   return 'auto'
 }
 
+const presentationSignature = (form: PresentationForm) => JSON.stringify([
+  form.presentationType,
+  form.product.trim(),
+  form.highlights.trim(),
+  form.audience.trim(),
+  form.cta.trim(),
+  form.language,
+])
+
 const voiceSignature = (script: string, voice: string, style: VoiceStyleId, language: string) =>
   [script.trim(), voice, style, language].join('|')
 
@@ -179,6 +190,7 @@ export function SubtitleStudio() {
   const [restoring, setRestoring] = useState(true)
   const [hydrated, setHydrated] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('main')
+  const [mobilePanelCollapsed, setMobilePanelCollapsed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [storageNotice, setStorageNotice] = useState<string | null>(null)
   const [wordOverrides, setWordOverrides] = useState<Record<number, string>>({})
@@ -197,6 +209,7 @@ export function SubtitleStudio() {
   const [presentationForm, setPresentationForm] = useState<PresentationForm>(defaultPresentationForm)
   const [presentationScript, setPresentationScript] = useState<PresentationScript | null>(null)
   const [presentationDraft, setPresentationDraft] = useState('')
+  const [generatedScriptSignature, setGeneratedScriptSignature] = useState('')
   const [voice, setVoice] = useState('Sulafat')
   const [voiceCatalog, setVoiceCatalog] = useState<GeminiVoice[]>([])
   const [voiceCatalogLoading, setVoiceCatalogLoading] = useState(false)
@@ -212,6 +225,16 @@ export function SubtitleStudio() {
   const [clientAiLogs, setClientAiLogs] = useState<string[]>([])
 
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 720px)').matches)
+
+  const openMobilePanel = (panel: Exclude<MobilePanel, 'main'>) => {
+    setMobilePanelCollapsed(false)
+    setMobilePanel(panel)
+  }
+
+  const closeMobilePanel = () => {
+    setMobilePanelCollapsed(false)
+    setMobilePanel('main')
+  }
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 720px)')
@@ -282,6 +305,7 @@ export function SubtitleStudio() {
         setPresentationForm(saved.presentationForm ?? defaultPresentationForm())
         setPresentationScript(saved.presentationScript)
         setPresentationDraft(saved.presentationDraft ?? '')
+        setGeneratedScriptSignature(saved.generatedScriptSignature ?? '')
         setVoice(saved.voice || 'Sulafat')
         setVoiceStyle(saved.voiceStyle || 'influencer')
         setGeneratedVoiceSignature(saved.generatedVoiceSignature ?? '')
@@ -324,7 +348,7 @@ export function SubtitleStudio() {
   useEffect(() => {
     if (!hydrated) return
     const session: SubtitleSavedSession = {
-      version: 6,
+      version: 7,
       language,
       job,
       wordOverrides,
@@ -341,6 +365,7 @@ export function SubtitleStudio() {
       presentationForm,
       presentationScript,
       presentationDraft,
+      generatedScriptSignature,
       voice,
       voiceStyle,
       generatedVoiceReady: Boolean(generatedAudio),
@@ -366,6 +391,7 @@ export function SubtitleStudio() {
     presentationForm,
     presentationScript,
     presentationDraft,
+    generatedScriptSignature,
     voice,
     voiceStyle,
     generatedAudio,
@@ -473,14 +499,18 @@ export function SubtitleStudio() {
   const transcribing = Boolean(job && ['queued', 'transcribing'].includes(job.status))
   const exporting = localExport.status === 'checking' || localExport.status === 'exporting'
   const generatedLanguage = job?.language ?? 'auto'
+  const currentScriptSignature = presentationSignature(presentationForm)
+  const scriptIsFresh = Boolean(
+    presentationScript && generatedScriptSignature === currentScriptSignature,
+  )
   const currentVoiceSignature = voiceSignature(presentationDraft, voice, voiceStyle, presentationForm.language)
   const voiceIsFresh = Boolean(generatedAudio && generatedVoiceSignature === currentVoiceSignature)
   const subtitlesCurrent = videoMode === 'without_voice'
-    ? Boolean(job?.status === 'ready' && voiceIsFresh)
+    ? Boolean(job?.status === 'ready' && voiceIsFresh && scriptIsFresh)
     : Boolean(job?.status === 'ready' && generatedLanguage === language)
 
   const primaryMode: PrimaryMode = videoMode === 'without_voice'
-    ? !presentationScript
+    ? !scriptIsFresh
       ? 'script'
       : !voiceIsFresh || job?.status !== 'ready'
         ? 'voice'
@@ -522,6 +552,7 @@ export function SubtitleStudio() {
       setWordOverrides({})
       setPresentationScript(null)
       setPresentationDraft('')
+      setGeneratedScriptSignature('')
       await resetGeneratedVoice()
     }
 
@@ -536,7 +567,7 @@ export function SubtitleStudio() {
       setStorageNotice('El navegador no pudo guardar una copia local del video. El resto del proyecto sí se conservará.')
     }
 
-    setMobilePanel(mode === 'without_voice' ? 'voice' : 'video')
+    openMobilePanel(mode === 'without_voice' ? 'voice' : 'video')
   }
 
   const startTranscription = async (sourceFile = file, selectedLanguage = language) => {
@@ -576,14 +607,16 @@ export function SubtitleStudio() {
 
     setError(null)
     setAiBusy('script')
+    const signature = presentationSignature(presentationForm)
     appendClientLog('Iniciando análisis visual y generación de guion.')
 
     try {
       const result = await generatePresentationScript(file, presentationForm)
       setPresentationScript(result)
       setPresentationDraft(result.script)
+      setGeneratedScriptSignature(signature)
       await resetGeneratedVoice()
-      setMobilePanel('voice')
+      openMobilePanel('voice')
       appendClientLog('Guion generado correctamente.')
       void refreshLogs()
     } catch (cause) {
@@ -656,6 +689,7 @@ export function SubtitleStudio() {
     setPresentationForm(defaultPresentationForm())
     setPresentationScript(null)
     setPresentationDraft('')
+    setGeneratedScriptSignature('')
     setVoice('Sulafat')
     setVoiceStyle('influencer')
     setGeneratedAudio(null)
@@ -1182,7 +1216,10 @@ export function SubtitleStudio() {
           <textarea
             className="subtitle-script-editor"
             value={presentationDraft}
-            onChange={(event) => setPresentationDraft(event.target.value)}
+            onChange={(event) => {
+              setPresentationDraft(event.target.value)
+              setGeneratedVoiceSignature('')
+            }}
           />
         </label>
 
@@ -1224,7 +1261,10 @@ export function SubtitleStudio() {
                 key={item.id}
                 type="button"
                 className={voice === item.id ? 'active' : ''}
-                onClick={() => setVoice(item.id)}
+                onClick={() => {
+                  if (item.id !== voice) setGeneratedVoiceSignature('')
+                  setVoice(item.id)
+                }}
                 title={item.description ?? item.persona ?? item.displayName}
               >
                 <i className={`gender-${item.gender}`} aria-hidden="true">{voiceGenderIcon(item.gender)}</i>
@@ -1241,7 +1281,11 @@ export function SubtitleStudio() {
 
           <label className="subtitle-field subtitle-voice-style-field">
             <span>Estilo</span>
-            <select value={voiceStyle} onChange={(event) => setVoiceStyle(event.target.value as VoiceStyleId)}>
+            <select value={voiceStyle} onChange={(event) => {
+              const next = event.target.value as VoiceStyleId
+              if (next !== voiceStyle) setGeneratedVoiceSignature('')
+              setVoiceStyle(next)
+            }}>
               {voiceStyles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
@@ -1254,10 +1298,6 @@ export function SubtitleStudio() {
         </div>}
       </>}
 
-      <button className="subtitle-ai-secondary" disabled={!file || aiBusy !== null} onClick={() => void createAiScript()}>
-        {aiBusy === 'script' ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}
-        {presentationScript ? 'Regenerar guion' : 'Crear guion con Gemini'}
-      </button>
     </div>
   }
 
@@ -1481,14 +1521,14 @@ export function SubtitleStudio() {
     (primaryMode === 'export' && (job?.status !== 'ready' || (videoMode === 'without_voice' && !voiceIsFresh)))
 
   const primaryLabel =
-    aiBusy === 'script' ? 'Analizando video…' :
+    aiBusy === 'script' ? 'Generando guion…' :
     aiBusy === 'voice' ? 'Generando voz…' :
-    transcribing ? 'Sincronizando…' :
-    primaryMode === 'script' ? 'Crear guion' :
-    primaryMode === 'voice' ? 'Generar voz' :
+    transcribing ? 'Generando subtítulos…' :
+    primaryMode === 'script' ? 'Generar guion' :
+    primaryMode === 'voice' ? 'Generar voz y subtítulos' :
     primaryMode === 'generate' ? 'Generar subtítulos' :
     exporting ? `Exportando ${Math.round(localExport.progress * 100)}%` :
-    'Exportar MP4'
+    'Exportar'
 
   const primaryIcon =
     aiBusy || uploading || transcribing || exporting
@@ -1500,11 +1540,11 @@ export function SubtitleStudio() {
   const renderMobilePanel = () => {
     if (mobilePanel === 'main') {
       return <nav className="subtitle-mobile-tools five" aria-label="Herramientas">
-        <button onClick={() => setMobilePanel('video')}><Upload size={22} /><span>Video</span></button>
-        <button onClick={() => setMobilePanel('voice')} disabled={videoMode !== 'without_voice'}><Mic2 size={22} /><span>Voz IA</span></button>
-        <button onClick={() => setMobilePanel('style')}><Palette size={22} /><span>Estilo</span></button>
-        <button onClick={() => setMobilePanel('transcript')}><Languages size={22} /><span>Subtítulos</span></button>
-        <button onClick={() => setMobilePanel('logs')}><SquareTerminal size={22} /><span>Logs IA</span></button>
+        <button onClick={() => openMobilePanel('video')}><Upload size={22} /><span>Video</span></button>
+        <button onClick={() => openMobilePanel('voice')} disabled={videoMode !== 'without_voice'}><Mic2 size={22} /><span>Voz IA</span></button>
+        <button onClick={() => openMobilePanel('style')}><Palette size={22} /><span>Estilo</span></button>
+        <button onClick={() => openMobilePanel('transcript')}><Languages size={22} /><span>Subtítulos</span></button>
+        <button onClick={() => openMobilePanel('logs')}><SquareTerminal size={22} /><span>Logs IA</span></button>
       </nav>
     }
 
@@ -1517,9 +1557,16 @@ export function SubtitleStudio() {
 
     return <div className={`subtitle-mobile-panel panel-${mobilePanel}`}>
       <header>
-        <button onClick={() => setMobilePanel('main')}><ArrowLeft size={20} /></button>
+        <button onClick={closeMobilePanel} aria-label="Volver a herramientas"><ArrowLeft size={20} /></button>
         <strong>{title}</strong>
-        <button onClick={() => setMobilePanel('main')}><Check size={23} /></button>
+        <button
+          className="subtitle-panel-collapse"
+          onClick={() => setMobilePanelCollapsed((value) => !value)}
+          aria-label={mobilePanelCollapsed ? 'Mostrar herramienta' : 'Ocultar herramienta'}
+        >
+          {mobilePanelCollapsed ? <ChevronsUp size={20} /> : <ChevronsDown size={20} />}
+        </button>
+        <button onClick={closeMobilePanel} aria-label="Guardar cambios"><Check size={22} /></button>
       </header>
       <div className="subtitle-mobile-panel-body">
         {mobilePanel === 'video' && renderVideoControls()}
@@ -1531,7 +1578,7 @@ export function SubtitleStudio() {
               <small>Seleccionado</small>
               <strong>{getSubtitlePreset(preset).name}</strong>
             </span>
-            <button type="button" onClick={() => setMobilePanel('text')}>Personalizar</button>
+            <button type="button" onClick={() => openMobilePanel('text')}>Personalizar</button>
           </div>
         </>}
         {mobilePanel === 'text' && renderTextControls()}
@@ -1542,7 +1589,13 @@ export function SubtitleStudio() {
   }
 
   return <main className="subtitle-studio">
-    {isMobile ? <section className={mobilePanel === 'main' ? 'subtitle-mobile-editor' : 'subtitle-mobile-editor tool-active'}>
+    {isMobile ? <section className={
+      mobilePanel === 'main'
+        ? 'subtitle-mobile-editor'
+        : mobilePanelCollapsed
+          ? 'subtitle-mobile-editor tool-active tool-collapsed'
+          : 'subtitle-mobile-editor tool-active'
+    }>
       <header className="subtitle-mobile-header">
         <button onClick={() => { window.location.hash = '' }}><ArrowLeft size={25} /></button>
         <strong>Subtitle Studio</strong>
@@ -1552,7 +1605,7 @@ export function SubtitleStudio() {
           onClick={() => void runPrimaryAction()}
         >
           {primaryIcon}
-          <span>{primaryMode === 'export' ? 'Exportar' : primaryMode === 'script' ? 'Guion' : primaryMode === 'voice' ? 'Voz' : 'Generar'}</span>
+          <span>{primaryLabel}</span>
         </button>
       </header>
 
