@@ -280,7 +280,7 @@ const drawSubtitleFrame = (
     }
 
     const fillColor = options.preset === 'punch' && isActive
-      ? '#FFFFFF'
+      ? options.activeColor
       : options.preset === 'bubble' && isActive
         ? options.activeColor
         : isActive
