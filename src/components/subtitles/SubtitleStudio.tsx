@@ -108,6 +108,15 @@ export function SubtitleStudio() {
   const [position, setPosition] = useState<SubtitleExportOptions['position']>('bottom')
   const [maxWords, setMaxWords] = useState(5)
   const [uppercase, setUppercase] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 720px)').matches)
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 720px)')
+    const sync = () => setIsMobile(media.matches)
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
 
   useEffect(() => {
     if (restoredRef.current) return
@@ -541,7 +550,7 @@ export function SubtitleStudio() {
   }
 
   return <main className="subtitle-studio">
-    <section className="subtitle-mobile-editor">
+    {isMobile ? <section className="subtitle-mobile-editor">
       <header className="subtitle-mobile-header">
         <button onClick={() => { window.location.hash = '' }} aria-label="Volver a 3D Studio"><ArrowLeft size={25} /></button>
         <strong>Subtitle Studio</strong>
@@ -591,9 +600,7 @@ export function SubtitleStudio() {
       <div className="subtitle-mobile-dock">
         {renderMobilePanel()}
       </div>
-    </section>
-
-    <section className="subtitle-desktop-editor">
+    </section> : <section className="subtitle-desktop-editor">
       <header className="subtitle-header">
         <div>
           <span className="subtitle-kicker">GAS3D · herramienta aislada</span>
@@ -642,6 +649,6 @@ export function SubtitleStudio() {
           {renderTranscript()}
         </aside>
       </section>
-    </section>
+    </section>}
   </main>
 }
