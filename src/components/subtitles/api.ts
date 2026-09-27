@@ -10,6 +10,8 @@ import type {
 const apiRoot = (import.meta.env.VITE_SUBTITLE_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
 const apiBase = `${apiRoot}/api/subtitles`
 const AI_SESSION_KEY = 'gas3d.ai.session.v1'
+const VOICE_CATALOG_CACHE_KEY = 'gas3d.ai.voice-catalog.v1'
+const VOICE_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
 
 export const getAiSessionId = () => {
   try {
@@ -73,10 +75,47 @@ export async function generatePresentationScript(file: File, form: PresentationF
   }))
 }
 
-export async function getPresentationVoices() {
-  return expectJson<GeminiVoiceCatalog>(await fetch(`${apiBase}/presentation/voices`, {
-    headers: aiHeaders(),
-  }))
+export async function getPresentationVoices(forceRefresh = false) {
+  let stale: GeminiVoiceCatalog | null = null
+
+  try {
+    const raw = localStorage.getItem(VOICE_CATALOG_CACHE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as {
+        expiresAt?: number
+        catalog?: GeminiVoiceCatalog
+      }
+
+      if (parsed.catalog?.voices?.length) {
+        stale = parsed.catalog
+        if (!forceRefresh && Number(parsed.expiresAt) > Date.now()) {
+          return { ...parsed.catalog, cached: true }
+        }
+      }
+    }
+  } catch {
+    // Ignore malformed/restricted browser storage.
+  }
+
+  try {
+    const catalog = await expectJson<GeminiVoiceCatalog>(await fetch(`${apiBase}/presentation/voices`, {
+      headers: aiHeaders(),
+    }))
+
+    try {
+      localStorage.setItem(VOICE_CATALOG_CACHE_KEY, JSON.stringify({
+        expiresAt: Date.now() + VOICE_CATALOG_TTL_MS,
+        catalog,
+      }))
+    } catch {
+      // The server cache still protects the Gemini API if local storage is unavailable.
+    }
+
+    return catalog
+  } catch (error) {
+    if (stale) return { ...stale, cached: true }
+    throw error
+  }
 }
 
 export async function generatePresentationVoice(
