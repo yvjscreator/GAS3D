@@ -47,7 +47,7 @@ TRANSCRIBE_MODELS = [
     ).split(",")
     if item.strip()
 ]
-AI_ATTEMPTS_PER_MODEL = max(1, int(os.getenv("AI_ATTEMPTS_PER_MODEL", "3")))
+AI_RETRIES_PER_MODEL = max(0, int(os.getenv("AI_RETRIES_PER_MODEL", "3")))
 AI_RETRY_DELAYS = [
     float(item.strip())
     for item in os.getenv("AI_RETRY_DELAYS", "1.5,3,6").split(",")
@@ -238,7 +238,7 @@ def _run_ai_with_fallback(
     last_error: Exception | None = None
 
     for model_index, model in enumerate(models):
-        for attempt in range(1, AI_ATTEMPTS_PER_MODEL + 1):
+        for attempt in range(1, AI_RETRIES_PER_MODEL + 2):
             started = time.monotonic()
             _log_ai(
                 session_id,
@@ -279,7 +279,7 @@ def _run_ai_with_fallback(
                 if not retryable:
                     raise
 
-                if attempt < AI_ATTEMPTS_PER_MODEL:
+                if attempt <= AI_RETRIES_PER_MODEL:
                     delay = _retry_delay(attempt)
                     _log_ai(
                         session_id,
@@ -298,7 +298,7 @@ def _run_ai_with_fallback(
                 "warning",
                 f"Degradando al siguiente modelo: {models[model_index + 1]}.",
                 model=model,
-                attempt=AI_ATTEMPTS_PER_MODEL,
+                attempt=AI_RETRIES_PER_MODEL + 1,
                 error=last_error,
             )
 
@@ -629,7 +629,7 @@ def health() -> dict:
         "scriptModels": SCRIPT_MODELS,
         "ttsModels": TTS_MODELS,
         "transcribeModels": TRANSCRIBE_MODELS,
-        "attemptsPerModel": AI_ATTEMPTS_PER_MODEL,
+        "retriesPerModel": AI_RETRIES_PER_MODEL,
         "configured": bool(GEMINI_API_KEY),
         "videoExport": "browser-webcodecs",
     }
