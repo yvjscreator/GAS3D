@@ -225,7 +225,7 @@ const drawSubtitleFrame = (
     return time >= word.start - 0.03 && time < boundary
   }) ?? captionWords[captionWords.length - 1]
 
-  const fontSize = Math.max(24, Math.round(height * options.fontScale / 100))
+  const fontSize = Math.max(1, Math.round(height * options.fontScale / 100))
   const lineHeight = fontSize * 1.12
   const maxWidth = width * 0.86
   const fontFamily = fontFamilyForPreset(options.preset)
