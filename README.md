@@ -20,7 +20,7 @@ Al cargar un archivo se elige:
 - **Subir video con voz**: Gemini 3.5 Transcribe genera timestamps por palabra y el usuario corrige el texto inline.
 - **Subir video sin voz**: Gemini analiza visualmente el video, propone un guion, Gemini TTS genera la voz y ese audio se vuelve a transcribir para sincronizar los subtítulos reales.
 
-En el modo sin voz, cualquier audio original del archivo se ignora en preview/exportación. La voz generada reemplaza la pista.
+En el modo sin voz, la voz generada se mezcla con el audio original del archivo. Así se conservan efectos de sonido, logos animados y otros sonidos existentes.
 
 ### Pipeline creativo
 
@@ -31,7 +31,7 @@ En el modo sin voz, cualquier audio original del archivo se ignora en preview/ex
 5. Gemini 3.5 Transcribe obtiene timestamps reales de esa locución.
 6. Mediabunny + WebCodecs renderizan localmente el MP4 con voz y subtítulos animados.
 
-La exportación final **no ocurre en Render**. El teléfono o PC usa WebCodecs y Canvas, por lo que no depende de la CPU gratuita de Render para codificar video.
+La exportación final **no ocurre en Render**. El teléfono o PC usa WebCodecs y Canvas, conserva la resolución original y recodifica el video con una calidad alta basada en el bitrate del archivo de entrada.
 
 ### Catálogo de voces Gemini
 
@@ -119,7 +119,12 @@ El editor móvil ocupa exactamente el viewport disponible:
 - no hay scroll de página durante la edición;
 - los paneles largos se desplazan dentro del dock y el teclado puede reducir temporalmente el viewport.
 
+### Futuro: edición de voz por bloques
+
+Pendiente para una fase posterior: dividir la locución de Gemini en bloques independientes sobre una pista de audio, permitiendo mover cada bloque temporalmente para ajustar con precisión cuándo comienza y termina respecto del video.
+
 ### Persistencia
+
 
 - Proyecto, guion, transcripción, correcciones y estilo: `localStorage`.
 - Video original y voz generada: IndexedDB cuando el navegador lo permite.
