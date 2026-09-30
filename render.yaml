@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: gas3d-subtitle-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r services/subtitle_engine/requirements.txt
+    startCommand: python -m uvicorn subtitle_engine.app:app --app-dir services --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/subtitles/health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SUBTITLE_CORS_ORIGINS
+        sync: false
+      - key: GEMINI_TRANSCRIBE_MODEL
+        value: gemini-3.5-transcribe
+      - key: GEMINI_SCRIPT_MODELS
+        value: gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash
+      - key: GEMINI_TTS_MODELS
+        value: gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts
+      - key: AI_RETRIES_PER_MODEL
+        value: "3"
+      - key: AI_RETRY_DELAYS
+        value: 1.5,3,6
+      - key: VOICE_CATALOG_TTL_SECONDS
+        value: "86400"
