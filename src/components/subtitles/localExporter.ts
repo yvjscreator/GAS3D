@@ -1,5 +1,7 @@
 import {
   ALL_FORMATS,
+  AudioBufferSink,
+  AudioBufferSource,
   BlobSource,
   BufferTarget,
   Conversion,
@@ -365,6 +367,95 @@ const drawSubtitleFrame = (
   ctx.restore()
 }
 
+const getSourceVideoBitrate = async (videoTrack: Awaited<ReturnType<Input['getPrimaryVideoTrack']>>) => {
+  if (!videoTrack) return null
+
+  try {
+    const metadataBitrate = await videoTrack.getAverageBitrate() ?? await videoTrack.getBitrate()
+    if (metadataBitrate && Number.isFinite(metadataBitrate) && metadataBitrate > 0) {
+      return metadataBitrate
+    }
+  } catch {
+    // Some containers don't expose bitrate metadata.
+  }
+
+  try {
+    const stats = await videoTrack.computePacketStats(50)
+    if (stats.averageBitrate && Number.isFinite(stats.averageBitrate)) {
+      return stats.averageBitrate
+    }
+  } catch {
+    // Fall back to Mediabunny's qualitative quality mapping.
+  }
+
+  return null
+}
+
+const scheduleAudioTrack = async (
+  context: OfflineAudioContext,
+  track: NonNullable<Awaited<ReturnType<Input['getPrimaryAudioTrack']>>>,
+  maxDuration: number,
+) => {
+  const sink = new AudioBufferSink(track)
+
+  for await (const wrapped of sink.buffers()) {
+    if (wrapped.timestamp >= maxDuration) break
+
+    const start = Math.max(0, wrapped.timestamp)
+    const offset = wrapped.timestamp < 0 ? -wrapped.timestamp : 0
+    const playable = Math.min(
+      wrapped.buffer.duration - offset,
+      maxDuration - start,
+    )
+
+    if (playable <= 0) continue
+
+    const source = context.createBufferSource()
+    source.buffer = wrapped.buffer
+    source.connect(context.destination)
+    source.start(start, offset, playable)
+  }
+}
+
+const mixOriginalAndGeneratedAudio = async (
+  originalTrack: NonNullable<Awaited<ReturnType<Input['getPrimaryAudioTrack']>>>,
+  voiceTrack: NonNullable<Awaited<ReturnType<Input['getPrimaryAudioTrack']>>>,
+  duration: number,
+) => {
+  if (typeof OfflineAudioContext === 'undefined') {
+    throw new Error(
+      'Este navegador no permite mezclar el audio original con la voz generada localmente.',
+    )
+  }
+
+  const [originalRate, voiceRate, originalChannels, voiceChannels] = await Promise.all([
+    originalTrack.getSampleRate(),
+    voiceTrack.getSampleRate(),
+    originalTrack.getNumberOfChannels(),
+    voiceTrack.getNumberOfChannels(),
+  ])
+
+  const sampleRate = Math.min(48_000, Math.max(44_100, originalRate, voiceRate))
+  const channels = Math.min(2, Math.max(1, originalChannels, voiceChannels))
+  const frameCount = Math.max(1, Math.ceil(duration * sampleRate))
+  const estimatedBytes = frameCount * channels * 4
+
+  if (estimatedBytes > 320 * 1024 * 1024) {
+    throw new Error(
+      'El video es demasiado largo para mezclar audio localmente sin arriesgar la memoria del dispositivo.',
+    )
+  }
+
+  const context = new OfflineAudioContext(channels, frameCount, sampleRate)
+
+  await Promise.all([
+    scheduleAudioTrack(context, originalTrack, duration),
+    scheduleAudioTrack(context, voiceTrack, duration),
+  ])
+
+  return context.startRendering()
+}
+
 export async function exportSubtitledVideoLocally({ file, words, options, generatedAudio = null, onProgress }: LocalExportRequest) {
   if (!('VideoEncoder' in window) || !('VideoDecoder' in window)) {
     throw new Error('Este navegador no tiene WebCodecs. La exportación local requiere Chrome/Edge/Safari moderno con WebCodecs.')
@@ -398,6 +489,13 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
 
   const width = await videoTrack.getDisplayWidth()
   const height = await videoTrack.getDisplayHeight()
+  const sourceVideoBitrate = await getSourceVideoBitrate(videoTrack)
+  const targetVideoBitrate = sourceVideoBitrate
+    ? Math.min(80_000_000, Math.max(6_000_000, Math.round(sourceVideoBitrate * 1.35)))
+    : null
+  const videoQuality = targetVideoBitrate
+    ? new Quality({ bitrate: targetVideoBitrate })
+    : new Quality('very-high')
   const decodable = await videoTrack.canDecode()
   if (!decodable) throw new Error('Este dispositivo no puede decodificar el codec del video original mediante WebCodecs.')
 
@@ -418,7 +516,7 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
     composable: Boolean(generatedAudio),
     video: {
       codec: 'avc',
-      quality: new Quality('high'),
+      quality: videoQuality,
       hardwareAcceleration: 'prefer-hardware',
       forceTranscode: true,
       processedWidth: width,
@@ -472,36 +570,62 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
     if (!voiceTrack) throw new Error('La voz generada no contiene una pista de audio válida.')
 
     const videoDuration = await videoTrack.getDurationFromMetadata() ?? await videoTrack.computeDuration()
-    const audioConversion = await Conversion.init({
-      input: voiceInput,
-      output,
-      tracks: 'primary',
-      video: { discard: true },
-      audio: {
-        codec: 'aac',
-        bitrate: 192_000,
-      },
-      trim: {
-        end: videoDuration,
-      },
-      composable: true,
-    })
 
-    if (!audioConversion.isValid) {
-      const reasons = audioConversion.discardedTracks.map((item) => item.reason).filter(Boolean).join(' · ')
-      throw new Error(
-        reasons
-          ? `Este dispositivo no puede integrar la voz generada en el MP4: ${reasons}`
-          : 'Este dispositivo no puede integrar la voz generada en el MP4.',
+    if (audioTrack) {
+      onProgress?.({
+        progress: 0.03,
+        message: 'Mezclando efecto original + voz Gemini…',
+      })
+
+      const mixedAudio = await mixOriginalAndGeneratedAudio(
+        audioTrack,
+        voiceTrack,
+        videoDuration,
       )
-    }
+      const audioSource = new AudioBufferSource({
+        codec: 'aac',
+        quality: new Quality({ bitrate: 256_000 }),
+      })
+      output.addAudioTrack(audioSource)
 
-    await output.start()
-    await Promise.all([
-      conversion.execute(),
-      audioConversion.execute(),
-    ])
-    await output.finalize()
+      await output.start()
+      await Promise.all([
+        conversion.execute(),
+        audioSource.add(mixedAudio).then(() => audioSource.close()),
+      ])
+      await output.finalize()
+    } else {
+      const audioConversion = await Conversion.init({
+        input: voiceInput,
+        output,
+        tracks: 'primary',
+        video: { discard: true },
+        audio: {
+          codec: 'aac',
+          bitrate: 256_000,
+        },
+        trim: {
+          end: videoDuration,
+        },
+        composable: true,
+      })
+
+      if (!audioConversion.isValid) {
+        const reasons = audioConversion.discardedTracks.map((item) => item.reason).filter(Boolean).join(' · ')
+        throw new Error(
+          reasons
+            ? `Este dispositivo no puede integrar la voz generada en el MP4: ${reasons}`
+            : 'Este dispositivo no puede integrar la voz generada en el MP4.',
+        )
+      }
+
+      await output.start()
+      await Promise.all([
+        conversion.execute(),
+        audioConversion.execute(),
+      ])
+      await output.finalize()
+    }
   } else {
     await conversion.execute()
   }
