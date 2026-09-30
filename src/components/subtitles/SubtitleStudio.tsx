@@ -1090,7 +1090,6 @@ export function SubtitleStudio() {
         src={videoUrl}
         controls={!mobile}
         playsInline
-        muted={videoMode === 'without_voice'}
         onLoadedMetadata={(event) => {
           const video = event.currentTarget
           setMediaDuration(video.duration || 0)
