@@ -118,6 +118,33 @@ export async function getPresentationVoices(forceRefresh = false) {
   }
 }
 
+export async function mixPresentationAudioFallback(
+  originalAudio: Blob,
+  generatedVoice: Blob,
+  duration: number,
+) {
+  const body = new FormData()
+  body.append('original_audio', new File([originalAudio], 'original.m4a', {
+    type: originalAudio.type || 'audio/mp4',
+  }))
+  body.append('generated_voice', new File([generatedVoice], 'voice.wav', {
+    type: generatedVoice.type || 'audio/wav',
+  }))
+  body.append('duration', String(duration))
+
+  const response = await fetch(`${apiBase}/presentation/mix-audio`, {
+    method: 'POST',
+    headers: aiHeaders(),
+    body,
+  })
+
+  if (!response.ok) {
+    throw new Error(await readError(response, 'No se pudo mezclar el audio en el servidor.'))
+  }
+
+  return response.blob()
+}
+
 export async function generatePresentationVoice(
   script: string,
   voice: string,
