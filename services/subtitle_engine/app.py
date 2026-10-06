@@ -846,6 +846,105 @@ Rules:
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
+@app.post("/api/subtitles/presentation/mix-audio")
+async def mix_presentation_audio(
+    original_audio: UploadFile = File(...),
+    generated_voice: UploadFile = File(...),
+    duration: float = Form(...),
+    x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
+) -> Response:
+    if duration <= 0 or duration > 1800:
+        raise HTTPException(status_code=400, detail="Duración de mezcla inválida.")
+
+    work_dir = WORK_ROOT / f"mix-{uuid.uuid4().hex}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    original_suffix = Path(original_audio.filename or "original.m4a").suffix or ".m4a"
+    voice_suffix = Path(generated_voice.filename or "voice.wav").suffix or ".wav"
+    original_path = work_dir / f"original{original_suffix.lower()}"
+    voice_path = work_dir / f"voice{voice_suffix.lower()}"
+    output_path = work_dir / "mixed.wav"
+
+    started = time.monotonic()
+    try:
+        with original_path.open("wb") as target:
+            while chunk := await original_audio.read(1024 * 1024):
+                target.write(chunk)
+        with voice_path.open("wb") as target:
+            while chunk := await generated_voice.read(1024 * 1024):
+                target.write(chunk)
+
+        await original_audio.close()
+        await generated_voice.close()
+
+        if original_path.stat().st_size <= 0 or voice_path.stat().st_size <= 0:
+            raise RuntimeError("Una de las pistas de audio está vacía.")
+
+        _run([
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(original_path),
+            "-i",
+            str(voice_path),
+            "-filter_complex",
+            (
+                "[0:a][1:a]"
+                "amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,"
+                "alimiter=limit=0.95[a]"
+            ),
+            "-map",
+            "[a]",
+            "-t",
+            f"{duration:.3f}",
+            "-ac",
+            "2",
+            "-ar",
+            "48000",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ])
+
+        if not output_path.exists() or output_path.stat().st_size <= 44:
+            raise RuntimeError("FFmpeg no generó una mezcla de audio válida.")
+
+        elapsed = int((time.monotonic() - started) * 1000)
+        _log_ai(
+            x_ai_session_id,
+            "audio_mix_fallback",
+            "success",
+            "Mezcla de audio fallback completada con FFmpeg.",
+            duration_ms=elapsed,
+        )
+
+        return Response(
+            content=output_path.read_bytes(),
+            media_type="audio/wav",
+            headers={"X-Audio-Mix": "ffmpeg-fallback"},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        elapsed = int((time.monotonic() - started) * 1000)
+        _log_ai(
+            x_ai_session_id,
+            "audio_mix_fallback",
+            "error",
+            "Falló la mezcla de audio fallback con FFmpeg.",
+            error=exc,
+            duration_ms=elapsed,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo mezclar el audio en el servidor: {exc}",
+        ) from exc
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
 @app.post("/api/subtitles/presentation/tts")
 def generate_presentation_voice(
     request: TTSRequest,
