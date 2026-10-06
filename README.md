@@ -119,6 +119,10 @@ El editor móvil ocupa exactamente el viewport disponible:
 - no hay scroll de página durante la edición;
 - los paneles largos se desplazan dentro del dock y el teclado puede reducir temporalmente el viewport.
 
+### Fallback de mezcla AAC en Android
+
+La exportación sigue siendo local. Si Android no permite decodificar programáticamente el AAC original, GAS3D extrae solo la pista de audio del MP4 (sin subir el video), envía esa pista junto con la voz Gemini al backend y FFmpeg devuelve una mezcla WAV. La codificación del video continúa localmente.
+
 ### Futuro: edición de voz por bloques
 
 Pendiente para una fase posterior: dividir la locución de Gemini en bloques independientes sobre una pista de audio, permitiendo mover cada bloque temporalmente para ajustar con precisión cuándo comienza y termina respecto del video.
