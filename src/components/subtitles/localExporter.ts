@@ -11,6 +11,7 @@ import {
   Output,
   Quality,
 } from 'mediabunny'
+import { mixPresentationAudioFallback } from './api'
 import type { SubtitleCaption, SubtitleExportOptions, SubtitlePresetId, SubtitleWord } from './types'
 
 export type LocalExportProgress = {
