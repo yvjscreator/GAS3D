@@ -648,6 +648,7 @@ def health() -> dict:
         "retriesPerModel": AI_RETRIES_PER_MODEL,
         "configured": bool(GEMINI_API_KEY),
         "videoExport": "browser-webcodecs",
+        "audioMixFallback": "server-ffmpeg",
     }
 
 
