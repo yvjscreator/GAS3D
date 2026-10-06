@@ -1,5 +1,6 @@
 import {
   ALL_FORMATS,
+  AdtsOutputFormat,
   AudioBufferSink,
   AudioBufferSource,
   BlobSource,
@@ -417,13 +418,59 @@ const scheduleAudioTrack = async (
   }
 }
 
-const scheduleDecodedBlob = async (
+const decodeStandaloneAudio = async (blob: Blob) => {
+  const decoder = new OfflineAudioContext(2, 1, 48_000)
+  return decoder.decodeAudioData(await blob.arrayBuffer())
+}
+
+const remuxAacTrackToAdts = async (sourceFile: File) => {
+  const sourceInput = new Input({
+    formats: ALL_FORMATS,
+    source: new BlobSource(sourceFile),
+  })
+  const sourceTrack = await sourceInput.getPrimaryAudioTrack()
+  if (!sourceTrack) throw new Error('El archivo no contiene una pista de audio.')
+
+  const codec = await sourceTrack.getCodec()
+  if (codec !== 'aac') {
+    throw new Error(`El fallback ADTS solo aplica a AAC; codec detectado: ${codec ?? 'desconocido'}.`)
+  }
+
+  const target = new BufferTarget()
+  const output = new Output({
+    format: new AdtsOutputFormat(),
+    target,
+  })
+
+  const conversion = await Conversion.init({
+    input: sourceInput,
+    output,
+    video: { discard: true },
+    tracks: 'primary',
+  })
+
+  if (!conversion.isValid) {
+    const reasons = conversion.discardedTracks
+      .map((item) => item.reason)
+      .filter(Boolean)
+      .join(' · ')
+    throw new Error(reasons || 'No se pudo extraer la pista AAC del MP4.')
+  }
+
+  await conversion.execute()
+
+  if (!target.buffer) {
+    throw new Error('La extracción AAC terminó sin generar datos.')
+  }
+
+  return new Blob([target.buffer], { type: 'audio/aac' })
+}
+
+const scheduleDecodedBuffer = (
   context: OfflineAudioContext,
-  blob: Blob,
+  buffer: AudioBuffer,
   maxDuration: number,
 ) => {
-  const decoder = new OfflineAudioContext(2, 1, 48_000)
-  const buffer = await decoder.decodeAudioData(await blob.arrayBuffer())
   const playable = Math.min(buffer.duration, maxDuration)
   if (playable <= 0) return
 
@@ -439,20 +486,25 @@ const scheduleTrackWithFallback = async (
   fallbackBlob: Blob,
   duration: number,
   label: string,
+  fallbackKind: 'standalone' | 'mp4-aac',
 ) => {
   try {
     await scheduleAudioTrack(context, track, duration)
     return
   } catch (webCodecsError) {
     try {
-      await scheduleDecodedBlob(context, fallbackBlob, duration)
+      const standaloneBlob = fallbackKind === 'mp4-aac'
+        ? await remuxAacTrackToAdts(fallbackBlob as File)
+        : fallbackBlob
+      const buffer = await decodeStandaloneAudio(standaloneBlob)
+      scheduleDecodedBuffer(context, buffer, duration)
       return
     } catch (nativeError) {
       const codec = await track.getCodec().catch(() => null)
       throw new Error(
         `No se pudo decodificar ${label}${codec ? ` (${codec})` : ''}. `
         + `WebCodecs: ${webCodecsError instanceof Error ? webCodecsError.message : String(webCodecsError)}. `
-        + `Fallback del navegador: ${nativeError instanceof Error ? nativeError.message : String(nativeError)}.`,
+        + `Fallback AAC independiente: ${nativeError instanceof Error ? nativeError.message : String(nativeError)}.`,
       )
     }
   }
@@ -499,6 +551,7 @@ const mixOriginalAndGeneratedAudio = async (
     originalFile,
     duration,
     'el audio original',
+    'mp4-aac',
   )
   await scheduleTrackWithFallback(
     context,
@@ -506,6 +559,7 @@ const mixOriginalAndGeneratedAudio = async (
     generatedVoice,
     duration,
     'la voz Gemini',
+    'standalone',
   )
 
   return context.startRendering()
