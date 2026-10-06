@@ -417,9 +417,52 @@ const scheduleAudioTrack = async (
   }
 }
 
+const scheduleDecodedBlob = async (
+  context: OfflineAudioContext,
+  blob: Blob,
+  maxDuration: number,
+) => {
+  const decoder = new OfflineAudioContext(2, 1, 48_000)
+  const buffer = await decoder.decodeAudioData(await blob.arrayBuffer())
+  const playable = Math.min(buffer.duration, maxDuration)
+  if (playable <= 0) return
+
+  const source = context.createBufferSource()
+  source.buffer = buffer
+  source.connect(context.destination)
+  source.start(0, 0, playable)
+}
+
+const scheduleTrackWithFallback = async (
+  context: OfflineAudioContext,
+  track: NonNullable<Awaited<ReturnType<Input['getPrimaryAudioTrack']>>>,
+  fallbackBlob: Blob,
+  duration: number,
+  label: string,
+) => {
+  try {
+    await scheduleAudioTrack(context, track, duration)
+    return
+  } catch (webCodecsError) {
+    try {
+      await scheduleDecodedBlob(context, fallbackBlob, duration)
+      return
+    } catch (nativeError) {
+      const codec = await track.getCodec().catch(() => null)
+      throw new Error(
+        `No se pudo decodificar ${label}${codec ? ` (${codec})` : ''}. `
+        + `WebCodecs: ${webCodecsError instanceof Error ? webCodecsError.message : String(webCodecsError)}. `
+        + `Fallback del navegador: ${nativeError instanceof Error ? nativeError.message : String(nativeError)}.`,
+      )
+    }
+  }
+}
+
 const mixOriginalAndGeneratedAudio = async (
   originalTrack: NonNullable<Awaited<ReturnType<Input['getPrimaryAudioTrack']>>>,
   voiceTrack: NonNullable<Awaited<ReturnType<Input['getPrimaryAudioTrack']>>>,
+  originalFile: File,
+  generatedVoice: Blob,
   duration: number,
 ) => {
   if (typeof OfflineAudioContext === 'undefined') {
@@ -448,10 +491,22 @@ const mixOriginalAndGeneratedAudio = async (
 
   const context = new OfflineAudioContext(channels, frameCount, sampleRate)
 
-  await Promise.all([
-    scheduleAudioTrack(context, originalTrack, duration),
-    scheduleAudioTrack(context, voiceTrack, duration),
-  ])
+  // Decode sequentially. Some Android devices fail when two AudioDecoders
+  // compete for hardware resources at the same time.
+  await scheduleTrackWithFallback(
+    context,
+    originalTrack,
+    originalFile,
+    duration,
+    'el audio original',
+  )
+  await scheduleTrackWithFallback(
+    context,
+    voiceTrack,
+    generatedVoice,
+    duration,
+    'la voz Gemini',
+  )
 
   return context.startRendering()
 }
@@ -580,6 +635,8 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
       const mixedAudio = await mixOriginalAndGeneratedAudio(
         audioTrack,
         voiceTrack,
+        file,
+        generatedAudio,
         videoDuration,
       )
       const audioSource = new AudioBufferSource({
