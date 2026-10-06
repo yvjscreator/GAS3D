@@ -764,10 +764,26 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
           generatedAudio,
           videoDuration,
         )
-      } catch (cause) {
-        throw new Error(
-          `Falló la mezcla de audio original + voz Gemini: ${cause instanceof Error ? cause.message : String(cause)}`,
-        )
+      } catch (localCause) {
+        onProgress?.({
+          progress: 0.035,
+          message: 'Android rechazó el AAC. Mezclando solo el audio en el servidor…',
+        })
+
+        try {
+          const originalAudioOnly = await remuxAacTrackToAudioOnlyMp4(file)
+          const mixedBlob = await mixPresentationAudioFallback(
+            originalAudioOnly,
+            generatedAudio,
+            videoDuration,
+          )
+          mixedAudio = await decodeStandaloneAudio(mixedBlob)
+        } catch (serverCause) {
+          throw new Error(
+            `Falló la mezcla local y el fallback del servidor. Local: ${localCause instanceof Error ? localCause.message : String(localCause)}. `
+            + `Servidor: ${serverCause instanceof Error ? serverCause.message : String(serverCause)}`,
+          )
+        }
       }
       const audioSource = new AudioBufferSource({
         codec: 'aac',
