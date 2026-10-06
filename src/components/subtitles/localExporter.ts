@@ -632,13 +632,20 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
         message: 'Mezclando efecto original + voz Gemini…',
       })
 
-      const mixedAudio = await mixOriginalAndGeneratedAudio(
-        audioTrack,
-        voiceTrack,
-        file,
-        generatedAudio,
-        videoDuration,
-      )
+      let mixedAudio: AudioBuffer
+      try {
+        mixedAudio = await mixOriginalAndGeneratedAudio(
+          audioTrack,
+          voiceTrack,
+          file,
+          generatedAudio,
+          videoDuration,
+        )
+      } catch (cause) {
+        throw new Error(
+          `Falló la mezcla de audio original + voz Gemini: ${cause instanceof Error ? cause.message : String(cause)}`,
+        )
+      }
       const audioSource = new AudioBufferSource({
         codec: 'aac',
         quality: new Quality({ bitrate: 256_000 }),
@@ -646,10 +653,16 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
       output.addAudioTrack(audioSource)
 
       await output.start()
-      await Promise.all([
-        conversion.execute(),
-        audioSource.add(mixedAudio).then(() => audioSource.close()),
-      ])
+      try {
+        await Promise.all([
+          conversion.execute(),
+          audioSource.add(mixedAudio).then(() => audioSource.close()),
+        ])
+      } catch (cause) {
+        throw new Error(
+          `Falló la codificación final de video/audio: ${cause instanceof Error ? cause.message : String(cause)}`,
+        )
+      }
       await output.finalize()
     } else {
       const audioConversion = await Conversion.init({
@@ -677,10 +690,16 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
       }
 
       await output.start()
-      await Promise.all([
-        conversion.execute(),
-        audioConversion.execute(),
-      ])
+      try {
+        await Promise.all([
+          conversion.execute(),
+          audioConversion.execute(),
+        ])
+      } catch (cause) {
+        throw new Error(
+          `Falló la codificación final de video + voz Gemini: ${cause instanceof Error ? cause.message : String(cause)}`,
+        )
+      }
       await output.finalize()
     }
   } else {
