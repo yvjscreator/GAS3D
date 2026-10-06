@@ -423,6 +423,49 @@ const decodeStandaloneAudio = async (blob: Blob) => {
   return decoder.decodeAudioData(await blob.arrayBuffer())
 }
 
+const remuxAacTrackToAudioOnlyMp4 = async (sourceFile: File) => {
+  const sourceInput = new Input({
+    formats: ALL_FORMATS,
+    source: new BlobSource(sourceFile),
+  })
+  const sourceTrack = await sourceInput.getPrimaryAudioTrack()
+  if (!sourceTrack) throw new Error('El archivo no contiene una pista de audio.')
+
+  const codec = await sourceTrack.getCodec()
+  if (codec !== 'aac') {
+    throw new Error(`El fallback M4A solo aplica a AAC; codec detectado: ${codec ?? 'desconocido'}.`)
+  }
+
+  const target = new BufferTarget()
+  const output = new Output({
+    format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
+    target,
+  })
+
+  const conversion = await Conversion.init({
+    input: sourceInput,
+    output,
+    video: { discard: true },
+    tracks: 'primary',
+  })
+
+  if (!conversion.isValid) {
+    const reasons = conversion.discardedTracks
+      .map((item) => item.reason)
+      .filter(Boolean)
+      .join(' · ')
+    throw new Error(reasons || 'No se pudo extraer la pista AAC a un MP4 de solo audio.')
+  }
+
+  await conversion.execute()
+
+  if (!target.buffer) {
+    throw new Error('La extracción M4A terminó sin generar datos.')
+  }
+
+  return new Blob([target.buffer], { type: 'audio/mp4' })
+}
+
 const remuxAacTrackToAdts = async (sourceFile: File) => {
   const sourceInput = new Input({
     formats: ALL_FORMATS,
@@ -493,10 +536,36 @@ const scheduleTrackWithFallback = async (
     return
   } catch (webCodecsError) {
     try {
-      const standaloneBlob = fallbackKind === 'mp4-aac'
-        ? await remuxAacTrackToAdts(fallbackBlob as File)
-        : fallbackBlob
-      const buffer = await decodeStandaloneAudio(standaloneBlob)
+      if (fallbackKind === 'mp4-aac') {
+        const sourceFile = fallbackBlob as File
+        let m4aError: unknown = null
+
+        try {
+          const audioOnlyMp4 = await remuxAacTrackToAudioOnlyMp4(sourceFile)
+          const buffer = await decodeStandaloneAudio(audioOnlyMp4)
+          scheduleDecodedBuffer(context, buffer, duration)
+          return
+        } catch (cause) {
+          m4aError = cause
+        }
+
+        try {
+          const adts = await remuxAacTrackToAdts(sourceFile)
+          const buffer = await decodeStandaloneAudio(adts)
+          scheduleDecodedBuffer(context, buffer, duration)
+          return
+        } catch (adtsError) {
+          const codec = await track.getCodec().catch(() => null)
+          throw new Error(
+            `No se pudo decodificar ${label}${codec ? ` (${codec})` : ''}. `
+            + `WebCodecs: ${webCodecsError instanceof Error ? webCodecsError.message : String(webCodecsError)}. `
+            + `M4A: ${m4aError instanceof Error ? m4aError.message : String(m4aError)}. `
+            + `ADTS: ${adtsError instanceof Error ? adtsError.message : String(adtsError)}.`,
+          )
+        }
+      }
+
+      const buffer = await decodeStandaloneAudio(fallbackBlob)
       scheduleDecodedBuffer(context, buffer, duration)
       return
     } catch (nativeError) {
@@ -504,7 +573,7 @@ const scheduleTrackWithFallback = async (
       throw new Error(
         `No se pudo decodificar ${label}${codec ? ` (${codec})` : ''}. `
         + `WebCodecs: ${webCodecsError instanceof Error ? webCodecsError.message : String(webCodecsError)}. `
-        + `Fallback AAC independiente: ${nativeError instanceof Error ? nativeError.message : String(nativeError)}.`,
+        + `Fallback independiente: ${nativeError instanceof Error ? nativeError.message : String(nativeError)}.`,
       )
     }
   }
