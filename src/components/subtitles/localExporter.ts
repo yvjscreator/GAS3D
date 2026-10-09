@@ -635,6 +635,42 @@ const mixOriginalAndGeneratedAudio = async (
   return context.startRendering()
 }
 
+const isAndroidDevice = () =>
+  typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> => {
+  let timeoutId: number | undefined
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+  }
+}
+
+const mixAudioOnServer = async (
+  file: File,
+  generatedAudio: Blob,
+  videoDuration: number,
+) => {
+  const originalAudioOnly = await remuxAacTrackToAudioOnlyMp4(file)
+  const mixedBlob = await mixPresentationAudioFallback(
+    originalAudioOnly,
+    generatedAudio,
+    videoDuration,
+  )
+  return decodeStandaloneAudio(mixedBlob)
+}
+
 export async function exportSubtitledVideoLocally({ file, words, options, generatedAudio = null, onProgress }: LocalExportRequest) {
   if (!('VideoEncoder' in window) || !('VideoDecoder' in window)) {
     throw new Error('Este navegador no tiene WebCodecs. La exportación local requiere Chrome/Edge/Safari moderno con WebCodecs.')
@@ -757,33 +793,61 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
       })
 
       let mixedAudio: AudioBuffer
-      try {
-        mixedAudio = await mixOriginalAndGeneratedAudio(
-          audioTrack,
-          voiceTrack,
-          file,
-          generatedAudio,
-          videoDuration,
-        )
-      } catch (localCause) {
+      const originalAudioCodec = await audioTrack.getCodec().catch(() => null)
+      const useServerFirst = isAndroidDevice() && originalAudioCodec === 'aac'
+
+      if (useServerFirst) {
         onProgress?.({
           progress: 0.035,
-          message: 'Android rechazó el AAC. Mezclando solo el audio en el servidor…',
+          message: 'Preparando efecto original para mezcla compatible con Android…',
         })
 
         try {
-          const originalAudioOnly = await remuxAacTrackToAudioOnlyMp4(file)
-          const mixedBlob = await mixPresentationAudioFallback(
-            originalAudioOnly,
-            generatedAudio,
-            videoDuration,
+          mixedAudio = await withTimeout(
+            mixAudioOnServer(file, generatedAudio, videoDuration),
+            90_000,
+            'La mezcla de audio del servidor tardó demasiado.',
           )
-          mixedAudio = await decodeStandaloneAudio(mixedBlob)
         } catch (serverCause) {
           throw new Error(
-            `Falló la mezcla local y el fallback del servidor. Local: ${localCause instanceof Error ? localCause.message : String(localCause)}. `
-            + `Servidor: ${serverCause instanceof Error ? serverCause.message : String(serverCause)}`,
+            `No se pudo mezclar el audio mediante el fallback Android: ${serverCause instanceof Error ? serverCause.message : String(serverCause)}`,
           )
+        }
+      } else {
+        try {
+          const localTimeoutMs = Math.min(
+            30_000,
+            Math.max(8_000, Math.round(videoDuration * 600)),
+          )
+          mixedAudio = await withTimeout(
+            mixOriginalAndGeneratedAudio(
+              audioTrack,
+              voiceTrack,
+              file,
+              generatedAudio,
+              videoDuration,
+            ),
+            localTimeoutMs,
+            'La mezcla local de audio quedó bloqueada.',
+          )
+        } catch (localCause) {
+          onProgress?.({
+            progress: 0.035,
+            message: 'La mezcla local no respondió. Usando mezcla compatible en servidor…',
+          })
+
+          try {
+            mixedAudio = await withTimeout(
+              mixAudioOnServer(file, generatedAudio, videoDuration),
+              90_000,
+              'La mezcla de audio del servidor tardó demasiado.',
+            )
+          } catch (serverCause) {
+            throw new Error(
+              `Falló la mezcla local y el fallback del servidor. Local: ${localCause instanceof Error ? localCause.message : String(localCause)}. `
+              + `Servidor: ${serverCause instanceof Error ? serverCause.message : String(serverCause)}`,
+            )
+          }
         }
       }
       const audioSource = new AudioBufferSource({
