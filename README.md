@@ -32,6 +32,9 @@ La tercera pestaña de GAS3D (`#/images`) prepara arte creado sobre fondos negro
 - Rueda del mouse sobre la imagen: zoom **centrado en el punto del cursor**, desde 100% (ajustado) hasta 1000%.
 - Con zoom mayor a 100%, arrastra el lienzo con el botón izquierdo.
 - El botón **Ajustar** restablece el encuadre; también se reinicia al cambiar de imagen.
+- Al acercar, se reconstruye **solo la región visible desde los píxeles de la imagen original**: en una imagen 4K el zoom no se limita al preview reducido de 1300 px (850 px en móvil).
+- El detalle de alta resolución aparece automáticamente tras una pausa breve de la rueda o del arrastre; mientras tanto se mantiene una previsualización fluida.
+- El resultado depende de la nitidez real del archivo: ampliar más allá de sus píxeles nativos no inventa detalles.
 - Zoom y pan afectan solamente la vista previa, nunca la resolución ni la imagen exportada.
 
 Límites preventivos: 60 MB por archivo, 18 MP en móviles y 30 MP en escritorio; máximo de 40 imágenes por lote. Los ZIP estándar no admiten más de 4 GB. Una carpeta con muchas imágenes de alta resolución puede consumir mucha memoria.
