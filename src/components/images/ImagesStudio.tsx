@@ -292,7 +292,7 @@ export function ImagesStudio() {
   }
 
   const addBatchFiles = (incoming: File[]) => {
-    if (!incoming.length || busy === 'batch') return
+    if (!incoming.length || busy !== null) return
     const current = batchItems.length
     const additions = incoming.slice(0, Math.max(0, MAX_BATCH_FILES - current))
     if (!additions.length) {
@@ -319,7 +319,7 @@ export function ImagesStudio() {
   }
 
   const selectBatchFile = (item: BatchItem) => {
-    if (busy === 'batch' || busy === 'exporting') return
+    if (busy !== null) return
     setBatchSelectedId(item.id)
     void loadImage(item.file)
   }
@@ -333,9 +333,10 @@ export function ImagesStudio() {
         const id = ++batchIdRef.current
         setBatchItems([{ id, file, status: 'pending' }])
         setBatchSelectedId(id)
-      } else if (batchItems.length && batchSelectedId === null) {
-        setBatchSelectedId(batchItems[0].id)
-        void loadImage(batchItems[0].file)
+      } else if (batchItems.length) {
+        const selected = batchItems.find((item) => item.id === batchSelectedId) ?? batchItems[0]
+        setBatchSelectedId(selected.id)
+        if (file !== selected.file) void loadImage(selected.file)
       }
     }
     resetZoom()
@@ -360,26 +361,28 @@ export function ImagesStudio() {
   const invalidateBatch = () => {
     setBatchItems((current) => current.map((item) => ({
       ...item,
-      status: 'pending',
+      status: 'pending' as const,
       detail: undefined,
     })))
     setBatchSummary(null)
   }
 
   const changeSetting = (key: keyof InkRemovalSettings, value: number) => {
+    if (busy === 'batch') return
     setPreset(null)
     setSettings((current) => ({ ...current, [key]: value }))
     invalidateBatch()
   }
 
   const applyPreset = (next: ImagePreset) => {
+    if (busy === 'batch') return
     setPreset(next)
     setSettings({ ...imagePresets[inkMode][next].settings })
     invalidateBatch()
   }
 
   const changeInkMode = (next: InkRemovalMode) => {
-    if (next === inkMode) return
+    if (next === inkMode || busy === 'batch') return
     setInkMode(next)
     invalidateBatch()
     resetZoom()
@@ -447,13 +450,13 @@ export function ImagesStudio() {
     setError(null)
     setProgress(0)
     setBatchCurrent(0)
-    setBatchItems((items) => items.map((item) => ({ ...item, status: 'pending', detail: undefined })))
+    setBatchItems((items) => items.map((item) => ({ ...item, status: 'pending' as const, detail: undefined })))
 
     for (let i = 0; i < snapshot.length; i++) {
       const item = snapshot[i]
       setBatchCurrent(i + 1)
       setBatchItems((items) => items.map((entry) =>
-        entry.id === item.id ? { ...entry, status: 'processing', detail: undefined } : entry,
+        entry.id === item.id ? { ...entry, status: 'processing' as const, detail: undefined } : entry,
       ))
       // Give the browser time to show the active row before decoding begins.
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
@@ -476,13 +479,13 @@ export function ImagesStudio() {
         usedNames.add(uniqueName.toLowerCase())
         results.push({ name: uniqueName, blob: png })
         setBatchItems((items) => items.map((entry) =>
-          entry.id === item.id ? { ...entry, status: 'ready' } : entry,
+          entry.id === item.id ? { ...entry, status: 'ready' as const } : entry,
         ))
       } catch (cause) {
         failures++
         const detail = cause instanceof Error ? cause.message : 'No se pudo procesar.'
         setBatchItems((items) => items.map((entry) =>
-          entry.id === item.id ? { ...entry, status: 'error', detail } : entry,
+          entry.id === item.id ? { ...entry, status: 'error' as const, detail } : entry,
         ))
       } finally {
         bitmap?.close()
@@ -567,7 +570,7 @@ export function ImagesStudio() {
       {error && <div className="images-error" role="alert">{error}<button aria-label="Cerrar error" onClick={() => setError(null)}><X size={15} /></button></div>}
 
       <div className={'images-layout' + (zenMode && !controlsVisible ? ' controls-hidden' : '')}>
-        <section className="images-view-column" aria-label="Vista previa del arte">
+        <section className={workspaceMode === 'batch' ? 'images-view-column has-batch' : 'images-view-column'} aria-label="Vista previa del arte">
           <div className="images-preview-header">
             <div className="images-preview-title">
               <span>VISTA PREVIA</span>
