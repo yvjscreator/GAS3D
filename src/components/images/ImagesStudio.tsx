@@ -85,7 +85,9 @@ export function ImagesStudio() {
     setError(null)
     setDragging(false)
 
-    if (!/^image\/(png|jpeg|webp)$/.test(incoming.type)) {
+    const acceptedType = /^image\/(png|jpeg|webp)$/.test(incoming.type)
+      || (!incoming.type && /\.(png|jpe?g|webp)$/i.test(incoming.name))
+    if (!acceptedType) {
       setError('Utiliza una imagen PNG, JPG o WebP.')
       return
     }
