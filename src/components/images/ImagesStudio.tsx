@@ -278,6 +278,7 @@ export function ImagesStudio() {
       bitmapRef.current?.close()
       bitmapRef.current = bitmap
       setSourcePreview(previewPixels)
+      resetZoom()
       setDimensions({ width: bitmap.width, height: bitmap.height })
       setShowOriginal(false)
       setFile(incoming)
@@ -290,32 +291,98 @@ export function ImagesStudio() {
     }
   }
 
+  const addBatchFiles = (incoming: File[]) => {
+    if (!incoming.length || busy === 'batch') return
+    const current = batchItems.length
+    const additions = incoming.slice(0, Math.max(0, MAX_BATCH_FILES - current))
+    if (!additions.length) {
+      setError('El lote admite un máximo de ' + MAX_BATCH_FILES + ' imágenes.')
+      return
+    }
+
+    const items: BatchItem[] = additions.map((image) => ({
+      id: ++batchIdRef.current,
+      file: image,
+      status: 'pending',
+    }))
+    setBatchItems((previous) => [...previous, ...items])
+    setBatchSummary(null)
+    if (current === 0 || batchSelectedId === null) {
+      setBatchSelectedId(items[0].id)
+      void loadImage(items[0].file)
+    }
+    if (incoming.length > additions.length) {
+      setError('Se agregaron solo ' + additions.length + ' archivos; máximo ' + MAX_BATCH_FILES + ' por lote.')
+    } else {
+      setError(null)
+    }
+  }
+
+  const selectBatchFile = (item: BatchItem) => {
+    if (busy === 'batch' || busy === 'exporting') return
+    setBatchSelectedId(item.id)
+    void loadImage(item.file)
+  }
+
+  const setWorkspace = (next: WorkspaceMode) => {
+    if (busy) return
+    setWorkspaceMode(next)
+    setBatchSummary(null)
+    if (next === 'batch') {
+      if (batchItems.length === 0 && file) {
+        const id = ++batchIdRef.current
+        setBatchItems([{ id, file, status: 'pending' }])
+        setBatchSelectedId(id)
+      } else if (batchItems.length && batchSelectedId === null) {
+        setBatchSelectedId(batchItems[0].id)
+        void loadImage(batchItems[0].file)
+      }
+    }
+    resetZoom()
+  }
+
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
-    const selected = event.currentTarget.files?.[0]
-    if (selected) void loadImage(selected)
+    const selected = Array.from(event.currentTarget.files ?? [])
+    if (workspaceMode === 'batch') addBatchFiles(selected)
+    else if (selected[0]) void loadImage(selected[0])
     event.currentTarget.value = ''
   }
 
   const dropFile = (event: DragEvent<HTMLElement>) => {
     event.preventDefault()
     setDragging(false)
-    const selected = event.dataTransfer.files[0]
-    if (selected) void loadImage(selected)
+    if (busy) return
+    const selected = Array.from(event.dataTransfer.files)
+    if (workspaceMode === 'batch') addBatchFiles(selected)
+    else if (selected[0]) void loadImage(selected[0])
+  }
+
+  const invalidateBatch = () => {
+    setBatchItems((current) => current.map((item) => ({
+      ...item,
+      status: 'pending',
+      detail: undefined,
+    })))
+    setBatchSummary(null)
   }
 
   const changeSetting = (key: keyof InkRemovalSettings, value: number) => {
     setPreset(null)
     setSettings((current) => ({ ...current, [key]: value }))
+    invalidateBatch()
   }
 
   const applyPreset = (next: ImagePreset) => {
     setPreset(next)
     setSettings({ ...imagePresets[inkMode][next].settings })
+    invalidateBatch()
   }
 
   const changeInkMode = (next: InkRemovalMode) => {
     if (next === inkMode) return
     setInkMode(next)
+    invalidateBatch()
+    resetZoom()
     setPreset('balanced')
     setSettings({ ...imagePresets[next].balanced.settings })
     setPreviewMode(next)
@@ -336,6 +403,7 @@ export function ImagesStudio() {
   }
 
   const clear = () => {
+    resetZoom()
     uploadIdRef.current++
     bitmapRef.current?.close()
     bitmapRef.current = null
@@ -347,6 +415,97 @@ export function ImagesStudio() {
     setBusy(null)
   }
 
+  const removeBatchFile = (id: number) => {
+    if (busy) return
+    const remaining = batchItems.filter((item) => item.id !== id)
+    setBatchItems(remaining)
+    setBatchSummary(null)
+    if (batchSelectedId === id) {
+      const next = remaining[0]
+      setBatchSelectedId(next?.id ?? null)
+      if (next) void loadImage(next.file)
+      else clear()
+    }
+  }
+
+  const clearBatch = () => {
+    if (busy) return
+    setBatchItems([])
+    setBatchSelectedId(null)
+    setBatchSummary(null)
+    clear()
+  }
+
+  const exportBatch = async () => {
+    if (busy || !batchItems.length) return
+    const snapshot = [...batchItems]
+    const results: Array<{ name: string; blob: Blob }> = []
+    const usedNames = new Set<string>()
+    let failures = 0
+    setBusy('batch')
+    setBatchSummary(null)
+    setError(null)
+    setProgress(0)
+    setBatchCurrent(0)
+    setBatchItems((items) => items.map((item) => ({ ...item, status: 'pending', detail: undefined })))
+
+    for (let i = 0; i < snapshot.length; i++) {
+      const item = snapshot[i]
+      setBatchCurrent(i + 1)
+      setBatchItems((items) => items.map((entry) =>
+        entry.id === item.id ? { ...entry, status: 'processing', detail: undefined } : entry,
+      ))
+      // Give the browser time to show the active row before decoding begins.
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+
+      let bitmap: ImageBitmap | null = null
+      try {
+        assertImageFile(item.file)
+        bitmap = await createImageBitmap(item.file)
+        assertImageDimensions(bitmap)
+        const png = await renderTransparentPng(bitmap, settings, inkMode, (value) => {
+          setProgress(Math.round((i + value / 100) / snapshot.length * 95))
+        })
+
+        const base = downloadName(item.file.name, inkMode)
+        let uniqueName = base
+        let count = 2
+        while (usedNames.has(uniqueName.toLowerCase())) {
+          uniqueName = base.replace(/\.png$/i, '-' + count++ + '.png')
+        }
+        usedNames.add(uniqueName.toLowerCase())
+        results.push({ name: uniqueName, blob: png })
+        setBatchItems((items) => items.map((entry) =>
+          entry.id === item.id ? { ...entry, status: 'ready' } : entry,
+        ))
+      } catch (cause) {
+        failures++
+        const detail = cause instanceof Error ? cause.message : 'No se pudo procesar.'
+        setBatchItems((items) => items.map((entry) =>
+          entry.id === item.id ? { ...entry, status: 'error', detail } : entry,
+        ))
+      } finally {
+        bitmap?.close()
+      }
+    }
+
+    try {
+      if (!results.length) {
+        setBatchSummary('No se pudo exportar ninguna imagen. Revisa los errores de la lista.')
+      } else {
+        const archive = await createZipArchive(results)
+        downloadBlob(archive, 'gas3d-images-' + inkMode + '-ready.zip')
+        setBatchSummary(results.length + ' PNG listos en ZIP.' +
+          (failures ? ' ' + failures + ' archivos con error; puedes revisarlos en la lista.' : ''))
+      }
+      setProgress(100)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo generar el ZIP.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const exportPng = async () => {
     const bitmap = bitmapRef.current
     const currentFile = file
@@ -356,66 +515,14 @@ export function ImagesStudio() {
     setProgress(0)
 
     try {
-      const canvas = document.createElement('canvas')
-      canvas.width = bitmap.width
-      canvas.height = bitmap.height
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })
-      if (!ctx) throw new Error('El dispositivo no permite exportar esta resolución.')
-      ctx.drawImage(bitmap, 0, 0)
-
-      // Process at the original resolution in strips to avoid giant ImageData
-      // allocations and give the browser a chance to repaint progress.
-      const rows = Math.max(1, Math.floor(1_500_000 / bitmap.width))
-      let previousOriginalRow: Uint8ClampedArray | null = null
-
-      for (let y = 0; y < bitmap.height; y += rows) {
-        const h = Math.min(rows, bitmap.height - y)
-        const sourceY = Math.max(0, y - 1)
-        const sourceBottom = Math.min(bitmap.height, y + h + 1)
-        const original = ctx.getImageData(0, sourceY, bitmap.width, sourceBottom - sourceY)
-
-        // Include one untouched row above and below the export strip so
-        // detail protection/noise cleanup give exactly the same result at
-        // strip boundaries as when processing the entire image at once.
-        if (previousOriginalRow && sourceY < y) original.data.set(previousOriginalRow, 0)
-        const rowBytes = bitmap.width * 4
-        const lastOffset = (y + h - 1 - sourceY) * rowBytes
-        previousOriginalRow = original.data.slice(lastOffset, lastOffset + rowBytes)
-
-        const result = removeFabricInk(original, settings, inkMode)
-        const firstPixel = (y - sourceY) * rowBytes
-        const output = new ImageData(
-          result.image.data.slice(firstPixel, firstPixel + h * rowBytes),
-          bitmap.width,
-          h,
-        )
-        ctx.putImageData(output, 0, y)
-        setProgress(Math.round(((y + h) / bitmap.height) * 95))
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
-      }
-
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((result) => {
-          if (result) resolve(result)
-          else reject(new Error('No se pudo generar el PNG transparente.'))
-        }, 'image/png')
-      })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = downloadName(currentFile.name, inkMode)
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
-      setProgress(100)
+      const png = await renderTransparentPng(bitmap, settings, inkMode, setProgress)
+      downloadBlob(png, downloadName(currentFile.name, inkMode))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falló la exportación PNG.')
     } finally {
       setBusy(null)
     }
   }
-
   return (
     <main className={zenMode ? 'images-studio is-zen' : 'images-studio'} onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false)
