@@ -543,3 +543,10 @@
 @media (prefers-reduced-motion: reduce) {
   .images-batch-select .processing { animation:none; }
 }
+
+.images-batch-progress {
+  display:inline-flex; align-items:center; gap:3px;
+  color:#94e6d0; font:9px 'DM Mono',monospace;
+  white-space:nowrap; flex:0 0 auto;
+}
+.images-batch-progress .processing { color:#94e6d0; }
