@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import { Download, Eye, ImagePlus, RotateCcw, Shirt, Upload, X } from 'lucide-react'
+import { Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, Shirt, Upload, X } from 'lucide-react'
 import {
   imagePresets,
   removeBlackInk,
@@ -12,6 +12,17 @@ import './imagesStudio.css'
 const MAX_IMAGE_PIXELS = 30_000_000
 const MAX_IMAGE_BYTES = 60 * 1024 * 1024
 const PREVIEW_MAX_EDGE = 1300
+const ZEN_KEY = 'gas3d.images.zen.v1'
+const CONTROLS_KEY = 'gas3d.images.zen.controls.v1'
+
+const readPreference = (key: string, defaultValue: boolean) => {
+  try {
+    const value = window.localStorage.getItem(key)
+    return value === null ? defaultValue : value === 'true'
+  } catch {
+    return defaultValue
+  }
+}
 const numberFormatter = new Intl.NumberFormat('es')
 
 const controls: Array<{
@@ -52,6 +63,8 @@ export function ImagesStudio() {
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [zenMode, setZenMode] = useState(() => readPreference(ZEN_KEY, false))
+  const [controlsVisible, setControlsVisible] = useState(() => readPreference(CONTROLS_KEY, true))
 
   useEffect(() => {
     return () => {
@@ -60,6 +73,35 @@ export function ImagesStudio() {
       bitmapRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    document.body.classList.toggle('images-zen-screen', zenMode)
+    try {
+      window.localStorage.setItem(ZEN_KEY, String(zenMode))
+    } catch {
+      // Private mode may disable storage; the editor still works.
+    }
+    return () => document.body.classList.remove('images-zen-screen')
+  }, [zenMode])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CONTROLS_KEY, String(controlsVisible))
+    } catch {
+      // No storage permission is required for editing.
+    }
+  }, [controlsVisible])
+
+  useEffect(() => {
+    if (!zenMode) return
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (event.target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)) return
+      setZenMode(false)
+    }
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [zenMode])
 
   useEffect(() => {
     if (!sourcePreview) return
@@ -172,6 +214,11 @@ export function ImagesStudio() {
     setError(null)
   }
 
+  const toggleZen = () => {
+    if (!zenMode && previewMode === 'shirt') setPreviewMode('black')
+    setZenMode((value) => !value)
+  }
+
   const clear = () => {
     uploadIdRef.current++
     bitmapRef.current?.close()
@@ -235,7 +282,7 @@ export function ImagesStudio() {
   }
 
   return (
-    <main className="images-studio" onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => {
+    <main className={zenMode ? 'images-studio is-zen' : 'images-studio'} onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false)
     }} onDrop={dropFile}>
       <input ref={inputRef} className="images-file-input" type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseFile} aria-label="Cargar una imagen" />
@@ -245,15 +292,38 @@ export function ImagesStudio() {
           <h1>Images <span>Studio</span></h1>
           <p>Quita negro y sombras para que la tela negra sustituya la tinta.</p>
         </div>
-        <button className="images-export" onClick={() => void exportPng()} disabled={!file || busy !== null}>
-          <Download size={18} />
-          <span>{busy === 'exporting' ? 'Procesando ' + progress + '%' : 'Exportar PNG'}</span>
-        </button>
+        <div className="images-heading-actions">
+          {zenMode && <button
+            type="button"
+            className="images-zen-panel-button"
+            onClick={() => setControlsVisible((value) => !value)}
+            aria-expanded={controlsVisible}
+            aria-controls="images-adjustments"
+            title={controlsVisible ? 'Ocultar controles y ampliar lienzo' : 'Mostrar controles de edición'}
+          >
+            {controlsVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+            <span>{controlsVisible ? 'Ocultar ajustes' : 'Mostrar ajustes'}</span>
+          </button>}
+          <button
+            type="button"
+            className={zenMode ? 'images-zen-button active' : 'images-zen-button'}
+            onClick={toggleZen}
+            aria-pressed={zenMode}
+            title={zenMode ? 'Salir del modo Zen (Esc)' : 'Modo Zen: edición a pantalla completa'}
+          >
+            {zenMode ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+            <span>{zenMode ? 'Salir de Zen' : 'Modo Zen'}</span>
+          </button>
+          <button className="images-export" onClick={() => void exportPng()} disabled={!file || busy !== null}>
+            <Download size={18} />
+            <span>{busy === 'exporting' ? 'Procesando ' + progress + '%' : 'Exportar PNG'}</span>
+          </button>
+        </div>
       </div>
 
       {error && <div className="images-error" role="alert">{error}<button aria-label="Cerrar error" onClick={() => setError(null)}><X size={15} /></button></div>}
 
-      <div className="images-layout">
+      <div className={'images-layout' + (zenMode && !controlsVisible ? ' controls-hidden' : '')}>
         <section className="images-view-column" aria-label="Vista previa del arte">
           <div className="images-preview-header">
             <div className="images-preview-title">
@@ -304,7 +374,7 @@ export function ImagesStudio() {
           </div>}
         </section>
 
-        <aside className="images-controls" aria-label="Ajustes de transparencia">
+        <aside id="images-adjustments" className="images-controls" aria-label="Ajustes de transparencia" aria-hidden={zenMode && !controlsVisible}>
           <div className="images-section-title">
             <div><span>01 / PROCESAMIENTO</span><h2>Eliminar negros</h2></div>
             <button className="images-reset" onClick={reset} title="Restablecer ajustes"><RotateCcw size={15} /> Reiniciar</button>
