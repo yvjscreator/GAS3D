@@ -11,18 +11,32 @@ npm run dev
 
 ## Images Studio
 
-GAS3D incluye una tercera pestaña, **Images** (`#/images`), para preparar diseños creados sobre fondo negro **o blanco**, destinados a prendas del color correspondiente.
+La tercera pestaña de GAS3D (`#/images`) prepara arte creado sobre fondos negros **o blancos** para estampar prendas del color correspondiente. Todo se procesa localmente: sin Gemini ni servidor.
 
-- Sube imágenes PNG, JPG o WebP (procesadas localmente, sin Gemini ni backend).
-- Elimina negro puro, negros cercanos y sombras oscuras de todo el diseño, incluso zonas interiores.
-- Ajusta umbral negro, sombras, preservación de detalles no negros, suavizado y limpieza de ruido.
-- Tres presets: **Negro puro**, **Negros + sombras** y **Agresivo**.
-- Vista previa sobre tablero alfa, negro o silueta de remera negra; alterna original/resultado.
-- Exporta PNG transparente con la **misma resolución del archivo de entrada**, sin redimensionar ni reconstruir el arte. El nombre indica si fue preparado para tela negra o blanca.
-- Para mantener fluidez, el preview usa una copia reducida; el PNG se calcula en bloques de píxeles originales.
-- Máximo por seguridad: 60 MB, 18 megapíxeles en móviles y 30 en escritorio (puede variar según la memoria real disponible).
+- **Prenda negra:** retira negro, casi negro y sombras de todo el dibujo.
+- **Prenda blanca:** retira blanco, casi blanco e iluminaciones de todo el dibujo.
+- Presets (puro, negros/sombras o blancos/luces, agresivo) y cinco controles para ajuste fino.
+- Preview sobre alfa, negro, blanco y remera del color elegido; antes/después.
+- **Modo Zen:** aprovecha el viewport, panel de ajustes plegable y estado recordado.
 
-Nota de producción: estas operaciones retiran globalmente el color blanco/negro, como Gama de colores en Photoshop; los detalles del mismo color también desaparecen. El resultado físico depende de cómo el RIP y la impresora interpretan la transparencia y la base blanca. Verificar el archivo exportado con el proveedor de estampado.
+### Individual y por lotes
+
+- **Individual:** sube una imagen PNG/JPG/WebP, ajusta y exporta un PNG transparente.
+- **Por lotes:** agrega hasta 40 archivos; selecciona cualquiera de la cola para inspeccionar su preview; comparte color de prenda, preset y ajustes entre todos.
+- **Exportar ZIP:** procesa las imágenes una por una para limitar el consumo de memoria, con porcentaje y estado por archivo; si falla alguna, continúa con las demás y entrega las exitosas en el ZIP.
+- Los PNG conservan la resolución y las proporciones originales. El ZIP utiliza almacenamiento sin recomprimir los PNG (ya comprimidos), sin dependencias externas.
+- Los nombres terminan en `-black-tee-ready.png` o `-white-tee-ready.png`; los duplicados se renombran dentro del ZIP.
+
+### Inspección del preview
+
+- Rueda del mouse sobre la imagen: zoom **centrado en el punto del cursor**, desde 100% (ajustado) hasta 1000%.
+- Con zoom mayor a 100%, arrastra el lienzo con el botón izquierdo.
+- El botón **Ajustar** restablece el encuadre; también se reinicia al cambiar de imagen.
+- Zoom y pan afectan solamente la vista previa, nunca la resolución ni la imagen exportada.
+
+Límites preventivos: 60 MB por archivo, 18 MP en móviles y 30 MP en escritorio; máximo de 40 imágenes por lote. Los ZIP estándar no admiten más de 4 GB. Una carpeta con muchas imágenes de alta resolución puede consumir mucha memoria.
+
+Nota: este proceso elimina los colores globalmente, tal como `Gama de colores` en Photoshop; también desaparecen detalles interiores de ese color. Verifica el PNG en el RIP/proveedor antes de producir.
 
 ## Subtitle Studio
 
