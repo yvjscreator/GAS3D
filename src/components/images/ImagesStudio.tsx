@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'r
 import { Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, Shirt, Upload, X } from 'lucide-react'
 import {
   imagePresets,
-  removeBlackInk,
-  type BlackInkSettings,
+  removeFabricInk,
+  type InkRemovalMode,
+  type InkRemovalSettings,
   type ImagePreset,
   type ImagePreviewMode,
 } from './imageProcessor'
@@ -14,6 +15,15 @@ const MAX_IMAGE_BYTES = 60 * 1024 * 1024
 const PREVIEW_MAX_EDGE = 1300
 const ZEN_KEY = 'gas3d.images.zen.v1'
 const CONTROLS_KEY = 'gas3d.images.zen.controls.v1'
+const INK_MODE_KEY = 'gas3d.images.ink-mode.v1'
+
+const initialInkMode = (): InkRemovalMode => {
+  try {
+    return window.localStorage.getItem(INK_MODE_KEY) === 'white' ? 'white' : 'black'
+  } catch {
+    return 'black'
+  }
+}
 
 const readPreference = (key: string, defaultValue: boolean) => {
   try {
@@ -26,7 +36,7 @@ const readPreference = (key: string, defaultValue: boolean) => {
 const numberFormatter = new Intl.NumberFormat('es')
 
 const controls: Array<{
-  key: keyof BlackInkSettings
+  key: keyof InkRemovalSettings
   title: string
   hint: string
   min: number
@@ -40,9 +50,9 @@ const controls: Array<{
   { key: 'noiseCleanup', title: 'Limpiar ruido', hint: 'Retira pequeños puntos aislados de poca intensidad.', min: 0, max: 3, step: 1 },
 ]
 
-const downloadName = (fileName: string) => {
+const downloadName = (fileName: string, mode: InkRemovalMode) => {
   const stem = fileName.replace(/\.[^.]+$/, '') || 'art'
-  return stem + '-black-tee-ready.png'
+  return stem + (mode === 'black' ? '-black-tee-ready.png' : '-white-tee-ready.png')
 }
 
 export function ImagesStudio() {
@@ -54,9 +64,10 @@ export function ImagesStudio() {
   const [file, setFile] = useState<File | null>(null)
   const [sourcePreview, setSourcePreview] = useState<ImageData | null>(null)
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null)
+  const [inkMode, setInkMode] = useState<InkRemovalMode>(initialInkMode)
   const [preset, setPreset] = useState<ImagePreset | null>('balanced')
-  const [settings, setSettings] = useState<BlackInkSettings>({ ...imagePresets.balanced.settings })
-  const [previewMode, setPreviewMode] = useState<ImagePreviewMode>('black')
+  const [settings, setSettings] = useState<InkRemovalSettings>(() => ({ ...imagePresets[initialInkMode()].balanced.settings }))
+  const [previewMode, setPreviewMode] = useState<ImagePreviewMode>(initialInkMode)
   const [showOriginal, setShowOriginal] = useState(false)
   const [removedPercent, setRemovedPercent] = useState(0)
   const [busy, setBusy] = useState<'loading' | 'exporting' | null>(null)
@@ -93,6 +104,14 @@ export function ImagesStudio() {
   }, [controlsVisible])
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(INK_MODE_KEY, inkMode)
+    } catch {
+      // The processor works without persistence.
+    }
+  }, [inkMode])
+
+  useEffect(() => {
     if (!zenMode) return
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -108,7 +127,7 @@ export function ImagesStudio() {
 
     // Work on a downscaled copy when editing. Export always processes original pixels.
     const frame = requestAnimationFrame(() => {
-      const result = removeBlackInk(sourcePreview, settings)
+      const result = removeFabricInk(sourcePreview, settings, inkMode)
       const canvas = canvasRef.current
       if (!canvas) return
       if (canvas.width !== sourcePreview.width) canvas.width = sourcePreview.width
@@ -120,7 +139,7 @@ export function ImagesStudio() {
     })
 
     return () => cancelAnimationFrame(frame)
-  }, [sourcePreview, settings, showOriginal, previewMode])
+  }, [sourcePreview, settings, showOriginal, previewMode, inkMode])
 
   const loadImage = async (incoming: File) => {
     const id = ++uploadIdRef.current
@@ -197,25 +216,35 @@ export function ImagesStudio() {
     if (selected) void loadImage(selected)
   }
 
-  const changeSetting = (key: keyof BlackInkSettings, value: number) => {
+  const changeSetting = (key: keyof InkRemovalSettings, value: number) => {
     setPreset(null)
     setSettings((current) => ({ ...current, [key]: value }))
   }
 
   const applyPreset = (next: ImagePreset) => {
     setPreset(next)
-    setSettings({ ...imagePresets[next].settings })
+    setSettings({ ...imagePresets[inkMode][next].settings })
+  }
+
+  const changeInkMode = (next: InkRemovalMode) => {
+    if (next === inkMode) return
+    setInkMode(next)
+    setPreset('balanced')
+    setSettings({ ...imagePresets[next].balanced.settings })
+    setPreviewMode(next)
+    setShowOriginal(false)
+    setError(null)
   }
 
   const reset = () => {
     applyPreset('balanced')
     setShowOriginal(false)
-    setPreviewMode('black')
+    setPreviewMode(inkMode)
     setError(null)
   }
 
   const toggleZen = () => {
-    if (!zenMode && previewMode === 'shirt') setPreviewMode('black')
+    if (!zenMode && previewMode === 'shirt') setPreviewMode(inkMode)
     setZenMode((value) => !value)
   }
 
@@ -253,7 +282,7 @@ export function ImagesStudio() {
       for (let y = 0; y < bitmap.height; y += rows) {
         const h = Math.min(rows, bitmap.height - y)
         const original = ctx.getImageData(0, y, bitmap.width, h)
-        const result = removeBlackInk(original, settings)
+        const result = removeFabricInk(original, settings, inkMode)
         ctx.putImageData(result.image, 0, y)
         setProgress(Math.round(((y + h) / bitmap.height) * 95))
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
@@ -268,7 +297,7 @@ export function ImagesStudio() {
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = downloadName(currentFile.name)
+      anchor.download = downloadName(currentFile.name, inkMode)
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
@@ -290,7 +319,7 @@ export function ImagesStudio() {
         <div>
           <span className="images-eyebrow">GAS3D / Preparación de estampados</span>
           <h1>Images <span>Studio</span></h1>
-          <p>Quita negro y sombras para que la tela negra sustituya la tinta.</p>
+          <p>{inkMode === 'black' ? 'Quita negros y sombras para estampados sobre negro.' : 'Quita blancos e iluminaciones para estampados sobre blanco.'}</p>
         </div>
         <div className="images-heading-actions">
           {zenMode && <button
@@ -334,6 +363,7 @@ export function ImagesStudio() {
               {([
                 ['transparent', 'Alfa'],
                 ['black', 'Negro'],
+                ['white', 'Blanco'],
                 ['shirt', 'Remera'],
               ] as const).map(([mode, label]) => <button
                 key={mode}
@@ -344,7 +374,7 @@ export function ImagesStudio() {
             </div>
           </div>
 
-          <div className={'images-preview images-preview-' + previewMode + (dragging ? ' dragging' : '')}>
+          <div className={'images-preview images-preview-' + previewMode + ' ink-' + inkMode + (dragging ? ' dragging' : '')}>
             {sourcePreview ? <>
               {previewMode === 'shirt' ? <div className="images-shirt-preview">
                 <div className="images-shirt-neck" />
@@ -375,11 +405,26 @@ export function ImagesStudio() {
         </section>
 
         <aside id="images-adjustments" className="images-controls" aria-label="Ajustes de transparencia" aria-hidden={zenMode && !controlsVisible}>
+          <div className="images-ink-mode" role="group" aria-label="Color de la prenda para retirar fondo">
+            <button type="button" className={inkMode === 'black' ? 'active' : ''} aria-pressed={inkMode === 'black'} onClick={() => changeInkMode('black')}>
+              <i className="images-ink-dot black" aria-hidden="true" />
+              Prenda negra
+            </button>
+            <button type="button" className={inkMode === 'white' ? 'active' : ''} aria-pressed={inkMode === 'white'} onClick={() => changeInkMode('white')}>
+              <i className="images-ink-dot white" aria-hidden="true" />
+              Prenda blanca
+            </button>
+          </div>
           <div className="images-section-title">
-            <div><span>01 / PROCESAMIENTO</span><h2>Eliminar negros</h2></div>
+            <div><span>01 / PROCESAMIENTO</span><h2>{inkMode === 'black' ? 'Eliminar negros' : 'Eliminar blancos'}</h2></div>
             <button className="images-reset" onClick={reset} title="Restablecer ajustes"><RotateCcw size={15} /> Reiniciar</button>
           </div>
-          <p className="images-controls-intro">El negro desaparece en toda la imagen, también dentro del dibujo. No modifica ni reconstruye la composición.</p>
+          <p className="images-controls-intro">
+            {inkMode === 'black'
+              ? 'El negro desaparece en toda la imagen, también dentro del dibujo.'
+              : 'El blanco desaparece en toda la imagen, también en luces y detalles interiores.'}
+            {' '}No altera la composición.
+          </p>
 
           <div className="images-preset-picker" aria-label="Presets de procesamiento">
             {(Object.keys(imagePresets) as ImagePreset[]).map((id) => <button
@@ -387,15 +432,18 @@ export function ImagesStudio() {
               className={preset === id ? 'active' : ''}
               aria-pressed={preset === id}
               onClick={() => applyPreset(id)}
-              title={imagePresets[id].description}
+              title={imagePresets[inkMode][id].description}
             >
-              {imagePresets[id].name}
+              {imagePresets[inkMode][id].name}
             </button>)}
           </div>
 
           <div className="images-slider-list">
             {controls.map((control) => <label key={control.key} className="images-slider">
-              <span className="images-slider-heading"><strong>{control.title}</strong><output>{settings[control.key]}{control.key === 'detailProtection' ? '%' : ''}</output></span>
+              <span className="images-slider-heading">
+                <strong>{inkMode === 'white' && control.key === 'blackThreshold' ? 'Eliminar blanco' : inkMode === 'white' && control.key === 'shadowThreshold' ? 'Eliminar iluminaciones' : control.title}</strong>
+                <output>{settings[control.key]}{control.key === 'detailProtection' ? '%' : ''}</output>
+              </span>
               <input
                 type="range"
                 min={control.min}
@@ -404,7 +452,13 @@ export function ImagesStudio() {
                 value={settings[control.key]}
                 onChange={(event) => changeSetting(control.key, Number(event.target.value))}
               />
-              <span className="images-slider-description">{control.hint}</span>
+              <span className="images-slider-description">{inkMode === 'white' && control.key === 'blackThreshold'
+                ? 'Umbral de blanco puro y casi blanco.'
+                : inkMode === 'white' && control.key === 'shadowThreshold'
+                  ? 'Extiende la transparencia a reflejos y luces claras.'
+                  : inkMode === 'white' && control.key === 'detailProtection'
+                    ? 'Protege los colores, sombras y trazos oscuros.'
+                    : control.hint}</span>
             </label>)}
           </div>
 
@@ -416,7 +470,11 @@ export function ImagesStudio() {
           </div>
           <div className="images-print-note">
             <Shirt size={17} />
-            <p><strong>Preparado para tela negra.</strong> La vista sobre negro simula cómo se integran las transparencias. Verifica el PNG sobre una cuadrícula antes de enviar al taller: el resultado físico también depende de la tinta blanca y del RIP de impresión.</p>
+            <p>
+              <strong>Preparado para tela {inkMode === 'black' ? 'negra' : 'blanca'}.</strong>
+              {' '}La vista sobre {inkMode === 'black' ? 'negro' : 'blanco'} simula cómo se integran las transparencias.
+              Verifica el PNG sobre una cuadrícula antes de enviarlo al taller; el resultado físico depende del proceso de impresión.
+            </p>
           </div>
         </aside>
       </div>
