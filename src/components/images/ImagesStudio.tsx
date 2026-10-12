@@ -446,7 +446,7 @@ export function ImagesStudio() {
           </p>
 
           <div className="images-preset-picker" aria-label="Presets de procesamiento">
-            {(Object.keys(imagePresets) as ImagePreset[]).map((id) => <button
+            {(Object.keys(imagePresets[inkMode]) as ImagePreset[]).map((id) => <button
               key={id}
               className={preset === id ? 'active' : ''}
               aria-pressed={preset === id}
