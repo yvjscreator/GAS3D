@@ -9,6 +9,21 @@ npm install
 npm run dev
 ```
 
+## Images Studio
+
+GAS3D incluye una tercera pestaña, **Images** (`#/images`), para preparar diseños creados sobre negro para imprimir en prendas negras.
+
+- Sube imágenes PNG, JPG o WebP (procesadas localmente, sin Gemini ni backend).
+- Elimina negro puro, negros cercanos y sombras oscuras de todo el diseño, incluso zonas interiores.
+- Ajusta umbral negro, sombras, preservación de detalles no negros, suavizado y limpieza de ruido.
+- Tres presets: **Negro puro**, **Negros + sombras** y **Agresivo**.
+- Vista previa sobre tablero alfa, negro o silueta de remera negra; alterna original/resultado.
+- Exporta PNG transparente con la **misma resolución del archivo de entrada**, sin redimensionar ni reconstruir el arte.
+- Para mantener fluidez, el preview usa una copia reducida; el PNG se calcula en bloques de píxeles originales.
+- Máximo por seguridad: 60 MB, 18 megapíxeles en móviles y 30 en escritorio (puede variar según la memoria real disponible).
+
+Nota de producción: los resultados dependen de cómo el RIP y la impresora interpretan transparencia y base blanca. Verificar el archivo exportado con el proveedor de estampado.
+
 ## Subtitle Studio
 
 GAS3D incluye una herramienta aislada para crear videos con subtítulos y, cuando corresponde, una presentación completa con voz generada por IA.
