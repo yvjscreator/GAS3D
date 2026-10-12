@@ -524,10 +524,10 @@ export function ImagesStudio() {
     }
   }
   return (
-    <main className={zenMode ? 'images-studio is-zen' : 'images-studio'} onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => {
+    <main className={'images-studio' + (zenMode ? ' is-zen' : '') + (workspaceMode === 'batch' ? ' is-batch' : '')} onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false)
     }} onDrop={dropFile}>
-      <input ref={inputRef} className="images-file-input" type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseFile} aria-label="Cargar una imagen" />
+      <input ref={inputRef} className="images-file-input" type="file" multiple={workspaceMode === 'batch'} accept="image/png,image/jpeg,image/webp" onChange={chooseFile} aria-label={workspaceMode === 'batch' ? 'Cargar imágenes del lote' : 'Cargar una imagen'} />
       <div className="images-heading">
         <div>
           <span className="images-eyebrow">GAS3D / Preparación de estampados</span>
@@ -556,9 +556,10 @@ export function ImagesStudio() {
             {zenMode ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
             <span>{zenMode ? 'Salir de Zen' : 'Modo Zen'}</span>
           </button>
-          <button className="images-export" onClick={() => void exportPng()} disabled={!file || busy !== null}>
+          <button className="images-export" onClick={() => void (workspaceMode === 'batch' ? exportBatch() : exportPng())}
+            disabled={(workspaceMode === 'batch' ? batchItems.length === 0 : !file) || busy !== null}>
             <Download size={18} />
-            <span>{busy === 'exporting' ? 'Procesando ' + progress + '%' : 'Exportar PNG'}</span>
+            <span>{busy === 'batch' ? 'Lote ' + progress + '%' : busy === 'exporting' ? 'Procesando ' + progress + '%' : workspaceMode === 'batch' ? 'Exportar ZIP' : 'Exportar PNG'}</span>
           </button>
         </div>
       </div>
@@ -581,13 +582,22 @@ export function ImagesStudio() {
               ] as const).map(([mode, label]) => <button
                 key={mode}
                 className={previewMode === mode ? 'active' : ''}
-                onClick={() => setPreviewMode(mode)}
+                onClick={() => { setPreviewMode(mode); resetZoom() }}
                 aria-pressed={previewMode === mode}
               >{label}</button>)}
             </div>
+            <button className="images-fit" type="button" onClick={resetZoom}
+              disabled={!sourcePreview || zoom.scale === 1}
+              title="Ajustar imagen a pantalla"
+              aria-label="Ajustar imagen a pantalla">
+              <Scan size={15} />
+              <span>{Math.round(zoom.scale * 100)}%</span>
+            </button>
           </div>
 
-          <div className={'images-preview images-preview-' + previewMode + ' ink-' + inkMode + (dragging ? ' dragging' : '')}>
+          <div ref={previewRef} className={'images-preview images-preview-' + previewMode + ' ink-' + inkMode + (dragging ? ' dragging' : '') + (zoom.scale > 1 ? ' zoomed' : '')}
+            onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
+            <div className="images-zoom-surface" style={{ transform: 'translate(' + zoom.x + 'px, ' + zoom.y + 'px) scale(' + zoom.scale + ')' }}>
             {sourcePreview ? <>
               {previewMode === 'shirt' ? <div className="images-shirt-preview">
                 <div className="images-shirt-neck" />
@@ -603,6 +613,7 @@ export function ImagesStudio() {
               <small>PNG · JPG · WebP · arrastra o toca para elegir</small>
               <span className="images-upload-cta"><Upload size={14} /> Elegir imagen</span>
             </button>}
+            </div>
             {dragging && <div className="images-drop-overlay">Suelta aquí la imagen</div>}
           </div>
 
@@ -615,9 +626,50 @@ export function ImagesStudio() {
               <Eye size={16} /> {showOriginal ? 'Ver resultado' : 'Ver original'}
             </button>
           </div>}
+          {workspaceMode === 'batch' && <div className="images-batch-queue" aria-label="Cola de imágenes">
+            <div className="images-batch-heading">
+              <span><strong>Lote</strong> {batchItems.length}/{MAX_BATCH_FILES} archivos
+                {busy === 'batch' && ' · ' + batchCurrent + ' de ' + batchItems.length}
+              </span>
+              <button type="button" onClick={() => inputRef.current?.click()} disabled={busy !== null}>
+                <Plus size={13} /> Añadir
+              </button>
+            </div>
+            {batchSummary && <div className="images-batch-summary" role="status">{batchSummary}</div>}
+            <div className="images-batch-list">
+              {batchItems.length === 0 && <span className="images-batch-empty">Añade varias imágenes. Todas usarán los mismos ajustes de la derecha.</span>}
+              {batchItems.map((item, index) => <div className={batchSelectedId === item.id ? 'images-batch-item selected' : 'images-batch-item'} key={item.id}>
+                <button type="button" className="images-batch-select" onClick={() => selectBatchFile(item)}
+                  disabled={busy === 'batch'} title={item.file.name + (item.detail ? ' · ' + item.detail : '')}>
+                  <span className="images-batch-index">{index + 1}</span>
+                  <span className="images-batch-name">{item.file.name}</span>
+                  {item.status === 'ready' ? <CheckCircle2 size={15} className="ready" /> :
+                    item.status === 'processing' ? <LoaderCircle size={15} className="processing" /> :
+                    item.status === 'error' ? <AlertCircle size={15} className="error" /> :
+                    <span className="images-batch-pending" />}
+                </button>
+                <button type="button" className="images-batch-remove" onClick={() => removeBatchFile(item.id)}
+                  disabled={busy !== null} title="Quitar del lote" aria-label={'Quitar ' + item.file.name}>
+                  <X size={13} />
+                </button>
+              </div>)}
+            </div>
+          </div>}
         </section>
 
         <aside id="images-adjustments" className="images-controls" aria-label="Ajustes de transparencia" aria-hidden={zenMode && !controlsVisible}>
+          <div className="images-workspace-modes" role="group" aria-label="Tipo de procesamiento">
+            <button type="button" className={workspaceMode === 'single' ? 'active' : ''}
+              aria-pressed={workspaceMode === 'single'} disabled={busy !== null}
+              onClick={() => setWorkspace('single')}>
+              <ImagePlus size={15} /> Individual
+            </button>
+            <button type="button" className={workspaceMode === 'batch' ? 'active' : ''}
+              aria-pressed={workspaceMode === 'batch'} disabled={busy !== null}
+              onClick={() => setWorkspace('batch')}>
+              <List size={15} /> Por lotes
+            </button>
+          </div>
           <div className="images-ink-mode" role="group" aria-label="Color de la prenda para retirar fondo">
             <button type="button" className={inkMode === 'black' ? 'active' : ''} aria-pressed={inkMode === 'black'} onClick={() => changeInkMode('black')}>
               <i className="images-ink-dot black" aria-hidden="true" />
@@ -676,10 +728,15 @@ export function ImagesStudio() {
           </div>
 
           <div className="images-bottom-actions">
-            <button onClick={() => inputRef.current?.click()} className="images-replace">
-              <Upload size={16} /> {file ? 'Cambiar imagen' : 'Subir imagen'}
+            <button onClick={() => inputRef.current?.click()} className="images-replace" disabled={busy === 'batch' || busy === 'exporting'}>
+              <Upload size={16} /> {workspaceMode === 'batch' ? 'Añadir al lote' : file ? 'Cambiar imagen' : 'Subir imagen'}
             </button>
-            {file && <button className="images-clear" onClick={clear} title="Cerrar imagen"><X size={16} /></button>}
+            {(workspaceMode === 'batch' ? batchItems.length > 0 : Boolean(file)) && <button
+              className="images-clear" disabled={busy !== null}
+              onClick={workspaceMode === 'batch' ? clearBatch : clear}
+              title={workspaceMode === 'batch' ? 'Vaciar lote' : 'Cerrar imagen'}>
+              <X size={16} />
+            </button>}
           </div>
           <div className="images-print-note">
             <Shirt size={17} />
