@@ -10,6 +10,7 @@ import {
 } from './imageProcessor'
 import { assertImageDimensions, assertImageFile, downloadBlob, renderTransparentPng } from './imageExport'
 import { createZipArchive } from './zipExport'
+import { paintNativeDetail } from './detailPreview'
 import './imagesStudio.css'
 
 const MAX_IMAGE_PIXELS = 30_000_000
@@ -71,6 +72,7 @@ export function ImagesStudio() {
   const uploadIdRef = useRef(0)
   const batchIdRef = useRef(0)
   const previewRef = useRef<HTMLDivElement | null>(null)
+  const detailCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const zoomRef = useRef<ZoomPosition>({ ...initialZoom })
   const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
 
@@ -95,6 +97,7 @@ export function ImagesStudio() {
   const [batchSummary, setBatchSummary] = useState<string | null>(null)
   const [batchCurrent, setBatchCurrent] = useState(0)
   const [zoom, setZoom] = useState<ZoomPosition>({ ...initialZoom })
+  const [previewResize, setPreviewResize] = useState(0)
 
   useEffect(() => {
     return () => {
@@ -227,6 +230,52 @@ export function ImagesStudio() {
 
     return () => cancelAnimationFrame(frame)
   }, [sourcePreview, settings, showOriginal, previewMode, inkMode])
+
+  useEffect(() => {
+    const viewport = previewRef.current
+    if (!viewport || !sourcePreview) return
+    const observer = new ResizeObserver(() => setPreviewResize((count) => count + 1))
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [sourcePreview, previewMode])
+
+  useEffect(() => {
+    const overlay = detailCanvasRef.current
+    const viewport = previewRef.current
+    if (!overlay) return
+
+    // The low-resolution canvas stays interactive while the user zooms/pans.
+    // Clear any previous tile immediately so it cannot lag behind the artwork.
+    const overlayContext = overlay.getContext('2d')
+    overlayContext?.clearRect(0, 0, overlay.width, overlay.height)
+
+    if (!viewport || !sourcePreview || zoom.scale <= 1.05) return
+
+    let animationFrame = 0
+    const timeout = window.setTimeout(() => {
+      animationFrame = window.requestAnimationFrame(() => {
+        const bitmap = bitmapRef.current
+        const image = canvasRef.current
+        if (!bitmap || !image || !detailCanvasRef.current) return
+        // Viewports and canvases can be replaced as the user switches modes;
+        // always resolve the DOM node at the moment the detail is rendered.
+        paintNativeDetail({
+          bitmap,
+          viewport,
+          image,
+          overlay: detailCanvasRef.current,
+          settings,
+          inkMode,
+          showOriginal,
+        })
+      })
+    }, 110)
+
+    return () => {
+      window.clearTimeout(timeout)
+      if (animationFrame) window.cancelAnimationFrame(animationFrame)
+    }
+  }, [zoom, sourcePreview, settings, inkMode, showOriginal, previewMode, previewResize])
 
   const loadImage = async (incoming: File) => {
     const id = ++uploadIdRef.current
@@ -621,6 +670,7 @@ export function ImagesStudio() {
               <span className="images-upload-cta"><Upload size={14} /> Elegir imagen</span>
             </button>}
             </div>
+            <canvas ref={detailCanvasRef} className="images-native-detail" aria-hidden="true" />
             {dragging && <div className="images-drop-overlay">Suelta aquí la imagen</div>}
           </div>
 
