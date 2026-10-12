@@ -22,12 +22,12 @@ export const imagePresets: Record<ImagePreset, {
   balanced: {
     name: 'Negros + sombras',
     description: 'Transparencia gradual para integrar el diseño a la tela.',
-    settings: { blackThreshold: 12, shadowThreshold: 92, detailProtection: 60, softness: 18, noiseCleanup: 0 },
+    settings: { blackThreshold: 22, shadowThreshold: 105, detailProtection: 60, softness: 8, noiseCleanup: 0 },
   },
   deep: {
     name: 'Agresivo',
     description: 'Reduce más sombras y manchas oscuras.',
-    settings: { blackThreshold: 23, shadowThreshold: 145, detailProtection: 30, softness: 14, noiseCleanup: 1 },
+    settings: { blackThreshold: 36, shadowThreshold: 150, detailProtection: 30, softness: 12, noiseCleanup: 1 },
   },
 }
 
