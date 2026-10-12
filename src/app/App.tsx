@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
 import { GarmentAdStudio } from '../components/studio/GarmentAdStudio'
 import { SubtitleStudio } from '../components/subtitles/SubtitleStudio'
+import { ImagesStudio } from '../components/images/ImagesStudio'
 
-type AppTool = 'garment' | 'subtitles'
+type AppTool = 'garment' | 'subtitles' | 'images'
 
-const currentTool = (): AppTool => window.location.hash === '#/subtitles' ? 'subtitles' : 'garment'
+const currentTool = (): AppTool => {
+  if (window.location.hash === '#/subtitles') return 'subtitles'
+  if (window.location.hash === '#/images') return 'images'
+  return 'garment'
+}
 
 export default function App() {
   const [tool, setTool] = useState<AppTool>(currentTool)
@@ -17,7 +22,8 @@ export default function App() {
 
   const openTool = (next: AppTool) => {
     if (next === 'subtitles') window.location.hash = '/subtitles'
-    else window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    else if (next === 'images') window.location.hash = '/images'
+    else window.location.hash = ''
     setTool(next)
   }
 
@@ -25,7 +31,8 @@ export default function App() {
     <nav className={tool === 'subtitles' ? 'gas-tool-switcher subtitle-tool-switcher' : 'gas-tool-switcher'} aria-label="Herramientas GAS3D">
       <button className={tool === 'garment' ? 'active' : ''} onClick={() => openTool('garment')}>3D Studio</button>
       <button className={tool === 'subtitles' ? 'active' : ''} onClick={() => openTool('subtitles')}>Subtítulos</button>
+      <button className={tool === 'images' ? 'active' : ''} onClick={() => openTool('images')}>Images</button>
     </nav>
-    {tool === 'subtitles' ? <SubtitleStudio /> : <GarmentAdStudio />}
+    {tool === 'subtitles' ? <SubtitleStudio /> : tool === 'images' ? <ImagesStudio /> : <GarmentAdStudio />}
   </>
 }
