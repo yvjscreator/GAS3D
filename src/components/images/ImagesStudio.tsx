@@ -101,16 +101,18 @@ export function ImagesStudio() {
         bitmap.close()
         return
       }
-      if (bitmap.width * bitmap.height > MAX_IMAGE_PIXELS) {
+      const deviceLimit = window.matchMedia('(max-width: 720px)').matches ? 18_000_000 : MAX_IMAGE_PIXELS
+      if (bitmap.width * bitmap.height > deviceLimit) {
         bitmap.close()
-        throw new Error('Imagen demasiado grande para procesarla con seguridad en este navegador (máximo 30 megapíxeles).')
+        throw new Error('La imagen supera el límite de resolución seguro para este dispositivo (' + Math.round(deviceLimit / 1_000_000) + ' megapíxeles).')
       }
       if (!bitmap.width || !bitmap.height) {
         bitmap.close()
         throw new Error('No se pudo determinar la resolución de la imagen.')
       }
 
-      const ratio = Math.min(1, PREVIEW_MAX_EDGE / Math.max(bitmap.width, bitmap.height))
+      const previewEdge = window.matchMedia('(max-width: 720px)').matches ? 850 : PREVIEW_MAX_EDGE
+      const ratio = Math.min(1, previewEdge / Math.max(bitmap.width, bitmap.height))
       const width = Math.max(1, Math.round(bitmap.width * ratio))
       const height = Math.max(1, Math.round(bitmap.height * ratio))
       const previewCanvas = document.createElement('canvas')
