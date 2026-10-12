@@ -39,7 +39,7 @@ const numberFormatter = new Intl.NumberFormat('es')
 const MAX_BATCH_FILES = 40
 type WorkspaceMode = 'single' | 'batch'
 type BatchStatus = 'pending' | 'processing' | 'ready' | 'error'
-type BatchItem = { id: number; file: File; status: BatchStatus; detail?: string }
+type BatchItem = { id: number; file: File; status: BatchStatus; detail?: string; progress?: number }
 type ZoomPosition = { scale: number; x: number; y: number }
 const initialZoom: ZoomPosition = { scale: 1, x: 0, y: 0 }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
@@ -363,6 +363,7 @@ export function ImagesStudio() {
       ...item,
       status: 'pending' as const,
       detail: undefined,
+      progress: undefined,
     })))
     setBatchSummary(null)
   }
@@ -450,13 +451,13 @@ export function ImagesStudio() {
     setError(null)
     setProgress(0)
     setBatchCurrent(0)
-    setBatchItems((items) => items.map((item) => ({ ...item, status: 'pending' as const, detail: undefined })))
+    setBatchItems((items) => items.map((item) => ({ ...item, status: 'pending' as const, detail: undefined, progress: undefined })))
 
     for (let i = 0; i < snapshot.length; i++) {
       const item = snapshot[i]
       setBatchCurrent(i + 1)
       setBatchItems((items) => items.map((entry) =>
-        entry.id === item.id ? { ...entry, status: 'processing' as const, detail: undefined } : entry,
+        entry.id === item.id ? { ...entry, status: 'processing' as const, detail: undefined, progress: 0 } : entry,
       ))
       // Give the browser time to show the active row before decoding begins.
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
@@ -468,6 +469,9 @@ export function ImagesStudio() {
         assertImageDimensions(bitmap)
         const png = await renderTransparentPng(bitmap, settings, inkMode, (value) => {
           setProgress(Math.round((i + value / 100) / snapshot.length * 95))
+          setBatchItems((items) => items.map((entry) =>
+            entry.id === item.id ? { ...entry, progress: value } : entry,
+          ))
         })
 
         const base = downloadName(item.file.name, inkMode)
@@ -479,13 +483,13 @@ export function ImagesStudio() {
         usedNames.add(uniqueName.toLowerCase())
         results.push({ name: uniqueName, blob: png })
         setBatchItems((items) => items.map((entry) =>
-          entry.id === item.id ? { ...entry, status: 'ready' as const } : entry,
+          entry.id === item.id ? { ...entry, status: 'ready' as const, progress: 100 } : entry,
         ))
       } catch (cause) {
         failures++
         const detail = cause instanceof Error ? cause.message : 'No se pudo procesar.'
         setBatchItems((items) => items.map((entry) =>
-          entry.id === item.id ? { ...entry, status: 'error' as const, detail } : entry,
+          entry.id === item.id ? { ...entry, status: 'error' as const, detail, progress: undefined } : entry,
         ))
       } finally {
         bitmap?.close()
@@ -647,7 +651,9 @@ export function ImagesStudio() {
                   <span className="images-batch-index">{index + 1}</span>
                   <span className="images-batch-name">{item.file.name}</span>
                   {item.status === 'ready' ? <CheckCircle2 size={15} className="ready" /> :
-                    item.status === 'processing' ? <LoaderCircle size={15} className="processing" /> :
+                    item.status === 'processing' ? <span className="images-batch-progress">
+                      <LoaderCircle size={12} className="processing" /> {item.progress ?? 0}%
+                    </span> :
                     item.status === 'error' ? <AlertCircle size={15} className="error" /> :
                     <span className="images-batch-pending" />}
                 </button>
