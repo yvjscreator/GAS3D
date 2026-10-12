@@ -78,7 +78,7 @@ export function ImagesStudio() {
     })
 
     return () => cancelAnimationFrame(frame)
-  }, [sourcePreview, settings, showOriginal])
+  }, [sourcePreview, settings, showOriginal, previewMode])
 
   const loadImage = async (incoming: File) => {
     const id = ++uploadIdRef.current
