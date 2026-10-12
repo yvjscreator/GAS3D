@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import { Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, Shirt, Upload, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, Shirt, Upload, X, List, Scan, Plus, CheckCircle2, AlertCircle, LoaderCircle } from 'lucide-react'
 import {
   imagePresets,
   removeFabricInk,
@@ -8,6 +8,8 @@ import {
   type ImagePreset,
   type ImagePreviewMode,
 } from './imageProcessor'
+import { assertImageDimensions, assertImageFile, downloadBlob, renderTransparentPng } from './imageExport'
+import { createZipArchive } from './zipExport'
 import './imagesStudio.css'
 
 const MAX_IMAGE_PIXELS = 30_000_000
@@ -34,6 +36,13 @@ const readPreference = (key: string, defaultValue: boolean) => {
   }
 }
 const numberFormatter = new Intl.NumberFormat('es')
+const MAX_BATCH_FILES = 40
+type WorkspaceMode = 'single' | 'batch'
+type BatchStatus = 'pending' | 'processing' | 'ready' | 'error'
+type BatchItem = { id: number; file: File; status: BatchStatus; detail?: string }
+type ZoomPosition = { scale: number; x: number; y: number }
+const initialZoom: ZoomPosition = { scale: 1, x: 0, y: 0 }
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
 const controls: Array<{
   key: keyof InkRemovalSettings
@@ -60,6 +69,10 @@ export function ImagesStudio() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const bitmapRef = useRef<ImageBitmap | null>(null)
   const uploadIdRef = useRef(0)
+  const batchIdRef = useRef(0)
+  const previewRef = useRef<HTMLDivElement | null>(null)
+  const zoomRef = useRef<ZoomPosition>({ ...initialZoom })
+  const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
 
   const [file, setFile] = useState<File | null>(null)
   const [sourcePreview, setSourcePreview] = useState<ImageData | null>(null)
@@ -70,12 +83,18 @@ export function ImagesStudio() {
   const [previewMode, setPreviewMode] = useState<ImagePreviewMode>(initialInkMode)
   const [showOriginal, setShowOriginal] = useState(false)
   const [removedPercent, setRemovedPercent] = useState(0)
-  const [busy, setBusy] = useState<'loading' | 'exporting' | null>(null)
+  const [busy, setBusy] = useState<'loading' | 'exporting' | 'batch' | null>(null)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [zenMode, setZenMode] = useState(() => readPreference(ZEN_KEY, false))
   const [controlsVisible, setControlsVisible] = useState(() => readPreference(CONTROLS_KEY, true))
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('single')
+  const [batchItems, setBatchItems] = useState<BatchItem[]>([])
+  const [batchSelectedId, setBatchSelectedId] = useState<number | null>(null)
+  const [batchSummary, setBatchSummary] = useState<string | null>(null)
+  const [batchCurrent, setBatchCurrent] = useState(0)
+  const [zoom, setZoom] = useState<ZoomPosition>({ ...initialZoom })
 
   useEffect(() => {
     return () => {
@@ -121,6 +140,74 @@ export function ImagesStudio() {
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
   }, [zenMode])
+
+  const setZoomPosition = (next: ZoomPosition) => {
+    zoomRef.current = next
+    setZoom(next)
+  }
+
+  const resetZoom = () => {
+    dragRef.current = null
+    setZoomPosition({ ...initialZoom })
+  }
+
+  useEffect(() => {
+    const node = previewRef.current
+    if (!node) return
+
+    const onWheel = (event: WheelEvent) => {
+      if (!bitmapRef.current || event.ctrlKey) return
+      event.preventDefault()
+
+      const current = zoomRef.current
+      const nextScale = clamp(current.scale * Math.exp(-event.deltaY * 0.0016), 1, 10)
+      if (nextScale === current.scale) return
+      if (nextScale <= 1.001) {
+        setZoomPosition({ ...initialZoom })
+        return
+      }
+
+      const rect = node.getBoundingClientRect()
+      const mouseX = event.clientX - rect.left - rect.width / 2
+      const mouseY = event.clientY - rect.top - rect.height / 2
+      const relativeX = (mouseX - current.x) / current.scale
+      const relativeY = (mouseY - current.y) / current.scale
+      setZoomPosition({
+        scale: nextScale,
+        x: mouseX - relativeX * nextScale,
+        y: mouseY - relativeY * nextScale,
+      })
+    }
+
+    node.addEventListener('wheel', onWheel, { passive: false })
+    return () => node.removeEventListener('wheel', onWheel)
+  }, [])
+
+  const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (zoomRef.current.scale <= 1 || !bitmapRef.current || event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+  }
+
+  const movePan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const pointer = dragRef.current
+    if (!pointer || pointer.pointerId !== event.pointerId) return
+    const current = zoomRef.current
+    setZoomPosition({
+      scale: current.scale,
+      x: current.x + event.clientX - pointer.x,
+      y: current.y + event.clientY - pointer.y,
+    })
+    dragRef.current = { pointerId: pointer.pointerId, x: event.clientX, y: event.clientY }
+  }
+
+  const endPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
 
   useEffect(() => {
     if (!sourcePreview) return
