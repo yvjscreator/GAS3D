@@ -379,7 +379,7 @@ export function ImagesStudio() {
               {previewMode === 'shirt' ? <div className="images-shirt-preview">
                 <div className="images-shirt-neck" />
                 <div className="images-shirt-print">
-                  <canvas ref={canvasRef} aria-label="Arte procesado sobre tela negra" />
+                  <canvas ref={canvasRef} aria-label={`Arte procesado sobre tela ${inkMode === 'black' ? 'negra' : 'blanca'}`} />
                 </div>
               </div> : <div className="images-art">
                 <canvas ref={canvasRef} aria-label="Vista previa del arte procesado" />
