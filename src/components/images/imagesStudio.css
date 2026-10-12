@@ -338,3 +338,83 @@
   .images-studio.is-zen .images-layout,
   .images-studio.is-zen .images-controls { transition:none; }
 }
+
+
+/* Two-way preparation: dark fabric removes blacks; light fabric removes whites. */
+.images-ink-mode {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:5px;
+  padding:4px;
+  margin-bottom:16px;
+  background:#0c151c;
+  border:1px solid #344450;
+  border-radius:10px;
+}
+.images-ink-mode button {
+  min-width:0;
+  min-height:38px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:5px 6px;
+  border:1px solid transparent;
+  border-radius:7px;
+  background:transparent;
+  color:#97a8b6;
+  font-size:10px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.images-ink-mode button.active {
+  color:#effff7;
+  border-color:#4f9b7b;
+  background:#255341;
+  box-shadow:inset 0 0 0 1px #79cda033;
+}
+.images-ink-mode button:focus-visible {
+  outline:2px solid #b4ffdc;
+  outline-offset:2px;
+}
+.images-ink-dot {
+  display:block;
+  flex:0 0 auto;
+  width:15px;
+  height:15px;
+  border-radius:50%;
+  border:2px solid #7c8b95;
+}
+.images-ink-dot.black { background:#040404; }
+.images-ink-dot.white { background:#f7f9fb; }
+.images-preview-white { background:#fff; }
+.images-preview-shirt.ink-white {
+  background:radial-gradient(circle at 50% 37%,#cad1d7,#7d8993 69%,#333d46);
+}
+.images-preview-shirt.ink-white .images-shirt-preview {
+  background:linear-gradient(110deg,#c9cdd0 12%,#fff 48%,#c6cbcf 85%);
+  border-color:#e2e7ea;
+  box-shadow:inset 0 -35px 30px #74828e45,0 10px 35px #2228;
+}
+.images-preview-shirt.ink-white .images-shirt-neck {
+  background:#dce1e4;
+  border-bottom-color:#aab4ba;
+}
+.images-studio.is-zen .images-ink-mode {
+  margin-bottom:10px;
+  padding:3px;
+}
+.images-studio.is-zen .images-ink-mode button {
+  min-height:31px;
+}
+@media (max-width:720px) {
+  .images-ink-mode button { min-height:35px; font-size:10px; }
+  .images-preview-modes { gap:2px; padding:2px; }
+  .images-preview-modes button { min-width:41px; padding:0 4px; font-size:8px; }
+  .images-studio.is-zen .images-preview-modes button { min-width:40px; }
+  .images-studio.is-zen .images-ink-mode { margin-bottom:8px; }
+}
+@media (max-width:370px) {
+  .images-preview-header { align-items:stretch; }
+  .images-preview-modes button { min-width:35px; }
+}
