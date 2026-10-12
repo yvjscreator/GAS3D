@@ -550,3 +550,16 @@
   white-space:nowrap; flex:0 0 auto;
 }
 .images-batch-progress .processing { color:#94e6d0; }
+
+
+/* Native-resolution magnification: drawn over the fast, scaled canvas. */
+.images-native-detail {
+  position:absolute;
+  inset:0;
+  z-index:3;
+  width:100%;
+  height:100%;
+  pointer-events:none;
+  user-select:none;
+}
+.images-preview.zoomed .images-native-detail { image-rendering:auto; }
