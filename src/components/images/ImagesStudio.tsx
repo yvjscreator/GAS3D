@@ -279,11 +279,30 @@ export function ImagesStudio() {
       // Process at the original resolution in strips to avoid giant ImageData
       // allocations and give the browser a chance to repaint progress.
       const rows = Math.max(1, Math.floor(1_500_000 / bitmap.width))
+      let previousOriginalRow: Uint8ClampedArray | null = null
+
       for (let y = 0; y < bitmap.height; y += rows) {
         const h = Math.min(rows, bitmap.height - y)
-        const original = ctx.getImageData(0, y, bitmap.width, h)
+        const sourceY = Math.max(0, y - 1)
+        const sourceBottom = Math.min(bitmap.height, y + h + 1)
+        const original = ctx.getImageData(0, sourceY, bitmap.width, sourceBottom - sourceY)
+
+        // Include one untouched row above and below the export strip so
+        // detail protection/noise cleanup give exactly the same result at
+        // strip boundaries as when processing the entire image at once.
+        if (previousOriginalRow && sourceY < y) original.data.set(previousOriginalRow, 0)
+        const rowBytes = bitmap.width * 4
+        const lastOffset = (y + h - 1 - sourceY) * rowBytes
+        previousOriginalRow = original.data.slice(lastOffset, lastOffset + rowBytes)
+
         const result = removeFabricInk(original, settings, inkMode)
-        ctx.putImageData(result.image, 0, y)
+        const firstPixel = (y - sourceY) * rowBytes
+        const output = new ImageData(
+          result.image.data.slice(firstPixel, firstPixel + h * rowBytes),
+          bitmap.width,
+          h,
+        )
+        ctx.putImageData(output, 0, y)
         setProgress(Math.round(((y + h) / bitmap.height) * 95))
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
       }
