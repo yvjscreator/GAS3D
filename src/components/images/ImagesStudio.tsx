@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, Shirt, Upload, X, List, Scan, Plus, CheckCircle2, AlertCircle, LoaderCircle } from 'lucide-react'
+import { Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, Shirt, Upload, X, List, Scan, Layers3 } from 'lucide-react'
 import {
   imagePresets,
   removeFabricInk,
@@ -11,6 +11,7 @@ import {
 import { assertImageDimensions, assertImageFile, downloadBlob, renderTransparentPng } from './imageExport'
 import { createZipArchive } from './zipExport'
 import { paintNativeDetail } from './detailPreview'
+import { ImagesBatchSidebar } from './ImagesBatchSidebar'
 import './imagesStudio.css'
 
 const MAX_IMAGE_PIXELS = 30_000_000
@@ -75,6 +76,7 @@ export function ImagesStudio() {
   const detailCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const zoomRef = useRef<ZoomPosition>({ ...initialZoom })
   const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
+  const lastCtrlPressRef = useRef(0)
 
   const [file, setFile] = useState<File | null>(null)
   const [sourcePreview, setSourcePreview] = useState<ImageData | null>(null)
@@ -84,6 +86,7 @@ export function ImagesStudio() {
   const [settings, setSettings] = useState<InkRemovalSettings>(() => ({ ...imagePresets[initialInkMode()].balanced.settings }))
   const [previewMode, setPreviewMode] = useState<ImagePreviewMode>(initialInkMode)
   const [showOriginal, setShowOriginal] = useState(false)
+  const [holdOriginal, setHoldOriginal] = useState(false)
   const [removedPercent, setRemovedPercent] = useState(0)
   const [busy, setBusy] = useState<'loading' | 'exporting' | 'batch' | null>(null)
   const [progress, setProgress] = useState(0)
@@ -96,8 +99,10 @@ export function ImagesStudio() {
   const [batchSelectedId, setBatchSelectedId] = useState<number | null>(null)
   const [batchSummary, setBatchSummary] = useState<string | null>(null)
   const [batchCurrent, setBatchCurrent] = useState(0)
+  const [batchPanelOpen, setBatchPanelOpen] = useState(false)
   const [zoom, setZoom] = useState<ZoomPosition>({ ...initialZoom })
   const [previewResize, setPreviewResize] = useState(0)
+  const originalVisible = showOriginal || holdOriginal
 
   useEffect(() => {
     return () => {
@@ -132,6 +137,44 @@ export function ImagesStudio() {
       // The processor works without persistence.
     }
   }, [inkMode])
+
+  useEffect(() => {
+    const onDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Control') {
+        // A shortcut such as Ctrl+C between taps is not a comparison gesture.
+        if (!['Shift', 'Alt', 'Meta'].includes(event.key)) lastCtrlPressRef.current = 0
+        return
+      }
+      if (event.repeat || event.altKey || event.metaKey) return
+      const now = performance.now()
+      if (lastCtrlPressRef.current && now - lastCtrlPressRef.current <= 370) {
+        setHoldOriginal(true)
+        lastCtrlPressRef.current = 0
+      } else {
+        lastCtrlPressRef.current = now
+      }
+    }
+    const onUp = (event: KeyboardEvent) => {
+      if (event.key === 'Control') setHoldOriginal(false)
+    }
+    const onBlur = () => {
+      setHoldOriginal(false)
+      lastCtrlPressRef.current = 0
+    }
+    const onVisibility = () => {
+      if (document.hidden) onBlur()
+    }
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup', onUp)
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('keydown', onDown)
+      window.removeEventListener('keyup', onUp)
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
 
   useEffect(() => {
     if (!zenMode) return
@@ -224,12 +267,12 @@ export function ImagesStudio() {
       if (canvas.height !== sourcePreview.height) canvas.height = sourcePreview.height
       const ctx = canvas.getContext('2d', { willReadFrequently: true })
       if (!ctx) return
-      ctx.putImageData(showOriginal ? sourcePreview : result.image, 0, 0)
+      ctx.putImageData(originalVisible ? sourcePreview : result.image, 0, 0)
       setRemovedPercent(Math.round(result.removedPixels / (sourcePreview.width * sourcePreview.height) * 100))
     })
 
     return () => cancelAnimationFrame(frame)
-  }, [sourcePreview, settings, showOriginal, previewMode, inkMode])
+  }, [sourcePreview, settings, originalVisible, previewMode, inkMode])
 
   useEffect(() => {
     const viewport = previewRef.current
@@ -266,7 +309,7 @@ export function ImagesStudio() {
           overlay: detailCanvasRef.current,
           settings,
           inkMode,
-          showOriginal,
+          showOriginal: originalVisible,
         })
       })
     }, 110)
@@ -275,7 +318,7 @@ export function ImagesStudio() {
       window.clearTimeout(timeout)
       if (animationFrame) window.cancelAnimationFrame(animationFrame)
     }
-  }, [zoom, sourcePreview, settings, inkMode, showOriginal, previewMode, previewResize])
+  }, [zoom, sourcePreview, settings, inkMode, originalVisible, previewMode, previewResize])
 
   const loadImage = async (incoming: File) => {
     const id = ++uploadIdRef.current
@@ -679,8 +722,8 @@ export function ImagesStudio() {
               <strong title={file.name}>{file.name}</strong>
               <small>{(file.size / (1024 * 1024)).toFixed(1)} MB · {removedPercent}% de píxeles totalmente transparentes en preview</small>
             </div>
-            <button className={showOriginal ? 'images-before active' : 'images-before'} onClick={() => setShowOriginal((value) => !value)} aria-pressed={showOriginal}>
-              <Eye size={16} /> {showOriginal ? 'Ver resultado' : 'Ver original'}
+            <button className={originalVisible ? 'images-before active' : 'images-before'} onClick={() => setShowOriginal((value) => !value)} aria-pressed={showOriginal}>
+              <Eye size={16} /> {originalVisible ? 'Ver resultado' : 'Ver original'}
             </button>
           </div>}
           {workspaceMode === 'batch' && <div className="images-batch-queue" aria-label="Cola de imágenes">
