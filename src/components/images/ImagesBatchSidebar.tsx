@@ -35,7 +35,7 @@ function BatchThumbnail({ file }: { file: File }) {
       let bitmap: ImageBitmap | null = null
       try {
         // Native decoder downscaling keeps large source photos out of sidebar RAM.
-        bitmap = await createImageBitmap(file, { resizeWidth: 80, resizeHeight: 80, resizeQuality: 'medium' })
+        bitmap = await createImageBitmap(file, { resizeWidth: 80, resizeQuality: 'medium' })
         if (cancelled) return
         const ctx = canvas.getContext('2d')
         if (!ctx) return
