@@ -17,12 +17,13 @@ La tercera pestaña de GAS3D (`#/images`) prepara arte creado sobre fondos negro
 - **Prenda blanca:** retira blanco, casi blanco e iluminaciones de todo el dibujo.
 - Presets (puro, negros/sombras o blancos/luces, agresivo) y cinco controles para ajuste fino.
 - Preview sobre alfa, negro, blanco y remera del color elegido; antes/después.
+- **Comparar rápidamente:** pulsa dos veces `Ctrl` (en menos de 370 ms) y mantén presionada la segunda pulsación para ver la imagen original; al soltar vuelve al resultado. El botón de antes/después sigue disponible.
 - **Modo Zen:** aprovecha el viewport, panel de ajustes plegable y estado recordado.
 
 ### Individual y por lotes
 
 - **Individual:** sube una imagen PNG/JPG/WebP, ajusta y exporta un PNG transparente.
-- **Por lotes:** agrega hasta 40 archivos; selecciona cualquiera de la cola para inspeccionar su preview; comparte color de prenda, preset y ajustes entre todos.
+- **Por lotes:** agrega hasta 40 archivos en una **barra lateral izquierda**, como capas de Photoshop, con miniaturas, selección, estados y eliminación individual. En móvil la barra se abre como un panel deslizable sin reducir el lienzo. Comparte color de prenda, preset y ajustes entre todos.
 - **Exportar ZIP:** procesa las imágenes una por una para limitar el consumo de memoria, con porcentaje y estado por archivo; si falla alguna, continúa con las demás y entrega las exitosas en el ZIP.
 - Los PNG conservan la resolución y las proporciones originales. El ZIP utiliza almacenamiento sin recomprimir los PNG (ya comprimidos), sin dependencias externas.
 - Los nombres terminan en `-black-tee-ready.png` o `-white-tee-ready.png`; los duplicados se renombran dentro del ZIP.
