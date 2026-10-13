@@ -401,6 +401,7 @@ export function ImagesStudio() {
     setBatchSummary(null)
     if (current === 0 || batchSelectedId === null) {
       setBatchSelectedId(items[0].id)
+      setBatchPanelOpen(false)
       void loadImage(items[0].file)
     }
     if (incoming.length > additions.length) {
@@ -413,12 +414,14 @@ export function ImagesStudio() {
   const selectBatchFile = (item: BatchItem) => {
     if (busy !== null) return
     setBatchSelectedId(item.id)
+    setBatchPanelOpen(false)
     void loadImage(item.file)
   }
 
   const setWorkspace = (next: WorkspaceMode) => {
     if (busy) return
     setWorkspaceMode(next)
+    setBatchPanelOpen(next === 'batch')
     setBatchSummary(null)
     if (next === 'batch') {
       if (batchItems.length === 0 && file) {
@@ -526,6 +529,7 @@ export function ImagesStudio() {
 
   const clearBatch = () => {
     if (busy) return
+    setBatchPanelOpen(false)
     setBatchItems([])
     setBatchSelectedId(null)
     setBatchSummary(null)
@@ -665,9 +669,28 @@ export function ImagesStudio() {
 
       {error && <div className="images-error" role="alert">{error}<button aria-label="Cerrar error" onClick={() => setError(null)}><X size={15} /></button></div>}
 
-      <div className={'images-layout' + (zenMode && !controlsVisible ? ' controls-hidden' : '')}>
-        <section className={workspaceMode === 'batch' ? 'images-view-column has-batch' : 'images-view-column'} aria-label="Vista previa del arte">
+      <div className={'images-layout' + (workspaceMode === 'batch' ? ' with-batch' : '') + (batchPanelOpen ? ' batch-panel-open' : '') + (zenMode && !controlsVisible ? ' controls-hidden' : '')}>
+        {workspaceMode === 'batch' && <>
+          <button type="button" className="images-batch-scrim" aria-label="Cerrar panel de imágenes" onClick={() => setBatchPanelOpen(false)} />
+          <ImagesBatchSidebar
+            items={batchItems}
+            selectedId={batchSelectedId}
+            running={busy !== null}
+            current={batchCurrent}
+            summary={batchSummary}
+            onSelect={selectBatchFile}
+            onRemove={removeBatchFile}
+            onAdd={() => inputRef.current?.click()}
+            onClose={() => setBatchPanelOpen(false)}
+          />
+        </>}
+        <section className="images-view-column" aria-label="Vista previa del arte">
           <div className="images-preview-header">
+            {workspaceMode === 'batch' && <button type="button" className="images-layer-toggle" aria-label="Mostrar imágenes del lote"
+              aria-expanded={batchPanelOpen} onClick={() => setBatchPanelOpen((value) => !value)}>
+              <Layers3 size={16} />
+              <span>{batchItems.length}</span>
+            </button>}
             <div className="images-preview-title">
               <span>VISTA PREVIA</span>
               {dimensions && <small>{numberFormatter.format(dimensions.width)} × {numberFormatter.format(dimensions.height)} px</small>}
@@ -725,37 +748,6 @@ export function ImagesStudio() {
             <button className={originalVisible ? 'images-before active' : 'images-before'} onClick={() => setShowOriginal((value) => !value)} aria-pressed={showOriginal}>
               <Eye size={16} /> {originalVisible ? 'Ver resultado' : 'Ver original'}
             </button>
-          </div>}
-          {workspaceMode === 'batch' && <div className="images-batch-queue" aria-label="Cola de imágenes">
-            <div className="images-batch-heading">
-              <span><strong>Lote</strong> {batchItems.length}/{MAX_BATCH_FILES} archivos
-                {busy === 'batch' && ' · ' + batchCurrent + ' de ' + batchItems.length}
-              </span>
-              <button type="button" onClick={() => inputRef.current?.click()} disabled={busy !== null}>
-                <Plus size={13} /> Añadir
-              </button>
-            </div>
-            {batchSummary && <div className="images-batch-summary" role="status">{batchSummary}</div>}
-            <div className="images-batch-list">
-              {batchItems.length === 0 && <span className="images-batch-empty">Añade varias imágenes. Todas usarán los mismos ajustes de la derecha.</span>}
-              {batchItems.map((item, index) => <div className={batchSelectedId === item.id ? 'images-batch-item selected' : 'images-batch-item'} key={item.id}>
-                <button type="button" className="images-batch-select" onClick={() => selectBatchFile(item)}
-                  disabled={busy === 'batch'} title={item.file.name + (item.detail ? ' · ' + item.detail : '')}>
-                  <span className="images-batch-index">{index + 1}</span>
-                  <span className="images-batch-name">{item.file.name}</span>
-                  {item.status === 'ready' ? <CheckCircle2 size={15} className="ready" /> :
-                    item.status === 'processing' ? <span className="images-batch-progress">
-                      <LoaderCircle size={12} className="processing" /> {item.progress ?? 0}%
-                    </span> :
-                    item.status === 'error' ? <AlertCircle size={15} className="error" /> :
-                    <span className="images-batch-pending" />}
-                </button>
-                <button type="button" className="images-batch-remove" onClick={() => removeBatchFile(item.id)}
-                  disabled={busy !== null} title="Quitar del lote" aria-label={'Quitar ' + item.file.name}>
-                  <X size={13} />
-                </button>
-              </div>)}
-            </div>
           </div>}
         </section>
 
