@@ -51,13 +51,15 @@ function BatchThumbnail({ file }: { file: File }) {
       }
     }
 
-    let observer: IntersectionObserver | null = null
-    if (typeof IntersectionObserver !== 'undefined') {
-      observer = new IntersectionObserver((records) => {
-        if (!records.some((record) => record.isIntersecting)) return
-        observer?.disconnect()
-        void draw()
-      }, { rootMargin: '120px' })
+    const observer = typeof IntersectionObserver !== 'undefined'
+      ? new IntersectionObserver((records, activeObserver) => {
+          if (!records.some((record) => record.isIntersecting)) return
+          activeObserver.disconnect()
+          void draw()
+        }, { rootMargin: '120px' })
+      : null
+
+    if (observer) {
       observer.observe(canvas)
     } else {
       void draw()
