@@ -745,7 +745,8 @@ export function ImagesStudio() {
               <strong title={file.name}>{file.name}</strong>
               <small>{(file.size / (1024 * 1024)).toFixed(1)} MB · {removedPercent}% de píxeles totalmente transparentes en preview</small>
             </div>
-            <button className={originalVisible ? 'images-before active' : 'images-before'} onClick={() => setShowOriginal((value) => !value)} aria-pressed={showOriginal}>
+            <button className={originalVisible ? 'images-before active' : 'images-before'} onClick={() => setShowOriginal((value) => !value)} aria-pressed={showOriginal}
+              title="Ver antes/después. Pulsa dos veces Ctrl y mantén la segunda pulsación para ver el original temporalmente.">
               <Eye size={16} /> {originalVisible ? 'Ver resultado' : 'Ver original'}
             </button>
           </div>}
