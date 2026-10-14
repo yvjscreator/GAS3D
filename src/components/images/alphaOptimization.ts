@@ -15,7 +15,7 @@ export const DEFAULT_ALPHA_SETTINGS: AlphaOptimizationSettings = {
   dtfMode: 'halftone',
   cleanupPercent: 10,
   cellPixels: 8,
-  detailProtection: 75,
+  detailProtection: 85,
 }
 
 export type AlphaStatistics = { transparent: number; partial: number; opaque: number; total: number }
@@ -70,7 +70,7 @@ export function optimizeImageAlpha(
   // column must never be mistaken for missing source detail.
   const source = new Uint8ClampedArray(data)
   const protection = settings.dtfMode === 'aggressive' ? 0
-    : Math.max(0, Math.min(1, (settings.detailProtection ?? 75) / 100))
+    : Math.max(0, Math.min(1, (settings.detailProtection ?? 85) / 100))
   const dot = Math.max(1, Math.min(5, Math.round(settings.cellPixels / 4)))
   const solidAlpha = 255 - Math.round(82 * protection)
   const edgeAlpha = 160 - Math.round(80 * protection)
