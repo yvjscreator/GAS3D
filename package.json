@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run qa:images",
     "lint": "eslint .",
     "qa:images": "esbuild scripts/images-print-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-images-print-qa.mjs && node /tmp/gas3d-images-print-qa.mjs",
     "qa:roadmap": "esbuild scripts/roadmap-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-roadmap-qa.mjs && node /tmp/gas3d-roadmap-qa.mjs",
