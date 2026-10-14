@@ -1011,6 +1011,11 @@ export function ImagesStudio() {
                 El modo protegido prioriza detalles de contraste. Verifica el tamaño mínimo del punto
                 y el resultado del RIP con el taller. Usa zoom para evaluar trazos finos.
               </p>
+              {inkMode === 'black' && settings.shadowThreshold > 85 && <p className="images-dtf-warning">
+                Si aún ves puntitos en la cara o sombras del personaje, reduce
+                «Eliminar sombras» o prueba el preset «Negro puro»: ese ajuste puede
+                volver semitransparentes zonas de la ilustración antes del tramado.
+              </p>}
             </>}
             {alphaStats && <p className="images-alpha-diagnostic">
               Alfa parcial: <strong>{(alphaStats.original.partial / Math.max(1, alphaStats.original.total) * 100).toFixed(1)}%</strong>
