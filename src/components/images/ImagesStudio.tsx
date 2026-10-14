@@ -992,12 +992,12 @@ export function ImagesStudio() {
               <span><strong>Convertir a sRGB</strong><small>Decodificación con gestión ICC del navegador → Canvas 2D sRGB</small></span>
               <span className="images-color-active">Activo</span>
             </div>
-            <label className="images-color-rule images-color-checkbox">
+            <button type="button" className="images-color-rule images-color-toggle"
+              aria-pressed={embedProfile} disabled={busy === 'batch' || busy === 'exporting'}
+              onClick={() => { setEmbedProfile((value) => !value); invalidateBatch() }}>
               <span><strong>Incrustar perfil ICC sRGB</strong><small>Perfil real dentro del PNG (iCCP)</small></span>
-              <input type="checkbox" checked={embedProfile}
-                disabled={busy === 'batch' || busy === 'exporting'}
-                onChange={(event) => { setEmbedProfile(event.currentTarget.checked); invalidateBatch() }}/>
-            </label>
+              <span className={embedProfile ? 'images-color-switch on' : 'images-color-switch'} aria-hidden="true"><i /></span>
+            </button>
             <div className="images-color-rule">
               <span><strong>Profundidad de color</strong><small>Con transparencia y sin paleta indexada</small></span>
               <span className="images-color-active">RGBA · 8 bits</span>
