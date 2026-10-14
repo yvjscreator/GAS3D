@@ -1,5 +1,7 @@
 import { removeFabricInk, type InkRemovalMode, type InkRemovalSettings } from './imageProcessor'
 import { getExportGeometry, setPngDpi, type ExportPreset } from './printExport'
+import { DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings } from './alphaOptimization'
+import { embedSrgbIcc, verifyPrintPng } from './colorManagement'
 
 const MAX_PIXELS_DESKTOP = 30_000_000
 const MAX_PIXELS_MOBILE = 18_000_000
@@ -29,13 +31,15 @@ export async function renderTransparentPng(
   onProgress?: (progress: number) => void,
   outputPreset: ExportPreset = 'original',
   allowUpscale = true,
+  alphaSettings: AlphaOptimizationSettings = DEFAULT_ALPHA_SETTINGS,
+  embedProfile = true,
 ): Promise<Blob> {
   assertImageDimensions(bitmap)
   const canvas = document.createElement('canvas')
   canvas.width = bitmap.width
   canvas.height = bitmap.height
   try {
-    const context = canvas.getContext('2d', { willReadFrequently: true })
+    const context = canvas.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' })
     if (!context) throw new Error('No se pudo crear el lienzo de exportación.')
     context.drawImage(bitmap, 0, 0)
     const rows = Math.max(1, Math.floor(1_500_000 / bitmap.width))
@@ -83,7 +87,7 @@ export async function renderTransparentPng(
       outputCanvas.height = geometry.height
 
       try {
-        const outputContext = outputCanvas.getContext('2d', { alpha: true })
+        const outputContext = outputCanvas.getContext('2d', { alpha: true, willReadFrequently: true, colorSpace: 'srgb' })
         if (!outputContext) throw new Error('No se pudo crear el lienzo de impresión. Prueba en un dispositivo con más memoria.')
         // The output canvas begins transparent. Contain and centering do not crop.
         outputContext.imageSmoothingEnabled = true
@@ -102,6 +106,25 @@ export async function renderTransparentPng(
       }
     }
 
+    // Treat DTF alpha AFTER layout/resampling. Cells and strips share the same
+    // global coordinate system; no seam between full-width export strips.
+    if (shouldOptimizeAlpha(alphaSettings)) {
+      const ctx = outputCanvas.getContext('2d', { willReadFrequently: true })
+      if (!ctx) throw new Error('El lienzo no permite optimizar la transparencia.')
+      const cell = alphaSettings.dtfMode === 'halftone'
+        ? Math.max(4, Math.min(24, Math.round(alphaSettings.cellPixels))) : 1
+      const rowBudget = Math.floor(900_000 / geometry.width)
+      const stripHeight = Math.max(cell, Math.floor(Math.max(cell, rowBudget) / cell) * cell)
+      for (let y = 0; y < geometry.height; y += stripHeight) {
+        const h = Math.min(stripHeight, geometry.height - y)
+        const pixels = ctx.getImageData(0, y, geometry.width, h)
+        optimizeImageAlpha(pixels, alphaSettings, y)
+        ctx.putImageData(pixels, 0, y)
+        onProgress?.(96 + Math.round(((y + h) / geometry.height) * 2))
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+      }
+    }
+
     let blob: Blob
     try {
       blob = await new Promise<Blob>((resolve, reject) => {
@@ -116,6 +139,11 @@ export async function renderTransparentPng(
     }
     // Unlike a simple 4724x6260 canvas export, this also carries physical print size.
     if (geometry.dpi) blob = await setPngDpi(blob, geometry.dpi)
+    if (embedProfile) blob = await embedSrgbIcc(blob)
+    // Block erroneous outputs: no silently incorrect color depth or metadata.
+    await verifyPrintPng(blob, {
+      width: geometry.width, height: geometry.height, dpi: geometry.dpi, icc: embedProfile,
+    })
     onProgress?.(100)
     return blob
   } finally {
