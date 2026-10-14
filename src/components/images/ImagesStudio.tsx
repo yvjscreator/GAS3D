@@ -13,6 +13,7 @@ import { createZipArchive } from './zipExport'
 import { paintNativeDetail } from './detailPreview'
 import { ImagesBatchSidebar } from './ImagesBatchSidebar'
 import { EXPORT_PRESETS, getExportGeometry, resolveExportPreset, type ExportPreset } from './printExport'
+import { analyzeAlpha, DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings, type PrintMethod, type DtfAlphaMode, type AlphaStatistics } from './alphaOptimization'
 import './imagesStudio.css'
 
 const MAX_IMAGE_PIXELS = 30_000_000
@@ -23,6 +24,10 @@ const CONTROLS_KEY = 'gas3d.images.zen.controls.v1'
 const INK_MODE_KEY = 'gas3d.images.ink-mode.v1'
 const OUTPUT_PRESET_KEY = 'gas3d.images.output-preset.v1'
 const UPSCALE_KEY = 'gas3d.images.output-upscale.v1'
+const PRINT_METHOD_KEY = 'gas3d.images.print-method.v1'
+const DTF_ALPHA_KEY = 'gas3d.images.dtf-alpha.v1'
+const ICC_KEY = 'gas3d.images.icc-profile.v1'
+const ALPHA_CLEANUP_KEY = 'gas3d.images.alpha-cleanup.v1'
 
 const readOutputPreset = (): ExportPreset => {
   try {
@@ -100,6 +105,22 @@ export function ImagesStudio() {
   const [inkMode, setInkMode] = useState<InkRemovalMode>(initialInkMode)
   const [outputPreset, setOutputPreset] = useState<ExportPreset>(readOutputPreset)
   const [allowUpscale, setAllowUpscale] = useState(() => readPreference(UPSCALE_KEY, true))
+  const [printMethod, setPrintMethod] = useState<PrintMethod>(() => {
+    try { return window.localStorage.getItem(PRINT_METHOD_KEY) === 'dtf' ? 'dtf' : 'dtg' }
+    catch { return 'dtg' }
+  })
+  const [dtfAlphaMode, setDtfAlphaMode] = useState<DtfAlphaMode>(() => {
+    try {
+      const stored = window.localStorage.getItem(DTF_ALPHA_KEY)
+      return stored === 'solid' || stored === 'preserve' ? stored : 'halftone'
+    } catch { return 'halftone' }
+  })
+  const [embedProfile, setEmbedProfile] = useState(() => readPreference(ICC_KEY, true))
+  const [alphaCleanup, setAlphaCleanup] = useState(() => {
+    try { return Math.max(0, Math.min(30, Number(window.localStorage.getItem(ALPHA_CLEANUP_KEY) ?? 10) || 0)) }
+    catch { return 10 }
+  })
+  const [alphaStats, setAlphaStats] = useState<{ original: AlphaStatistics; result: AlphaStatistics } | null>(null)
   const [preset, setPreset] = useState<ImagePreset | null>('balanced')
   const [settings, setSettings] = useState<InkRemovalSettings>(() => ({ ...imagePresets[initialInkMode()].balanced.settings }))
   const [previewMode, setPreviewMode] = useState<ImagePreviewMode>(initialInkMode)
@@ -121,6 +142,12 @@ export function ImagesStudio() {
   const [zoom, setZoom] = useState<ZoomPosition>({ ...initialZoom })
   const [previewResize, setPreviewResize] = useState(0)
   const originalVisible = showOriginal || holdOriginal
+  const alphaSettings: AlphaOptimizationSettings = {
+    ...DEFAULT_ALPHA_SETTINGS,
+    method: printMethod,
+    dtfMode: dtfAlphaMode,
+    cleanupPercent: alphaCleanup,
+  }
   const exportGeometry = dimensions ? getExportGeometry(dimensions.width, dimensions.height, outputPreset, allowUpscale) : null
 
   useEffect(() => {
@@ -165,6 +192,17 @@ export function ImagesStudio() {
       // Print options remain functional without browser storage.
     }
   }, [outputPreset, allowUpscale])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PRINT_METHOD_KEY, printMethod)
+      window.localStorage.setItem(DTF_ALPHA_KEY, dtfAlphaMode)
+      window.localStorage.setItem(ICC_KEY, String(embedProfile))
+      window.localStorage.setItem(ALPHA_CLEANUP_KEY, String(alphaCleanup))
+    } catch {
+      // The print pipeline works without localStorage.
+    }
+  }, [printMethod, dtfAlphaMode, embedProfile, alphaCleanup])
 
   useEffect(() => {
     const onDown = (event: KeyboardEvent) => {
@@ -295,12 +333,17 @@ export function ImagesStudio() {
       if (canvas.height !== sourcePreview.height) canvas.height = sourcePreview.height
       const ctx = canvas.getContext('2d', { willReadFrequently: true })
       if (!ctx) return
-      ctx.putImageData(originalVisible ? sourcePreview : result.image, 0, 0)
+      const before = analyzeAlpha(result.image)
+      const optimizedPreview = shouldOptimizeAlpha(alphaSettings)
+        ? optimizeImageAlpha(result.image, alphaSettings) : result.image
+      const after = analyzeAlpha(optimizedPreview)
+      ctx.putImageData(originalVisible ? sourcePreview : optimizedPreview, 0, 0)
+      setAlphaStats({ original: before, result: after })
       setRemovedPercent(Math.round(result.removedPixels / (sourcePreview.width * sourcePreview.height) * 100))
     })
 
     return () => cancelAnimationFrame(frame)
-  }, [sourcePreview, settings, originalVisible, previewMode, inkMode])
+  }, [sourcePreview, settings, originalVisible, previewMode, inkMode, printMethod, dtfAlphaMode, alphaCleanup])
 
   useEffect(() => {
     const viewport = previewRef.current
@@ -338,6 +381,7 @@ export function ImagesStudio() {
           settings,
           inkMode,
           showOriginal: originalVisible,
+          alphaSettings,
         })
       })
     }, 110)
@@ -346,7 +390,7 @@ export function ImagesStudio() {
       window.clearTimeout(timeout)
       if (animationFrame) window.cancelAnimationFrame(animationFrame)
     }
-  }, [zoom, sourcePreview, settings, inkMode, originalVisible, previewMode, previewResize])
+  }, [zoom, sourcePreview, settings, inkMode, originalVisible, previewMode, previewResize, printMethod, dtfAlphaMode, alphaCleanup])
 
   const loadImage = async (incoming: File) => {
     const id = ++uploadIdRef.current
@@ -398,6 +442,7 @@ export function ImagesStudio() {
       bitmapRef.current?.close()
       bitmapRef.current = bitmap
       setSourcePreview(previewPixels)
+      setAlphaStats(null)
       resetZoom()
       setDimensions({ width: bitmap.width, height: bitmap.height })
       setShowOriginal(false)
@@ -535,6 +580,7 @@ export function ImagesStudio() {
     bitmapRef.current?.close()
     bitmapRef.current = null
     setSourcePreview(null)
+    setAlphaStats(null)
     setDimensions(null)
     setFile(null)
     setRemovedPercent(0)
@@ -596,7 +642,7 @@ export function ImagesStudio() {
           setBatchItems((items) => items.map((entry) =>
             entry.id === item.id ? { ...entry, progress: value } : entry,
           ))
-        }, outputPreset, allowUpscale)
+        }, outputPreset, allowUpscale, alphaSettings, embedProfile)
 
         const base = downloadName(item.file.name, inkMode, outputPreset, bitmap.width, bitmap.height)
         let uniqueName = base
@@ -646,7 +692,7 @@ export function ImagesStudio() {
     setProgress(0)
 
     try {
-      const png = await renderTransparentPng(bitmap, settings, inkMode, setProgress, outputPreset, allowUpscale)
+      const png = await renderTransparentPng(bitmap, settings, inkMode, setProgress, outputPreset, allowUpscale, alphaSettings, embedProfile)
       downloadBlob(png, downloadName(currentFile.name, inkMode, outputPreset, bitmap.width, bitmap.height))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falló la exportación PNG.')
@@ -886,6 +932,79 @@ export function ImagesStudio() {
                 <strong>Selecciona una imagen</strong>
                 <span>Auto analiza la proporción y el tamaño. En un lote decide por cada archivo.</span>
               </>}
+            </p>
+          </section>
+
+          <section className="images-production-section" aria-label="Preparación de impresión DTG DTF">
+            <div className="images-output-heading">
+              <span>03 / MÉTODO DE IMPRESIÓN</span>
+              <h3>Optimización de transparencia</h3>
+            </div>
+            <div className="images-method-picker" role="group" aria-label="Método de impresión">
+              {(['dtg', 'dtf'] as PrintMethod[]).map((method) => <button key={method} type="button"
+                disabled={busy !== null && busy !== 'loading'}
+                aria-pressed={printMethod === method}
+                className={printMethod === method ? 'active' : ''}
+                onClick={() => { setPrintMethod(method); invalidateBatch() }}>
+                {method.toUpperCase()}
+              </button>)}
+            </div>
+            {printMethod === 'dtg' ? <p className="images-production-explain">
+              DTG: conserva los degradados y semitransparencias originales del diseño limpio.
+            </p> : <>
+              <div className="images-dtf-modes" role="group" aria-label="Tratamiento de transparencia DTF">
+                {([
+                  ['halftone', 'Tramado inteligente', 'Transforma alfa parcial en puntos de alfa sólido.'],
+                  ['solid', 'Alfa sólido', 'Umbral de 50%: bordes definidos, sin semitransparencias.'],
+                  ['preserve', 'Conservar alfa', 'No modifica las semitransparencias; para un RIP compatible.'],
+                ] as const).map(([id, name, detail]) => <button key={id} type="button"
+                  className={dtfAlphaMode === id ? 'active' : ''}
+                  disabled={busy === 'batch' || busy === 'exporting'}
+                  aria-pressed={dtfAlphaMode === id}
+                  onClick={() => { setDtfAlphaMode(id); invalidateBatch() }}>
+                  <span className="images-mode-radio" aria-hidden="true" />
+                  <span><strong>{name}</strong><small>{detail}</small></span>
+                </button>)}
+              </div>
+              {dtfAlphaMode === 'halftone' && <label className="images-cleanup-slider">
+                <span><strong>Limpiar restos de alfa</strong><output>{alphaCleanup}%</output></span>
+                <input type="range" min={0} max={30} step={1} value={alphaCleanup}
+                  disabled={busy === 'batch' || busy === 'exporting'}
+                  onChange={(event) => { setAlphaCleanup(Number(event.currentTarget.value)); invalidateBatch() }}/>
+              </label>}
+              <p className="images-production-explain">
+                DTF: la trama se calcula en el tamaño de salida final (puntos agrupados de 8 px).
+                Verifica los puntos mínimos y la base blanca con el taller. La vista previa es aproximada.
+              </p>
+            </>}
+            {alphaStats && <p className="images-alpha-diagnostic">
+              Alfa parcial: <strong>{(alphaStats.original.partial / Math.max(1, alphaStats.original.total) * 100).toFixed(1)}%</strong>
+              {' '}→ <strong>{(alphaStats.result.partial / Math.max(1, alphaStats.result.total) * 100).toFixed(1)}%</strong> en vista previa.
+              {shouldOptimizeAlpha(alphaSettings) && <span>La exportación DTF tendrá alfa 0 o 255.</span>}
+            </p>}
+          </section>
+          <section className="images-production-section" aria-label="Gestión del color PNG">
+            <div className="images-output-heading">
+              <span>04 / GESTIÓN DE COLOR</span>
+              <h3>PNG listo para impresión</h3>
+            </div>
+            <div className="images-color-rule">
+              <span><strong>Convertir a sRGB</strong><small>Decodificación con gestión ICC del navegador → Canvas 2D sRGB</small></span>
+              <span className="images-color-active">Activo</span>
+            </div>
+            <label className="images-color-rule images-color-checkbox">
+              <span><strong>Incrustar perfil ICC sRGB</strong><small>Perfil real dentro del PNG (iCCP)</small></span>
+              <input type="checkbox" checked={embedProfile}
+                disabled={busy === 'batch' || busy === 'exporting'}
+                onChange={(event) => { setEmbedProfile(event.currentTarget.checked); invalidateBatch() }}/>
+            </label>
+            <div className="images-color-rule">
+              <span><strong>Profundidad de color</strong><small>Con transparencia y sin paleta indexada</small></span>
+              <span className="images-color-active">RGBA · 8 bits</span>
+            </div>
+            <p className="images-production-explain">
+              Se verifican RGBA 8 bits, el perfil ICC seleccionado y los 300 ppp cuando corresponden.
+              sRGB mejora la consistencia, pero el RIP y la calibración del taller siguen influyendo en el color.
             </p>
           </section>
 
