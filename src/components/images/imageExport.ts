@@ -2,6 +2,7 @@ import { removeFabricInk, type InkRemovalMode, type InkRemovalSettings } from '.
 import { getExportGeometry, setPngDpi, type ExportPreset } from './printExport'
 import { DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings } from './alphaOptimization'
 import { embedSrgbIcc, verifyPrintPng } from './colorManagement'
+import { optimizePngLosslessly, type CompressionResult } from './pngOptimization'
 
 const MAX_PIXELS_DESKTOP = 30_000_000
 const MAX_PIXELS_MOBILE = 18_000_000
@@ -33,6 +34,8 @@ export async function renderTransparentPng(
   allowUpscale = true,
   alphaSettings: AlphaOptimizationSettings = DEFAULT_ALPHA_SETTINGS,
   embedProfile = true,
+  optimizeLosslessly = true,
+  onCompression?: (result: CompressionResult) => void,
 ): Promise<Blob> {
   assertImageDimensions(bitmap)
   const canvas = document.createElement('canvas')
@@ -158,6 +161,12 @@ export async function renderTransparentPng(
     await verifyPrintPng(blob, {
       width: geometry.width, height: geometry.height, dpi: geometry.dpi, icc: embedProfile,
     })
+    if (optimizeLosslessly) {
+      onProgress?.(99)
+      const compressed = await optimizePngLosslessly(blob)
+      onCompression?.(compressed)
+      blob = compressed.blob
+    }
     onProgress?.(100)
     return blob
   } finally {
