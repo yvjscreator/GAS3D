@@ -1,4 +1,5 @@
 import { removeFabricInk, type InkRemovalMode, type InkRemovalSettings } from './imageProcessor'
+import { optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings } from './alphaOptimization'
 
 type DetailPreview = {
   bitmap: ImageBitmap
@@ -8,6 +9,7 @@ type DetailPreview = {
   settings: InkRemovalSettings
   inkMode: InkRemovalMode
   showOriginal: boolean
+  alphaSettings: AlphaOptimizationSettings
 }
 
 const MAX_DETAIL_PIXELS = 2_500_000
@@ -24,7 +26,7 @@ const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n
  * It deliberately does not touch the export or original bitmap.
  */
 export function paintNativeDetail({
-  bitmap, viewport, image, overlay, settings, inkMode, showOriginal,
+  bitmap, viewport, image, overlay, settings, inkMode, showOriginal, alphaSettings,
 }: DetailPreview): boolean {
   const frame = viewport.getBoundingClientRect()
   const art = image.getBoundingClientRect()
@@ -86,6 +88,7 @@ export function paintNativeDetail({
     if (!showOriginal) {
       const pixels = ctx.getImageData(0, 0, work.width, work.height)
       const processed = removeFabricInk(pixels, settings, inkMode)
+      if (shouldOptimizeAlpha(alphaSettings)) optimizeImageAlpha(processed.image, alphaSettings, sy)
       ctx.putImageData(processed.image, 0, 0)
     }
 
