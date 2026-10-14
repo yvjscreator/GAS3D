@@ -893,3 +893,27 @@
 @media(prefers-reduced-motion:reduce) {
   .images-color-switch i { transition:none; }
 }
+
+
+/* DTF phase 3 — detail-safe output tuning. */
+.images-dtf-options { display:grid; gap:9px; margin-top:10px; }
+.images-dtf-options .images-cleanup-slider { margin:2px 1px 4px; }
+.images-dtf-pitch { display:grid; gap:7px; }
+.images-dtf-pitch>strong { font-size:10px; color:#cbdadf; }
+.images-dtf-pitch>div {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:5px; min-width:0;
+}
+.images-dtf-pitch button {
+  min-width:0; min-height:30px; border:1px solid #38545d;
+  border-radius:6px; color:#abbec8; background:#182731;
+  font-size:10px; font-weight:750;
+}
+.images-dtf-pitch button.active {
+  color:#e2ffed; background:#285b41; border-color:#8bcfa8;
+}
+.images-dtf-pitch button:focus-visible {
+  outline:2px solid #b7ecd3; outline-offset:2px;
+}
+.images-dtf-pitch button:disabled { opacity:.55; }
+.images-studio.is-zen .images-dtf-pitch button { min-height:26px; font-size:9px; }
