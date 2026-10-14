@@ -917,3 +917,10 @@
 }
 .images-dtf-pitch button:disabled { opacity:.55; }
 .images-studio.is-zen .images-dtf-pitch button { min-height:26px; font-size:9px; }
+
+.images-dtf-warning {
+  font-size:10px; line-height:1.5; color:#edcb92;
+  margin:7px 0 0; padding:8px;
+  background:#332617; border:1px solid #786042;
+  border-radius:7px;
+}
