@@ -45,6 +45,23 @@ La imagen ya procesada se coloca en el centro de un **lienzo transparente** con 
 
 La nueva resolución se aplica por igual a **Exportar PNG** y al contenido de **Exportar ZIP**, sin modificar el preview ni los archivos originales. Los nombres distinguen el formato de salida (por ejemplo `-40x53-300ppp-black-tee-ready.png`).
 
+### Print Production Pipeline — sRGB y semitransparencias DTG/DTF
+
+La sección **03 / Método de impresión** elige el tratamiento de alfa, aplicado **después de** encajar el arte procesado en el lienzo final, para no redimensionar luego el tramado:
+
+- **DTG (predeterminado):** conserva los 256 niveles originales de alfa.
+- **DTF · Tramado inteligente:** aproximación de degradados mediante puntos agrupados de 8 píxeles en la resolución final; la salida tiene alfa estrictamente 0/255. El umbral de limpieza descarta zonas con cobertura muy tenue. Inspeccionar y probar el tamaño mínimo de puntos con el taller.
+- **DTF · Alfa sólido:** umbral del 50% con alfa 0/255; recomendado para logos y elementos planos.
+- **DTF · Conservar alfa:** deja las semitransparencias existentes para flujos RIP compatibles.
+
+La vista previa procesada incluye una aproximación del DTF. El tamaño real de los puntos se calcula sobre los píxeles del PNG **después** del ajuste 40×53, 35×40 o Companion ×2. En Companion, como el tamaño se define en píxeles y no en centímetros, es necesario confirmar con el taller la escala de impresión para interpretar físicamente los puntos.
+
+La sección **04 / Gestión de color** aplica el camino de dibujo sRGB del navegador (decodificación con gestión ICC cuando el navegador admite el perfil → Canvas2D sRGB). Permite **incrustar un perfil ICC sRGB real** como chunk \`iCCP\` comprimido, activado por defecto. Esto es distinto de limitarse a etiquetar un archivo arbitrario como sRGB. El PNG se verifica como **RGBA de 8 bits por canal**, y se valida que la incrustación ICC y los **300 ppp** solicitados estén presentes. La conversión de perfiles de entrada no reconocidos depende del soporte del navegador; no se garantiza una equivalencia exacta con el motor ICC de Photoshop para todos los perfiles.
+
+Las opciones se aplican tanto a **Exportar PNG** como a cada archivo del **ZIP por lotes**, preservando la relación de aspecto, los márgenes transparentes y el ajuste centrado del lienzo. Los cambios de impresión/color invalidan la indicación de estado de un lote anterior. Los PNG pueden ser voluminosos por sus dimensiones aunque sean de 8 bits.
+
+QA técnico: ejecutar \`npm run qa:images\` para comprobar geometría, salida alfa binaria, integridad real del perfil ICC sRGB descomprimido, profundidad de 8 bits RGBA y densidad 300 ppp. Ejecutar además \`npm run build\` antes del deploy. Las pruebas de RIP y de impresión física son necesarias para calibrar el tramado y no se sustituyen por este QA.
+
 ### Inspección del preview
 
 - Rueda del mouse sobre la imagen: zoom **centrado en el punto del cursor**, desde 100% (ajustado) hasta 1000%.
