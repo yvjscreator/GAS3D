@@ -1,4 +1,5 @@
 import { removeFabricInk, type InkRemovalMode, type InkRemovalSettings } from './imageProcessor'
+import { getExportGeometry, setPngDpi, type ExportPreset } from './printExport'
 
 const MAX_PIXELS_DESKTOP = 30_000_000
 const MAX_PIXELS_MOBILE = 18_000_000
@@ -20,12 +21,14 @@ export function assertImageDimensions(bitmap: ImageBitmap) {
   }
 }
 
-/** Render original pixels, preserving resolution and one unchanged context row per strip. */
+/** Process original pixels without clipping. Optionally place them inside a fixed transparent print canvas with genuine pHYs metadata. */
 export async function renderTransparentPng(
   bitmap: ImageBitmap,
   settings: InkRemovalSettings,
   inkMode: InkRemovalMode,
   onProgress?: (progress: number) => void,
+  outputPreset: ExportPreset = 'original',
+  allowUpscale = true,
 ): Promise<Blob> {
   assertImageDimensions(bitmap)
   const canvas = document.createElement('canvas')
@@ -63,9 +66,49 @@ export async function renderTransparentPng(
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
     }
 
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((result) => result ? resolve(result) : reject(new Error('No se pudo crear el PNG.')), 'image/png')
-    })
+    const geometry = getExportGeometry(bitmap.width, bitmap.height, outputPreset, allowUpscale)
+    onProgress?.(96)
+
+    let outputCanvas = canvas
+    if (geometry.width !== bitmap.width || geometry.height !== bitmap.height || geometry.x || geometry.y) {
+      outputCanvas = document.createElement('canvas')
+      outputCanvas.width = geometry.width
+      outputCanvas.height = geometry.height
+
+      try {
+        const outputContext = outputCanvas.getContext('2d', { alpha: true })
+        if (!outputContext) throw new Error('No se pudo crear el lienzo de impresión. Prueba en un dispositivo con más memoria.')
+        // The output canvas begins transparent. Contain and centering do not crop.
+        outputContext.imageSmoothingEnabled = true
+        outputContext.imageSmoothingQuality = 'high'
+        outputContext.drawImage(
+          canvas, 0, 0, bitmap.width, bitmap.height,
+          geometry.x, geometry.y, geometry.drawWidth, geometry.drawHeight,
+        )
+        // Free the input RGBA allocation before PNG encoding the print canvas.
+        canvas.width = 0
+        canvas.height = 0
+      } catch (error) {
+        outputCanvas.width = 0
+        outputCanvas.height = 0
+        throw error
+      }
+    }
+
+    let blob: Blob
+    try {
+      blob = await new Promise<Blob>((resolve, reject) => {
+        outputCanvas.toBlob((result) =>
+          result ? resolve(result) : reject(new Error('No se pudo crear el PNG. Es posible que la resolución exceda la memoria del dispositivo.')), 'image/png')
+      })
+    } finally {
+      if (outputCanvas !== canvas) {
+        outputCanvas.width = 0
+        outputCanvas.height = 0
+      }
+    }
+    // Unlike a simple 4724x6260 canvas export, this also carries physical print size.
+    if (geometry.dpi) blob = await setPngDpi(blob, geometry.dpi)
     onProgress?.(100)
     return blob
   } finally {
