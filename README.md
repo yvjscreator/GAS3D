@@ -50,9 +50,12 @@ La nueva resolución se aplica por igual a **Exportar PNG** y al contenido de **
 La sección **03 / Método de impresión** elige el tratamiento de alfa, aplicado **después de** encajar el arte procesado en el lienzo final, para no redimensionar luego el tramado:
 
 - **DTG (predeterminado):** conserva los 256 niveles originales de alfa.
-- **DTF · Tramado inteligente:** aproximación de degradados mediante puntos agrupados de 8 píxeles en la resolución final; la salida tiene alfa estrictamente 0/255. El umbral de limpieza descarta zonas con cobertura muy tenue. Inspeccionar y probar el tamaño mínimo de puntos con el taller.
+- **DTF · Tramado protegido (predeterminado):** conserva el RGB exacto de cada píxel sólido, prioriza contornos y cambios locales de color y tramará únicamente las transparencias que queden sin proteger. Los píxeles opacos se respetan; el alfa final es 0/255. Por defecto, protección al 85% y punto **Fino** (paso aproximado de 2 px a 300 ppp).
 - **DTF · Alfa sólido:** umbral del 50% con alfa 0/255; recomendado para logos y elementos planos.
 - **DTF · Conservar alfa:** deja las semitransparencias existentes para flujos RIP compatibles.
+- **DTF · Tramado completo:** opción de mayor intervención que trama cualquier alfa parcial sin proteger los contornos; para casos especiales, no recomendada como ajuste inicial para ilustraciones.
+
+**Fases de mejora DTF:** fase 1 eliminó el promediado destructivo de colores por celdas; fase 2 añadió protección de contornos y un halo de 1 px entre las franjas de exportación; fase 3 añadió controles de **Proteger contornos y detalles (0–100%)**, **Tamaño de punto** Fino / Medio / Grueso y **Limpiar restos de alfa**, y pruebas para preservar color, detalles y continuidad entre franjas. Cuanto menor sea el porcentaje de alfa original, mayor puede ser la dispersión residual del tramado: revisar también el control de eliminación de sombras (preset `Negro puro` cuando no se desee erosionar las sombras del personaje).
 
 La vista previa procesada incluye una aproximación del DTF. El tamaño real de los puntos se calcula sobre los píxeles del PNG **después** del ajuste 40×53, 35×40 o Companion ×2. En Companion, como el tamaño se define en píxeles y no en centímetros, es necesario confirmar con el taller la escala de impresión para interpretar físicamente los puntos.
 
