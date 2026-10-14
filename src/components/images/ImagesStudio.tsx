@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, Shirt, Upload, X, List, Scan, Layers3 } from 'lucide-react'
 import {
   imagePresets,
@@ -142,12 +142,12 @@ export function ImagesStudio() {
   const [zoom, setZoom] = useState<ZoomPosition>({ ...initialZoom })
   const [previewResize, setPreviewResize] = useState(0)
   const originalVisible = showOriginal || holdOriginal
-  const alphaSettings: AlphaOptimizationSettings = {
+  const alphaSettings: AlphaOptimizationSettings = useMemo(() => ({
     ...DEFAULT_ALPHA_SETTINGS,
     method: printMethod,
     dtfMode: dtfAlphaMode,
     cleanupPercent: alphaCleanup,
-  }
+  }), [printMethod, dtfAlphaMode, alphaCleanup])
   const exportGeometry = dimensions ? getExportGeometry(dimensions.width, dimensions.height, outputPreset, allowUpscale) : null
 
   useEffect(() => {
@@ -343,7 +343,7 @@ export function ImagesStudio() {
     })
 
     return () => cancelAnimationFrame(frame)
-  }, [sourcePreview, settings, originalVisible, previewMode, inkMode, printMethod, dtfAlphaMode, alphaCleanup])
+  }, [sourcePreview, settings, originalVisible, previewMode, inkMode, alphaSettings])
 
   useEffect(() => {
     const viewport = previewRef.current
@@ -390,7 +390,7 @@ export function ImagesStudio() {
       window.clearTimeout(timeout)
       if (animationFrame) window.cancelAnimationFrame(animationFrame)
     }
-  }, [zoom, sourcePreview, settings, inkMode, originalVisible, previewMode, previewResize, printMethod, dtfAlphaMode, alphaCleanup])
+  }, [zoom, sourcePreview, settings, inkMode, originalVisible, previewMode, previewResize, alphaSettings])
 
   const loadImage = async (incoming: File) => {
     const id = ++uploadIdRef.current
