@@ -28,6 +28,23 @@ La tercera pestaña de GAS3D (`#/images`) prepara arte creado sobre fondos negro
 - Los PNG conservan la resolución y las proporciones originales. El ZIP utiliza almacenamiento sin recomprimir los PNG (ya comprimidos), sin dependencias externas.
 - Los nombres terminan en `-black-tee-ready.png` o `-white-tee-ready.png`; los duplicados se renombran dentro del ZIP.
 
+### Lienzos de exportación para estampado
+
+**Images → Lienzo de impresión** ofrece estos formatos (sin IA ni recorte):
+
+| Formato | PNG final | Resolución física |
+| --- | --- | --- |
+| Original | Píxeles de entrada | Sin densidad de impresión impuesta |
+| 40 × 53 cm | **4724 × 6260 px** | **300 ppp**, escritos en el PNG mediante `pHYs` |
+| 35 × 40 cm | **4134 × 4724 px** | **300 ppp**, escritos en el PNG mediante `pHYs` |
+| Companion ×2 | Ancho ×2 y alto ×2 | Sin dimensión física forzada |
+
+Por defecto se usa **Auto**. La sugerencia por relación de aspecto distingue 40:53, 35:40 y los companion icons aproximadamente cuadrados de unos 2000 px; ante imágenes poco reconocibles conserva el tamaño original. Puedes elegir otro preset manualmente en cualquier momento. En lotes, Auto evalúa **cada archivo** individualmente; un preset manual aplica el mismo tamaño de salida a todos.
+
+La imagen ya procesada se coloca en el centro de un **lienzo transparente** con ajuste *contain* (encajar completa); nunca se estira de forma desproporcionada ni se recortan los cuatro extremos. La opción **Permitir ampliar para encajar** controla si los formatos de impresión pueden escalar imágenes pequeñas; Companion siempre escala exactamente ×2. Ampliar ráster no crea detalle real. Mantener los 300 ppp requiere tanto los píxeles suficientes como la metadata `pHYs`, que se inserta después de codificar el PNG sin recompresión del arte.
+
+La nueva resolución se aplica por igual a **Exportar PNG** y al contenido de **Exportar ZIP**, sin modificar el preview ni los archivos originales. Los nombres distinguen el formato de salida (por ejemplo `-40x53-300ppp-black-tee-ready.png`).
+
 ### Inspección del preview
 
 - Rueda del mouse sobre la imagen: zoom **centrado en el punto del cursor**, desde 100% (ajustado) hasta 1000%.
