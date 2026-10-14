@@ -32,10 +32,15 @@ export function recommendExportPreset(width: number, height: number): ResolvedEx
   if (ratio >= 0.94 && ratio <= 1.06 && largest >= 1200 && largest <= 2700) {
     return 'companion-2x'
   }
-  if (Math.abs(ratio - 40 / 53) <= 0.075) return 'print-40x53'
-  if (Math.abs(ratio - 35 / 40) <= 0.105 || (ratio >= 0.94 && ratio <= 1.06)) {
-    return 'print-35x40'
+  const xlDistance = Math.abs(ratio - 40 / 53)
+  const mediumDistance = Math.abs(ratio - 35 / 40)
+  // Compare both candidates before selecting either, especially near 0.83.
+  if (xlDistance <= 0.075 || mediumDistance <= 0.105) {
+    if (xlDistance < mediumDistance && xlDistance <= 0.075) return 'print-40x53'
+    if (mediumDistance <= 0.105) return 'print-35x40'
+    return 'print-40x53'
   }
+  if (ratio >= 0.94 && ratio <= 1.06) return 'print-35x40'
   return 'original'
 }
 
