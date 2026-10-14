@@ -870,3 +870,26 @@
   .images-production-section { margin-top:12px; }
   .images-dtf-modes button { min-height:42px; }
 }
+
+.images-color-toggle {
+  width:100%; min-width:0; padding:10px 0;
+  background:transparent; border:0; border-bottom:1px solid #273b45;
+  font:inherit; text-align:left; cursor:pointer;
+}
+.images-color-toggle:focus-visible { outline:2px solid #a8ecd3; outline-offset:2px; }
+.images-color-switch {
+  flex:0 0 30px; width:30px; height:17px;
+  border-radius:99px; border:1px solid #516574;
+  background:#3a4a55; position:relative;
+}
+.images-color-switch i {
+  position:absolute; left:2px; top:2px;
+  width:11px; height:11px; border-radius:50%; background:#a3b1b9;
+  transition:transform .15s;
+}
+.images-color-switch.on { background:#34875c; border-color:#7fcba2; }
+.images-color-switch.on i { background:#f0fff4; transform:translateX(13px); }
+.images-color-toggle:disabled { opacity:.65; cursor:wait; }
+@media(prefers-reduced-motion:reduce) {
+  .images-color-switch i { transition:none; }
+}
