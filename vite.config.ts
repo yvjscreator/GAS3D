@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  // WASM codecs are bundled as URL assets; Vite's dev optimizer must not prebundle them.
+  optimizeDeps: { exclude: ['@jsquash/oxipng'] },
   server: {
     proxy: {
       '/api/subtitles': {
