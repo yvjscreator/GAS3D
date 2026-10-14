@@ -111,15 +111,29 @@ export async function renderTransparentPng(
     if (shouldOptimizeAlpha(alphaSettings)) {
       const ctx = outputCanvas.getContext('2d', { willReadFrequently: true })
       if (!ctx) throw new Error('El lienzo no permite optimizar la transparencia.')
-      const cell = alphaSettings.dtfMode === 'halftone'
-        ? Math.max(4, Math.min(24, Math.round(alphaSettings.cellPixels))) : 1
+      const dot = alphaSettings.dtfMode === 'halftone' || alphaSettings.dtfMode === 'aggressive'
+        ? Math.max(1, Math.min(5, Math.round(alphaSettings.cellPixels / 4))) : 1
       const rowBudget = Math.floor(900_000 / geometry.width)
-      const stripHeight = Math.max(cell, Math.floor(Math.max(cell, rowBudget) / cell) * cell)
+      const stripHeight = Math.max(dot, Math.floor(Math.max(dot, rowBudget) / dot) * dot)
+      const bytesPerRow = geometry.width * 4
+      let previousUntreatedRow: Uint8ClampedArray | null = null
       for (let y = 0; y < geometry.height; y += stripHeight) {
         const h = Math.min(stripHeight, geometry.height - y)
-        const pixels = ctx.getImageData(0, y, geometry.width, h)
-        optimizeImageAlpha(pixels, alphaSettings, y)
-        ctx.putImageData(pixels, 0, y)
+        // One untouched row on each side ensures edge protection sees the
+        // same original pixels even when output strips are processed in place.
+        const top = Math.max(0, y - 1)
+        const bottom = Math.min(geometry.height, y + h + 1)
+        const pixels = ctx.getImageData(0, top, geometry.width, bottom - top)
+        if (previousUntreatedRow && top < y) pixels.data.set(previousUntreatedRow, 0)
+        const last = (y + h - 1 - top) * bytesPerRow
+        previousUntreatedRow = pixels.data.slice(last, last + bytesPerRow)
+
+        optimizeImageAlpha(pixels, alphaSettings, top)
+        const offset = (y - top) * bytesPerRow
+        ctx.putImageData(new ImageData(
+          pixels.data.slice(offset, offset + h * bytesPerRow),
+          geometry.width, h,
+        ), 0, y)
         onProgress?.(96 + Math.round(((y + h) / geometry.height) * 2))
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
       }
