@@ -773,7 +773,11 @@ export function ImagesStudio() {
           <button className="images-export" onClick={() => void (workspaceMode === 'batch' ? exportBatch() : exportPng())}
             disabled={(workspaceMode === 'batch' ? batchItems.length === 0 : !file) || busy !== null}>
             <Download size={18} />
-            <span>{busy === 'batch' ? 'Lote ' + progress + '%' : busy === 'exporting' ? 'Procesando ' + progress + '%' : workspaceMode === 'batch' ? 'Exportar ZIP' : 'Exportar PNG'}</span>
+            <span>{busy === 'batch'
+              ? (optimizePng && progress >= 93 ? 'Comprimiendo lote…' : 'Lote ' + progress + '%')
+              : busy === 'exporting'
+                ? (optimizePng && progress >= 99 ? 'Optimizando PNG…' : 'Procesando ' + progress + '%')
+                : workspaceMode === 'batch' ? 'Exportar ZIP' : 'Exportar PNG'}</span>
           </button>
         </div>
       </div>
