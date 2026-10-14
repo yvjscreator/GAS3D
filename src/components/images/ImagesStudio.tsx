@@ -13,6 +13,7 @@ import { createZipArchive } from './zipExport'
 import { paintNativeDetail } from './detailPreview'
 import { ImagesBatchSidebar } from './ImagesBatchSidebar'
 import { EXPORT_PRESETS, getExportGeometry, resolveExportPreset, type ExportPreset } from './printExport'
+import { describeCompression, type CompressionResult } from './pngOptimization'
 import { analyzeAlpha, DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings, type PrintMethod, type DtfAlphaMode, type AlphaStatistics } from './alphaOptimization'
 import './imagesStudio.css'
 
@@ -27,6 +28,7 @@ const UPSCALE_KEY = 'gas3d.images.output-upscale.v1'
 const PRINT_METHOD_KEY = 'gas3d.images.print-method.v1'
 const DTF_ALPHA_KEY = 'gas3d.images.dtf-alpha.v1'
 const ICC_KEY = 'gas3d.images.icc-profile.v1'
+const PNG_OPTIMIZE_KEY = 'gas3d.images.optimize-png.v1'
 const ALPHA_CLEANUP_KEY = 'gas3d.images.alpha-cleanup.v1'
 const DETAIL_PROTECTION_KEY = 'gas3d.images.detail-protection.v1'
 const DTF_DOT_SIZE_KEY = 'gas3d.images.dtf-dot-size.v1'
@@ -118,6 +120,8 @@ export function ImagesStudio() {
     } catch { return 'halftone' }
   })
   const [embedProfile, setEmbedProfile] = useState(() => readPreference(ICC_KEY, true))
+  const [optimizePng, setOptimizePng] = useState(() => readPreference(PNG_OPTIMIZE_KEY, true))
+  const [compressionReport, setCompressionReport] = useState<string | null>(null)
   const [alphaCleanup, setAlphaCleanup] = useState(() => {
     try { return Math.max(0, Math.min(30, Number(window.localStorage.getItem(ALPHA_CLEANUP_KEY) ?? 10) || 0)) }
     catch { return 10 }
@@ -212,13 +216,14 @@ export function ImagesStudio() {
       window.localStorage.setItem(PRINT_METHOD_KEY, printMethod)
       window.localStorage.setItem(DTF_ALPHA_KEY, dtfAlphaMode)
       window.localStorage.setItem(ICC_KEY, String(embedProfile))
+      window.localStorage.setItem(PNG_OPTIMIZE_KEY, String(optimizePng))
       window.localStorage.setItem(ALPHA_CLEANUP_KEY, String(alphaCleanup))
       window.localStorage.setItem(DETAIL_PROTECTION_KEY, String(detailProtection))
       window.localStorage.setItem(DTF_DOT_SIZE_KEY, String(dtfDotSize))
     } catch {
       // The print pipeline works without localStorage.
     }
-  }, [printMethod, dtfAlphaMode, embedProfile, alphaCleanup, detailProtection, dtfDotSize])
+  }, [printMethod, dtfAlphaMode, embedProfile, optimizePng, alphaCleanup, detailProtection, dtfDotSize])
 
   useEffect(() => {
     const onDown = (event: KeyboardEvent) => {
@@ -632,6 +637,9 @@ export function ImagesStudio() {
     const results: Array<{ name: string; blob: Blob }> = []
     const usedNames = new Set<string>()
     let failures = 0
+    let savedBytes = 0
+    let compressedCount = 0
+    let skippedCount = 0
     setBusy('batch')
     setBatchSummary(null)
     setError(null)
@@ -658,7 +666,14 @@ export function ImagesStudio() {
           setBatchItems((items) => items.map((entry) =>
             entry.id === item.id ? { ...entry, progress: value } : entry,
           ))
-        }, outputPreset, allowUpscale, alphaSettings, embedProfile)
+        }, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, (result: CompressionResult) => {
+          if (result.status === 'optimized') {
+            savedBytes += result.originalBytes - result.finalBytes
+            compressedCount++
+          } else if (result.status === 'skipped' || result.status === 'failed') {
+            skippedCount++
+          }
+        })
 
         const base = downloadName(item.file.name, inkMode, outputPreset, bitmap.width, bitmap.height)
         let uniqueName = base
@@ -689,6 +704,9 @@ export function ImagesStudio() {
         const archive = await createZipArchive(results)
         downloadBlob(archive, 'gas3d-images-' + inkMode + '-ready.zip')
         setBatchSummary(results.length + ' PNG listos en ZIP.' +
+          (optimizePng ? ' Compresión sin pérdida: ' + compressedCount +
+            ' archivos optimizados, ' + (savedBytes / 1_000_000).toFixed(2) + ' MB ahorrados.' +
+            (skippedCount ? ' ' + skippedCount + ' sin optimizar.' : '') : '') +
           (failures ? ' ' + failures + ' archivos con error; puedes revisarlos en la lista.' : ''))
       }
       setProgress(100)
@@ -706,9 +724,12 @@ export function ImagesStudio() {
     setError(null)
     setBusy('exporting')
     setProgress(0)
+    setCompressionReport(null)
 
     try {
-      const png = await renderTransparentPng(bitmap, settings, inkMode, setProgress, outputPreset, allowUpscale, alphaSettings, embedProfile)
+      const png = await renderTransparentPng(bitmap, settings, inkMode, setProgress, outputPreset, allowUpscale,
+        alphaSettings, embedProfile, optimizePng,
+        (result) => setCompressionReport(describeCompression(result)))
       downloadBlob(png, downloadName(currentFile.name, inkMode, outputPreset, bitmap.width, bitmap.height))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falló la exportación PNG.')
@@ -1046,6 +1067,27 @@ export function ImagesStudio() {
               Se verifican RGBA 8 bits, el perfil ICC seleccionado y los 300 ppp cuando corresponden.
               sRGB mejora la consistencia, pero el RIP y la calibración del taller siguen influyendo en el color.
             </p>
+          </section>
+
+          <section className="images-production-section" aria-label="Compresión PNG sin pérdida">
+            <div className="images-output-heading">
+              <span>05 / OPTIMIZACIÓN PNG</span>
+              <h3>Reducir peso sin perder calidad</h3>
+            </div>
+            <button type="button" className="images-color-rule images-color-toggle"
+              aria-pressed={optimizePng}
+              disabled={busy === 'batch' || busy === 'exporting'}
+              onClick={() => { setOptimizePng((value) => !value); setCompressionReport(null); invalidateBatch() }}>
+              <span><strong>Optimización PNG sin pérdida</strong>
+                <small>Oxipng · conserva RGBA, colores, transparencia, ICC y 300 ppp</small></span>
+              <span className={optimizePng ? 'images-color-switch on' : 'images-color-switch'} aria-hidden="true"><i /></span>
+            </button>
+            <p className="images-production-explain">
+              Activada por defecto. Se aplica al PNG individual y a cada imagen del ZIP. Si no
+              reduce el tamaño, falla o no conserva los metadatos de impresión, entrega el PNG original.
+              En móviles, las imágenes de gran resolución pueden omitir la compresión para proteger la memoria.
+            </p>
+            {compressionReport && <p className="images-compression-report" role="status">{compressionReport}</p>}
           </section>
 
           <div className="images-bottom-actions">
