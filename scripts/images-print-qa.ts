@@ -28,6 +28,50 @@ assert.ok(before.partial > 0)
 optimizeImageAlpha(img, profile)
 assert.equal(analyzeAlpha(img).partial, 0)
 assert.ok(img.data.every((byte, i) => i % 4 !== 3 || byte === 0 || byte === 255))
+// DTF regression: high-contrast face/eye details must not become flat averaged dots.
+const artwork = { width: 8, height: 8, data: new Uint8ClampedArray(8 * 8 * 4) } as ImageData
+for (let i = 0; i < artwork.data.length; i += 4) {
+  artwork.data.set([65, 61, 83, 160], i)
+}
+const eye = (3 * 8 + 3) * 4
+artwork.data.set([230, 28, 45, 160], eye)
+const solidPixel = (2 * 8 + 2) * 4
+artwork.data.set([254, 240, 226, 255], solidPixel)
+const inputColors = new Uint8ClampedArray(artwork.data)
+optimizeImageAlpha(artwork, { ...profile, detailProtection: 100 })
+assert.deepEqual(Array.from(artwork.data.slice(solidPixel, solidPixel + 4)), [254, 240, 226, 255])
+assert.deepEqual(Array.from(artwork.data.slice(eye, eye + 4)), [230, 28, 45, 255])
+for (let i = 0; i < artwork.data.length; i += 4) {
+  if (artwork.data[i + 3] === 255) {
+    assert.deepEqual(Array.from(artwork.data.slice(i, i + 3)), Array.from(inputColors.slice(i, i + 3)))
+  }
+}
+assert.equal(analyzeAlpha(artwork).partial, 0)
+
+// Processing chunks with a one-row halo must match a full-frame DTF pass.
+const continuous = { width: 13, height: 11, data: new Uint8ClampedArray(13 * 11 * 4) } as ImageData
+for (let y = 0; y < continuous.height; y++) for (let x = 0; x < continuous.width; x++) {
+  const i = (y * continuous.width + x) * 4
+  continuous.data.set([(x * 43) % 256, (y * 47) % 256, (x * y * 19) % 256, 75 + (x * 13 + y * 17) % 170], i)
+}
+const allAtOnce = { width: continuous.width, height: continuous.height,
+  data: new Uint8ClampedArray(continuous.data) } as ImageData
+const inStrips = new Uint8ClampedArray(continuous.data.length)
+const edgeSafe = { ...profile, detailProtection: 90, cellPixels: 8 }
+optimizeImageAlpha(allAtOnce, edgeSafe)
+for (let y = 0; y < continuous.height; y += 3) {
+  const h = Math.min(3, continuous.height - y)
+  const top = Math.max(0, y - 1)
+  const bottom = Math.min(continuous.height, y + h + 1)
+  const bytesPerRow = continuous.width * 4
+  const crop = { width: continuous.width, height: bottom - top,
+    data: continuous.data.slice(top * bytesPerRow, bottom * bytesPerRow) } as ImageData
+  optimizeImageAlpha(crop, edgeSafe, top)
+  const offset = (y - top) * bytesPerRow
+  inStrips.set(crop.data.slice(offset, offset + h * bytesPerRow), y * bytesPerRow)
+}
+assert.deepEqual(Array.from(inStrips), Array.from(allAtOnce.data))
+
 const preserved = { width: 1, height: 1, data: new Uint8ClampedArray([100, 90, 80, 74]) } as ImageData
 optimizeImageAlpha(preserved, { ...profile, method: 'dtg' })
 assert.equal(preserved.data[3], 74)
@@ -81,4 +125,4 @@ assert.equal(icc.toString('ascii', 36, 40), 'acsp')
 assert.equal(icc.toString('ascii', 16, 20), 'RGB ')
 assert.deepEqual(await inspectPng(withProfile), details)
 textResult()
-function textResult() { process.stdout.write('Images Studio print QA: geometry, alpha, PNG RGBA8, 300 ppp and real ICC sRGB passed.\n') }
+function textResult() { process.stdout.write('Images Studio print QA: geometry, DTF detail preservation / strip continuity, RGBA8, 300 ppp and real ICC sRGB passed.\n') }
