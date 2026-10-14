@@ -28,6 +28,8 @@ const PRINT_METHOD_KEY = 'gas3d.images.print-method.v1'
 const DTF_ALPHA_KEY = 'gas3d.images.dtf-alpha.v1'
 const ICC_KEY = 'gas3d.images.icc-profile.v1'
 const ALPHA_CLEANUP_KEY = 'gas3d.images.alpha-cleanup.v1'
+const DETAIL_PROTECTION_KEY = 'gas3d.images.detail-protection.v1'
+const DTF_DOT_SIZE_KEY = 'gas3d.images.dtf-dot-size.v1'
 
 const readOutputPreset = (): ExportPreset => {
   try {
@@ -112,13 +114,23 @@ export function ImagesStudio() {
   const [dtfAlphaMode, setDtfAlphaMode] = useState<DtfAlphaMode>(() => {
     try {
       const stored = window.localStorage.getItem(DTF_ALPHA_KEY)
-      return stored === 'solid' || stored === 'preserve' ? stored : 'halftone'
+      return stored === 'solid' || stored === 'preserve' || stored === 'aggressive' ? stored : 'halftone'
     } catch { return 'halftone' }
   })
   const [embedProfile, setEmbedProfile] = useState(() => readPreference(ICC_KEY, true))
   const [alphaCleanup, setAlphaCleanup] = useState(() => {
     try { return Math.max(0, Math.min(30, Number(window.localStorage.getItem(ALPHA_CLEANUP_KEY) ?? 10) || 0)) }
     catch { return 10 }
+  })
+  const [detailProtection, setDetailProtection] = useState(() => {
+    try { return Math.max(0, Math.min(100, Number(window.localStorage.getItem(DETAIL_PROTECTION_KEY) ?? 85) || 0)) }
+    catch { return 85 }
+  })
+  const [dtfDotSize, setDtfDotSize] = useState(() => {
+    try {
+      const stored = Number(window.localStorage.getItem(DTF_DOT_SIZE_KEY))
+      return stored === 12 || stored === 16 ? stored : 8
+    } catch { return 8 }
   })
   const [alphaStats, setAlphaStats] = useState<{ original: AlphaStatistics; result: AlphaStatistics } | null>(null)
   const [preset, setPreset] = useState<ImagePreset | null>('balanced')
@@ -147,7 +159,9 @@ export function ImagesStudio() {
     method: printMethod,
     dtfMode: dtfAlphaMode,
     cleanupPercent: alphaCleanup,
-  }), [printMethod, dtfAlphaMode, alphaCleanup])
+    cellPixels: dtfDotSize,
+    detailProtection,
+  }), [printMethod, dtfAlphaMode, alphaCleanup, dtfDotSize, detailProtection])
   const exportGeometry = dimensions ? getExportGeometry(dimensions.width, dimensions.height, outputPreset, allowUpscale) : null
 
   useEffect(() => {
@@ -199,10 +213,12 @@ export function ImagesStudio() {
       window.localStorage.setItem(DTF_ALPHA_KEY, dtfAlphaMode)
       window.localStorage.setItem(ICC_KEY, String(embedProfile))
       window.localStorage.setItem(ALPHA_CLEANUP_KEY, String(alphaCleanup))
+      window.localStorage.setItem(DETAIL_PROTECTION_KEY, String(detailProtection))
+      window.localStorage.setItem(DTF_DOT_SIZE_KEY, String(dtfDotSize))
     } catch {
       // The print pipeline works without localStorage.
     }
-  }, [printMethod, dtfAlphaMode, embedProfile, alphaCleanup])
+  }, [printMethod, dtfAlphaMode, embedProfile, alphaCleanup, detailProtection, dtfDotSize])
 
   useEffect(() => {
     const onDown = (event: KeyboardEvent) => {
@@ -954,9 +970,10 @@ export function ImagesStudio() {
             </p> : <>
               <div className="images-dtf-modes" role="group" aria-label="Tratamiento de transparencia DTF">
                 {([
-                  ['halftone', 'Tramado inteligente', 'Transforma alfa parcial en puntos de alfa sólido.'],
+                  ['halftone', 'Tramado protegido', 'Respeta colores y contornos; trama solo transparencias necesarias.'],
                   ['solid', 'Alfa sólido', 'Umbral de 50%: bordes definidos, sin semitransparencias.'],
                   ['preserve', 'Conservar alfa', 'No modifica las semitransparencias; para un RIP compatible.'],
+                  ['aggressive', 'Tramado completo', 'Trama todas las transparencias; usar solo si el arte lo admite.'],
                 ] as const).map(([id, name, detail]) => <button key={id} type="button"
                   className={dtfAlphaMode === id ? 'active' : ''}
                   disabled={busy === 'batch' || busy === 'exporting'}
@@ -966,15 +983,33 @@ export function ImagesStudio() {
                   <span><strong>{name}</strong><small>{detail}</small></span>
                 </button>)}
               </div>
-              {dtfAlphaMode === 'halftone' && <label className="images-cleanup-slider">
-                <span><strong>Limpiar restos de alfa</strong><output>{alphaCleanup}%</output></span>
-                <input type="range" min={0} max={30} step={1} value={alphaCleanup}
-                  disabled={busy === 'batch' || busy === 'exporting'}
-                  onChange={(event) => { setAlphaCleanup(Number(event.currentTarget.value)); invalidateBatch() }}/>
-              </label>}
+              {(dtfAlphaMode === 'halftone' || dtfAlphaMode === 'aggressive') && <div className="images-dtf-options">
+                {dtfAlphaMode === 'halftone' && <label className="images-cleanup-slider">
+                  <span><strong>Proteger contornos y detalles</strong><output>{detailProtection}%</output></span>
+                  <input type="range" min={0} max={100} step={5} value={detailProtection}
+                    disabled={busy === 'batch' || busy === 'exporting'}
+                    onChange={(event) => { setDetailProtection(Number(event.currentTarget.value)); invalidateBatch() }}/>
+                </label>}
+                <div className="images-dtf-pitch">
+                  <strong>Tamaño de punto</strong>
+                  <div role="group" aria-label="Tamaño de punto de trama DTF">
+                    {([['Fino', 8], ['Medio', 12], ['Grueso', 16]] as const).map(([label, size]) =>
+                      <button type="button" key={size} className={dtfDotSize === size ? 'active' : ''}
+                        aria-pressed={dtfDotSize === size} disabled={busy === 'batch' || busy === 'exporting'}
+                        onClick={() => { setDtfDotSize(size); invalidateBatch() }}>{label}</button>)}
+                  </div>
+                </div>
+                <label className="images-cleanup-slider">
+                  <span><strong>Limpiar restos de alfa</strong><output>{alphaCleanup}%</output></span>
+                  <input type="range" min={0} max={30} step={1} value={alphaCleanup}
+                    disabled={busy === 'batch' || busy === 'exporting'}
+                    onChange={(event) => { setAlphaCleanup(Number(event.currentTarget.value)); invalidateBatch() }}/>
+                </label>
+              </div>}
               <p className="images-production-explain">
-                DTF: la trama se calcula en el tamaño de salida final (puntos agrupados de 8 px).
-                Verifica los puntos mínimos y la base blanca con el taller. La vista previa es aproximada.
+                DTF: conserva colores originales y sólidos; la trama se genera a tamaño final.
+                El modo protegido prioriza detalles de contraste. Verifica el tamaño mínimo del punto
+                y el resultado del RIP con el taller. Usa zoom para evaluar trazos finos.
               </p>
             </>}
             {alphaStats && <p className="images-alpha-diagnostic">
