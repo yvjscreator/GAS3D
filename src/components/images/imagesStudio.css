@@ -924,3 +924,17 @@
   background:#332617; border:1px solid #786042;
   border-radius:7px;
 }
+
+
+/* Lossless browser-local PNG compression. */
+.images-compression-report {
+  margin:10px 0 4px;
+  padding:9px;
+  border-radius:7px;
+  border:1px solid #46765c;
+  background:#173529;
+  color:#b7f2d1;
+  font-size:10px;
+  line-height:1.5;
+}
+.images-studio.is-zen .images-compression-report { padding:7px; margin-top:6px; }
