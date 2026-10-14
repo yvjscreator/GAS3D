@@ -12,6 +12,7 @@ import { assertImageDimensions, assertImageFile, downloadBlob, renderTransparent
 import { createZipArchive } from './zipExport'
 import { paintNativeDetail } from './detailPreview'
 import { ImagesBatchSidebar } from './ImagesBatchSidebar'
+import { EXPORT_PRESETS, getExportGeometry, resolveExportPreset, type ExportPreset } from './printExport'
 import './imagesStudio.css'
 
 const MAX_IMAGE_PIXELS = 30_000_000
@@ -20,6 +21,17 @@ const PREVIEW_MAX_EDGE = 1300
 const ZEN_KEY = 'gas3d.images.zen.v1'
 const CONTROLS_KEY = 'gas3d.images.zen.controls.v1'
 const INK_MODE_KEY = 'gas3d.images.ink-mode.v1'
+const OUTPUT_PRESET_KEY = 'gas3d.images.output-preset.v1'
+const UPSCALE_KEY = 'gas3d.images.output-upscale.v1'
+
+const readOutputPreset = (): ExportPreset => {
+  try {
+    const saved = window.localStorage.getItem(OUTPUT_PRESET_KEY)
+    return EXPORT_PRESETS.some((preset) => preset.id === saved) ? saved as ExportPreset : 'auto'
+  } catch {
+    return 'auto'
+  }
+}
 
 const initialInkMode = (): InkRemovalMode => {
   try {
@@ -61,9 +73,13 @@ const controls: Array<{
   { key: 'noiseCleanup', title: 'Limpiar ruido', hint: 'Retira pequeños puntos aislados de poca intensidad.', min: 0, max: 3, step: 1 },
 ]
 
-const downloadName = (fileName: string, mode: InkRemovalMode) => {
+const downloadName = (fileName: string, mode: InkRemovalMode, output: ExportPreset, width: number, height: number) => {
   const stem = fileName.replace(/\.[^.]+$/, '') || 'art'
-  return stem + (mode === 'black' ? '-black-tee-ready.png' : '-white-tee-ready.png')
+  const preset = resolveExportPreset(width, height, output)
+  const suffix = preset === 'print-40x53' ? '-40x53-300ppp'
+    : preset === 'print-35x40' ? '-35x40-300ppp'
+      : preset === 'companion-2x' ? '-companion-x2' : ''
+  return stem + suffix + (mode === 'black' ? '-black-tee-ready.png' : '-white-tee-ready.png')
 }
 
 export function ImagesStudio() {
@@ -82,6 +98,8 @@ export function ImagesStudio() {
   const [sourcePreview, setSourcePreview] = useState<ImageData | null>(null)
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null)
   const [inkMode, setInkMode] = useState<InkRemovalMode>(initialInkMode)
+  const [outputPreset, setOutputPreset] = useState<ExportPreset>(readOutputPreset)
+  const [allowUpscale, setAllowUpscale] = useState(() => readPreference(UPSCALE_KEY, true))
   const [preset, setPreset] = useState<ImagePreset | null>('balanced')
   const [settings, setSettings] = useState<InkRemovalSettings>(() => ({ ...imagePresets[initialInkMode()].balanced.settings }))
   const [previewMode, setPreviewMode] = useState<ImagePreviewMode>(initialInkMode)
@@ -103,6 +121,7 @@ export function ImagesStudio() {
   const [zoom, setZoom] = useState<ZoomPosition>({ ...initialZoom })
   const [previewResize, setPreviewResize] = useState(0)
   const originalVisible = showOriginal || holdOriginal
+  const exportGeometry = dimensions ? getExportGeometry(dimensions.width, dimensions.height, outputPreset, allowUpscale) : null
 
   useEffect(() => {
     return () => {
@@ -137,6 +156,15 @@ export function ImagesStudio() {
       // The processor works without persistence.
     }
   }, [inkMode])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(OUTPUT_PRESET_KEY, outputPreset)
+      window.localStorage.setItem(UPSCALE_KEY, String(allowUpscale))
+    } catch {
+      // Print options remain functional without browser storage.
+    }
+  }, [outputPreset, allowUpscale])
 
   useEffect(() => {
     const onDown = (event: KeyboardEvent) => {
@@ -568,9 +596,9 @@ export function ImagesStudio() {
           setBatchItems((items) => items.map((entry) =>
             entry.id === item.id ? { ...entry, progress: value } : entry,
           ))
-        })
+        }, outputPreset, allowUpscale)
 
-        const base = downloadName(item.file.name, inkMode)
+        const base = downloadName(item.file.name, inkMode, outputPreset, bitmap.width, bitmap.height)
         let uniqueName = base
         let count = 2
         while (usedNames.has(uniqueName.toLowerCase())) {
@@ -618,8 +646,8 @@ export function ImagesStudio() {
     setProgress(0)
 
     try {
-      const png = await renderTransparentPng(bitmap, settings, inkMode, setProgress)
-      downloadBlob(png, downloadName(currentFile.name, inkMode))
+      const png = await renderTransparentPng(bitmap, settings, inkMode, setProgress, outputPreset, allowUpscale)
+      downloadBlob(png, downloadName(currentFile.name, inkMode, outputPreset, bitmap.width, bitmap.height))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falló la exportación PNG.')
     } finally {
@@ -821,6 +849,45 @@ export function ImagesStudio() {
                     : control.hint}</span>
             </label>)}
           </div>
+
+          <section className="images-output-section" aria-label="Formato de exportación">
+            <div className="images-output-heading">
+              <span>02 / EXPORTACIÓN</span>
+              <h3>Lienzo de impresión</h3>
+            </div>
+            <div className="images-output-presets" role="group" aria-label="Tamaño del PNG exportado">
+              {EXPORT_PRESETS.map((option) => <button type="button" key={option.id}
+                className={outputPreset === option.id ? 'active' : ''}
+                aria-pressed={outputPreset === option.id}
+                disabled={busy === 'batch' || busy === 'exporting'}
+                title={option.detail}
+                onClick={() => {
+                  setOutputPreset(option.id)
+                  invalidateBatch()
+                }}>
+                {option.name}
+              </button>)}
+            </div>
+            <button type="button" className={allowUpscale ? 'images-upscale enabled' : 'images-upscale'}
+              onClick={() => { setAllowUpscale((value) => !value); invalidateBatch() }}
+              disabled={busy === 'batch' || busy === 'exporting'}
+              aria-pressed={allowUpscale}>
+              <span className="images-upscale-track"><span /></span>
+              <span>Permitir ampliar para encajar</span>
+            </button>
+            <p className="images-output-info">
+              {exportGeometry ? <>
+                <strong>{numberFormatter.format(exportGeometry.width)} × {numberFormatter.format(exportGeometry.height)} px</strong>
+                {exportGeometry.dpi ? ' · 300 ppp reales' : exportGeometry.preset === 'companion-2x' ? ' · escala ×2' : ' · tamaño original'}
+                {outputPreset === 'auto' && <> · Auto: {EXPORT_PRESETS.find((item) => item.id === exportGeometry.preset)?.name}</>}
+                <span>Encajado completo, centrado, con márgenes transparentes si sobran.</span>
+                {exportGeometry.upscaled && <em>Se ampliará el arte: el escalado no crea detalles nuevos.</em>}
+              </> : <>
+                <strong>Selecciona una imagen</strong>
+                <span>Auto analiza la proporción y el tamaño. En un lote decide por cada archivo.</span>
+              </>}
+            </p>
+          </section>
 
           <div className="images-bottom-actions">
             <button onClick={() => inputRef.current?.click()} className="images-replace" disabled={busy === 'batch' || busy === 'exporting'}>
