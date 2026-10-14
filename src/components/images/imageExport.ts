@@ -67,6 +67,13 @@ export async function renderTransparentPng(
     }
 
     const geometry = getExportGeometry(bitmap.width, bitmap.height, outputPreset, allowUpscale)
+    // Fixed print canvases are ~20–30 MP. Protect users from accidentally
+    // requesting enormous ×2 companion exports that may exhaust RAM.
+    const maxOutputPixels = window.matchMedia('(max-width: 720px)').matches ? 32_000_000 : 38_000_000
+    if (geometry.width * geometry.height > maxOutputPixels) {
+      throw new Error('La salida de ' + geometry.width + ' × ' + geometry.height +
+        ' px supera el límite seguro de este dispositivo. Usa un archivo más pequeño o un preset de impresión.')
+    }
     onProgress?.(96)
 
     let outputCanvas = canvas
