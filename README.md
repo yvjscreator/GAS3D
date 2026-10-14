@@ -65,6 +65,18 @@ Las opciones se aplican tanto a **Exportar PNG** como a cada archivo del **ZIP p
 
 QA técnico: ejecutar \`npm run qa:images\` para comprobar geometría, salida alfa binaria, integridad real del perfil ICC sRGB descomprimido, profundidad de 8 bits RGBA y densidad 300 ppp. Ejecutar además \`npm run build\` antes del deploy. Las pruebas de RIP y de impresión física son necesarias para calibrar el tramado y no se sustituyen por este QA.
 
+### Compresión PNG sin pérdida — Oxipng
+
+La sección **05 / Optimización PNG** incorpora **Oxipng WebAssembly** local, activado por defecto. Tras limpiar la imagen, ajustar el lienzo, procesar la transparencia DTG/DTF, agregar los metadatos de 300 ppp (\`pHYs\`) e incrustar el ICC sRGB (\`iCCP\`), el PNG se entrega al compresor mediante un **Web Worker**.
+
+- Compresión **sin cuantización ni cambios deliberados de los píxeles**, con \`optimiseAlpha: false\` (no modifica RGB de píxeles invisibles). Nivel 3 para equilibrar tiempo y peso.
+- El archivo optimizado se acepta **solo si es más pequeño** y mantiene dimensiones, RGBA 8 bits por canal, presencia ICC y los ppp del original. Cualquier fallo, agotamiento de tiempo o resultado incompatible **conserva el PNG anterior**.
+- El proceso ocurre en el navegador: no se envía el diseño a servicios externos. Usa Vite para empaquetar el código WASM.
+- La compresión tarda más que la codificación PNG nativa, especialmente con imágenes complejas; la barra muestra el estado. Se aplica a cada PNG del ZIP **secuencialmente** y presenta los MB totales ahorrados.
+- Por seguridad, se omite automáticamente para imágenes de más de 20 MP en móviles y 34 MP en escritorio, sin impedir la exportación del PNG original; la memoria disponible depende del navegador y el dispositivo.
+- Los resultados varían con el ruido, degradados y el tramado. No se promete llegar a un peso concreto como 10 MB: el modo no reduce colores ni transparencia para conseguir ese número.
+- El build conserva \`npm ci\` mediante versiones de \`@jsquash/oxipng\` y \`wasm-feature-detect\` fijadas en \`package-lock.json\`.
+
 ### Inspección del preview
 
 - Rueda del mouse sobre la imagen: zoom **centrado en el punto del cursor**, desde 100% (ajustado) hasta 1000%.
