@@ -1,18 +1,21 @@
 export type PrintMethod = 'dtg' | 'dtf'
-export type DtfAlphaMode = 'halftone' | 'solid' | 'preserve'
+export type DtfAlphaMode = 'halftone' | 'solid' | 'preserve' | 'aggressive'
 export type AlphaOptimizationSettings = {
   method: PrintMethod
   dtfMode: DtfAlphaMode
   /** Discard cells or pixels below this coverage (0..30%). */
   cleanupPercent: number
-  /** Reserved print dot size control, calibrated in the next phase. */
+  /** Approximate DTF dot pitch, in output pixels (8 = fine). */
   cellPixels: number
+  /** How strongly local high-contrast contours are protected (0..100). */
+  detailProtection?: number
 }
 export const DEFAULT_ALPHA_SETTINGS: AlphaOptimizationSettings = {
   method: 'dtg',
   dtfMode: 'halftone',
   cleanupPercent: 10,
   cellPixels: 8,
+  detailProtection: 75,
 }
 
 export type AlphaStatistics = { transparent: number; partial: number; opaque: number; total: number }
@@ -63,23 +66,55 @@ export function optimizeImageAlpha(
     3, 11, 1, 9,
     15, 7, 13, 5,
   ]
-  // At 300 ppp a 2-pixel dot is ~0.17 mm. Adjustable in the next phase.
-  const dot = 2
-  const preserveAlpha = 192 // >=75% coverage becomes solid, not a dot field.
+  // Work against an immutable snapshot: pixels already quantized in a previous
+  // column must never be mistaken for missing source detail.
+  const source = new Uint8ClampedArray(data)
+  const protection = settings.dtfMode === 'aggressive' ? 0
+    : Math.max(0, Math.min(1, (settings.detailProtection ?? 75) / 100))
+  const dot = Math.max(1, Math.min(5, Math.round(settings.cellPixels / 4)))
+  const solidAlpha = 255 - Math.round(82 * protection)
+  const edgeAlpha = 160 - Math.round(80 * protection)
+  const rgbEdgeThreshold = 72 - Math.round(49 * protection)
+
   for (let y = 0; y < height; y++) {
     const patternY = Math.floor((globalY + y) / dot) & 3
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4
-      const alpha = data[i + 3]
+      const alpha = source[i + 3]
       if (alpha === 255) continue
       if (alpha <= threshold * 255) {
         data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 0
         continue
       }
-      if (alpha >= preserveAlpha) {
+
+      // Solidify already-visible regions, plus high-contrast details such as
+      // eyes, contour ink and facial marks. Flat fades still use dithering.
+      let protect = protection > 0 && alpha >= solidAlpha
+      if (!protect && protection > 0 && alpha >= edgeAlpha) {
+        const neighbors = [
+          x > 0 ? i - 4 : -1,
+          x + 1 < width ? i + 4 : -1,
+          y > 0 ? i - width * 4 : -1,
+          y + 1 < height ? i + width * 4 : -1,
+        ]
+        for (const n of neighbors) {
+          if (n < 0 || source[n + 3] < 75) continue
+          const rgbContrast = Math.max(
+            Math.abs(source[i] - source[n]),
+            Math.abs(source[i + 1] - source[n + 1]),
+            Math.abs(source[i + 2] - source[n + 2]),
+          )
+          if (rgbContrast >= rgbEdgeThreshold) {
+            protect = true
+            break
+          }
+        }
+      }
+      if (protect) {
         data[i + 3] = 255
         continue
       }
+
       const patternX = Math.floor(x / dot) & 3
       const cutoff = (bayer4[patternY * 4 + patternX] + 0.5) / 16
       if (alpha / 255 >= cutoff) {
