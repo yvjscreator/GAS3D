@@ -5,7 +5,7 @@ export type AlphaOptimizationSettings = {
   dtfMode: DtfAlphaMode
   /** Discard cells or pixels below this coverage (0..30%). */
   cleanupPercent: number
-  /** Raster cluster size at final print resolution. Default 8 px at 300 ppp. */
+  /** Reserved print dot size control, calibrated in the next phase. */
   cellPixels: number
 }
 export const DEFAULT_ALPHA_SETTINGS: AlphaOptimizationSettings = {
@@ -31,9 +31,8 @@ export const shouldOptimizeAlpha = (settings: AlphaOptimizationSettings) =>
   settings.method === 'dtf' && settings.dtfMode !== 'preserve'
 
 /**
- * Apply the FINAL printing treatment to the sized canvas. The exporter passes
- * strips whose y origin is aligned to cellPixels; this prevents seams at
- * chunk boundaries. RGBA alpha output for DTF solid/halftone is strictly 0/255.
+ * Apply treatment at final print size. Per-pixel operations use global Y to
+ * prevent pattern seams between export strips. Output alpha is 0/255.
  */
 export function optimizeImageAlpha(
   image: ImageData,
@@ -54,60 +53,41 @@ export function optimizeImageAlpha(
     return image
   }
 
-  const cell = Math.max(4, Math.min(24, Math.round(settings.cellPixels)))
-  // Clustered-dot ordering: center pixels fill first, then outward rings.
-  // At low coverage tiny, unreliable print dots are removed by threshold.
-  for (let y0 = 0; y0 < height;) {
-    const absoluteY = globalY + y0
-    const inCell = absoluteY % cell
-    const h = Math.min(cell - inCell, height - y0)
-    for (let x0 = 0; x0 < width; x0 += cell) {
-      const w = Math.min(cell, width - x0)
-      let sumAlpha = 0
-      let sumRed = 0
-      let sumGreen = 0
-      let sumBlue = 0
-      const dots: Array<{index: number; rank: number}> = []
-
-      for (let dy = 0; dy < h; dy++) {
-        for (let dx = 0; dx < w; dx++) {
-          const index = ((y0 + dy) * width + x0 + dx) * 4
-          const a = data[index + 3] / 255
-          sumAlpha += a
-          sumRed += data[index] * a
-          sumGreen += data[index + 1] * a
-          sumBlue += data[index + 2] * a
-          const cellX = dx - (w - 1) / 2
-          const cellY = (dy + inCell) - (cell - 1) / 2
-          // Small tie-break to keep circles evenly shaped in symmetrical cells.
-          const rank = cellX * cellX + cellY * cellY + ((dx * 17 + dy * 31) % 7) / 128
-          dots.push({ index, rank })
-        }
+  // DTF detail-safe dithering. Unlike the old cell-average algorithm, this
+  // never blends RGB values from neighboring pixels or modifies opaque artwork.
+  // It only quantizes PARTIAL ALPHA at the location of each original pixel.
+  // Full-opacity areas, internal lines and local color texture remain intact.
+  const bayer4 = [
+    0, 8, 2, 10,
+    12, 4, 14, 6,
+    3, 11, 1, 9,
+    15, 7, 13, 5,
+  ]
+  // At 300 ppp a 2-pixel dot is ~0.17 mm. Adjustable in the next phase.
+  const dot = 2
+  const preserveAlpha = 192 // >=75% coverage becomes solid, not a dot field.
+  for (let y = 0; y < height; y++) {
+    const patternY = Math.floor((globalY + y) / dot) & 3
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4
+      const alpha = data[i + 3]
+      if (alpha === 255) continue
+      if (alpha <= threshold * 255) {
+        data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 0
+        continue
       }
-      const coverage = sumAlpha / Math.max(1, dots.length)
-      const count = coverage <= threshold ? 0 : coverage >= 0.999 ? dots.length :
-        Math.max(0, Math.min(dots.length, Math.round(coverage * dots.length)))
-
-      dots.sort((a, b) => a.rank - b.rank)
-      const r = sumAlpha ? Math.round(sumRed / sumAlpha) : 0
-      const g = sumAlpha ? Math.round(sumGreen / sumAlpha) : 0
-      const b = sumAlpha ? Math.round(sumBlue / sumAlpha) : 0
-      for (let n = 0; n < dots.length; n++) {
-        const i = dots[n].index
-        if (n < count) {
-          data[i] = r
-          data[i + 1] = g
-          data[i + 2] = b
-          data[i + 3] = 255
-        } else {
-          data[i] = 0
-          data[i + 1] = 0
-          data[i + 2] = 0
-          data[i + 3] = 0
-        }
+      if (alpha >= preserveAlpha) {
+        data[i + 3] = 255
+        continue
+      }
+      const patternX = Math.floor(x / dot) & 3
+      const cutoff = (bayer4[patternY * 4 + patternX] + 0.5) / 16
+      if (alpha / 255 >= cutoff) {
+        data[i + 3] = 255
+      } else {
+        data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 0
       }
     }
-    y0 += h
   }
   return image
 }
