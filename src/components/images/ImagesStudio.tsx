@@ -89,7 +89,8 @@ const downloadName = (fileName: string, mode: InkRemovalMode, output: ExportPres
   const suffix = preset === 'print-40x53' ? '-40x53-300ppp'
     : preset === 'print-35x40' ? '-35x40-300ppp'
       : preset === 'companion-2x' ? '-companion-x2' : ''
-  return stem + suffix + (mode === 'black' ? '-black-tee-ready.png' : '-white-tee-ready.png')
+  const cleanSuffix = preset === 'companion-2x' ? '-companion' : suffix
+  return stem + cleanSuffix + (mode === 'black' ? '-black-tee-ready.png' : '-white-tee-ready.png')
 }
 
 export function ImagesStudio() {
@@ -164,6 +165,7 @@ export function ImagesStudio() {
   const [batchPanelOpen, setBatchPanelOpen] = useState(false)
   const [zoom, setZoom] = useState<ZoomPosition>({ ...initialZoom })
   const [previewResize, setPreviewResize] = useState(0)
+  const [nativeDetailActive, setNativeDetailActive] = useState(false)
   const originalVisible = showOriginal || holdOriginal
   const alphaSettings: AlphaOptimizationSettings = useMemo(() => ({
     ...DEFAULT_ALPHA_SETTINGS,
@@ -392,6 +394,7 @@ export function ImagesStudio() {
     // Clear any previous tile immediately so it cannot lag behind the artwork.
     const overlayContext = overlay.getContext('2d')
     overlayContext?.clearRect(0, 0, overlay.width, overlay.height)
+    setNativeDetailActive(false)
 
     if (!viewport || !sourcePreview || zoom.scale <= 1.05) return
 
@@ -403,7 +406,7 @@ export function ImagesStudio() {
         if (!bitmap || !image || !detailCanvasRef.current) return
         // Viewports and canvases can be replaced as the user switches modes;
         // always resolve the DOM node at the moment the detail is rendered.
-        paintNativeDetail({
+        const rendered = paintNativeDetail({
           bitmap,
           viewport,
           image,
@@ -413,6 +416,7 @@ export function ImagesStudio() {
           showOriginal: originalVisible,
           alphaSettings,
         })
+        setNativeDetailActive(rendered)
       })
     }, 110)
 
@@ -832,6 +836,7 @@ export function ImagesStudio() {
                 aria-pressed={previewMode === mode}
               >{label}</button>)}
             </div>
+            {nativeDetailActive && <span className="images-native-badge" title="El área visible se procesa desde los píxeles originales, sin reducirla antes.">DETALLE NATIVO</span>}
             <button className="images-fit" type="button" onClick={resetZoom}
               disabled={!sourcePreview || zoom.scale === 1}
               title="Ajustar imagen a pantalla"
@@ -949,7 +954,7 @@ export function ImagesStudio() {
           <section className="images-output-section" aria-label="Formato de exportación">
             <div className="images-output-heading">
               <span>02 / EXPORTACIÓN</span>
-              <h3>Lienzo de impresión</h3>
+              <h3>Recorte y metadatos</h3>
             </div>
             <div className="images-output-presets" role="group" aria-label="Tamaño del PNG exportado">
               {EXPORT_PRESETS.map((option) => <button type="button" key={option.id}
@@ -964,23 +969,15 @@ export function ImagesStudio() {
                 {option.name}
               </button>)}
             </div>
-            <button type="button" className={allowUpscale ? 'images-upscale enabled' : 'images-upscale'}
-              onClick={() => { setAllowUpscale((value) => !value); invalidateBatch() }}
-              disabled={busy === 'batch' || busy === 'exporting'}
-              aria-pressed={allowUpscale}>
-              <span className="images-upscale-track"><span /></span>
-              <span>Permitir ampliar para encajar</span>
-            </button>
             <p className="images-output-info">
               {exportGeometry ? <>
                 <strong>{numberFormatter.format(exportGeometry.width)} × {numberFormatter.format(exportGeometry.height)} px</strong>
-                {exportGeometry.dpi ? ' · 300 ppp reales' : exportGeometry.preset === 'companion-2x' ? ' · escala ×2' : ' · tamaño original'}
+                {exportGeometry.dpi ? ' · 300 ppp' : ' · resolución original'}
                 {outputPreset === 'auto' && <> · Auto: {EXPORT_PRESETS.find((item) => item.id === exportGeometry.preset)?.name}</>}
-                <span>Encajado completo, centrado, con márgenes transparentes si sobran.</span>
-                {exportGeometry.upscaled && <em>Se ampliará el arte: el escalado no crea detalles nuevos.</em>}
+                <span>Sin escalado. Se exportan los píxeles originales y se recortan automáticamente los márgenes transparentes exteriores.</span>
               </> : <>
                 <strong>Selecciona una imagen</strong>
-                <span>Auto analiza la proporción y el tamaño. En un lote decide por cada archivo.</span>
+                <span>Auto conserva la resolución y elimina únicamente el espacio transparente exterior.</span>
               </>}
             </p>
           </section>

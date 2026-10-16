@@ -17,13 +17,12 @@ const MAX_OVERLAY_PIXELS = 2_500_000
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
 
 /**
- * Redraw ONLY the visible portion of the original image into a screen-sized
- * overlay. Never zooms the downscaled preview pixels. Unlike rendering a
- * 4K frame at every wheel tick, this runs after navigation settles.
+ * Redraw ONLY the visible portion of the original bitmap.
  *
- * The screen-position mapping comes from the zoomed image element's DOM rect,
- * so the overlay stays aligned with wheel-to-cursor zoom and drag pan.
- * It deliberately does not touch the export or original bitmap.
+ * Important: processing happens at native source resolution. We deliberately
+ * refuse to build a "detail" overlay while the visible crop is still too large
+ * instead of downsampling it first. That prevents the creamy/soft appearance
+ * caused by processing already-interpolated pixels.
  */
 export function paintNativeDetail({
   bitmap, viewport, image, overlay, settings, inkMode, showOriginal, alphaSettings,
@@ -38,7 +37,6 @@ export function paintNativeDetail({
   const bottom = Math.min(frame.bottom, art.bottom)
   if (right <= left || bottom <= top) return false
 
-  // The overlay is confined to a few megapixels, even on high-DPI displays.
   const pixelRatio = clamp(
     Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(MAX_OVERLAY_PIXELS / (frame.width * frame.height))),
     0.7,
@@ -49,16 +47,13 @@ export function paintNativeDetail({
   const output = overlay.getContext('2d')
   if (!output) return false
   output.clearRect(0, 0, overlay.width, overlay.height)
-  output.imageSmoothingEnabled = true
-  output.imageSmoothingQuality = 'high'
 
-  // Convert the visible part of the canvas into original image coordinates.
   const sourceL = (left - art.left) * bitmap.width / art.width
   const sourceT = (top - art.top) * bitmap.height / art.height
   const sourceR = (right - art.left) * bitmap.width / art.width
   const sourceB = (bottom - art.top) * bitmap.height / art.height
 
-  // Include adjacent original pixels for texture/edge protection at crop seams.
+  // Keep a tiny native halo so edge/detail protection has neighboring pixels.
   const sx = clamp(Math.floor(sourceL) - 2, 0, bitmap.width - 1)
   const sy = clamp(Math.floor(sourceT) - 2, 0, bitmap.height - 1)
   const ex = clamp(Math.ceil(sourceR) + 2, sx + 1, bitmap.width)
@@ -66,27 +61,20 @@ export function paintNativeDetail({
   const sw = ex - sx
   const sh = ey - sy
 
-  // If the area covers millions of source pixels, sample at DISPLAY density.
-  // When zoomed far enough, native pixels are retained one-for-one.
-  const displayWidth = (sw / bitmap.width) * art.width * pixelRatio
-  const displayHeight = (sh / bitmap.height) * art.height * pixelRatio
-  const density = Math.min(
-    1,
-    Math.max(displayWidth / sw, displayHeight / sh),
-    Math.sqrt(MAX_DETAIL_PIXELS / (sw * sh)),
-  )
+  // Do not fake "native detail" by shrinking the crop before processing.
+  if (sw * sh > MAX_DETAIL_PIXELS) return false
+
   const work = document.createElement('canvas')
-  work.width = Math.max(1, Math.round(sw * density))
-  work.height = Math.max(1, Math.round(sh * density))
+  work.width = sw
+  work.height = sh
   try {
     const ctx = work.getContext('2d', { willReadFrequently: !showOriginal })
     if (!ctx) return false
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, work.width, work.height)
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh)
 
     if (!showOriginal) {
-      const pixels = ctx.getImageData(0, 0, work.width, work.height)
+      const pixels = ctx.getImageData(0, 0, sw, sh)
       const processed = removeFabricInk(pixels, settings, inkMode)
       if (shouldOptimizeAlpha(alphaSettings)) optimizeImageAlpha(processed.image, alphaSettings, sy)
       ctx.putImageData(processed.image, 0, 0)
@@ -96,6 +84,12 @@ export function paintNativeDetail({
     const destTop = (art.top - frame.top + sy * art.height / bitmap.height) * pixelRatio
     const destWidth = sw * art.width / bitmap.width * pixelRatio
     const destHeight = sh * art.height / bitmap.height * pixelRatio
+
+    // When source pixels are being enlarged, keep them crisp. Only use high
+    // quality filtering when the native crop is being reduced to the display.
+    const sourceToScreen = Math.min(destWidth / sw, destHeight / sh)
+    output.imageSmoothingEnabled = sourceToScreen < 1
+    if (output.imageSmoothingEnabled) output.imageSmoothingQuality = 'high'
     output.drawImage(work, destLeft, destTop, destWidth, destHeight)
     return true
   } finally {

@@ -6,7 +6,7 @@ export type ExportGeometry = {
   width: number
   height: number
   dpi: number | null
-  /** Canvas coordinates, using contain so no source pixels are cropped. */
+  /** Export keeps source pixels 1:1. Transparent outer margins are trimmed later. */
   x: number
   y: number
   drawWidth: number
@@ -15,11 +15,11 @@ export type ExportGeometry = {
 }
 
 export const EXPORT_PRESETS: Array<{ id: ExportPreset; name: string; detail: string }> = [
-  { id: 'auto', name: 'Auto', detail: 'Sugiere el formato según proporción y tamaño. En lotes se decide por cada imagen.' },
-  { id: 'original', name: 'Original', detail: 'Conserva los píxeles originales, sin cambiar dimensiones.' },
-  { id: 'print-40x53', name: '40 × 53 cm', detail: '4724 × 6260 px · 300 ppp · encajar sin recortar' },
-  { id: 'print-35x40', name: '35 × 40 cm', detail: '4134 × 4724 px · 300 ppp · encajar sin recortar' },
-  { id: 'companion-2x', name: 'Companion ×2', detail: 'Duplica ancho y alto; conserva la proporción, sin recortar' },
+  { id: 'auto', name: 'Auto', detail: 'Detecta el tipo de arte, conserva sus píxeles y recorta márgenes transparentes.' },
+  { id: 'original', name: 'Original', detail: 'Conserva la resolución original y recorta solo transparencia exterior.' },
+  { id: 'print-40x53', name: '40 × 53 cm', detail: 'No escala el arte · conserva píxeles · marca 300 ppp · recorta transparencia exterior.' },
+  { id: 'print-35x40', name: '35 × 40 cm', detail: 'No escala el arte · conserva píxeles · marca 300 ppp · recorta transparencia exterior.' },
+  { id: 'companion-2x', name: 'Companion', detail: 'No escala ni duplica el arte · conserva píxeles y recorta transparencia exterior.' },
 ]
 
 /** Auto only suggests when the proportions are recognizable; unusual ratios stay original. */
@@ -51,43 +51,26 @@ export function getExportGeometry(
   width: number,
   height: number,
   requested: ExportPreset,
-  allowUpscale = true,
+  _allowUpscale = false,
 ): ExportGeometry {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
     throw new Error('Dimensiones de imagen inválidas.')
   }
   const preset = resolveExportPreset(width, height, requested)
-  let targetWidth = width
-  let targetHeight = height
-  let dpi: number | null = null
+  const dpi = preset === 'print-40x53' || preset === 'print-35x40' ? 300 : null
 
-  if (preset === 'print-40x53') {
-    targetWidth = 4724
-    targetHeight = 6260
-    dpi = 300
-  } else if (preset === 'print-35x40') {
-    targetWidth = 4134
-    targetHeight = 4724
-    dpi = 300
-  } else if (preset === 'companion-2x') {
-    targetWidth = width * 2
-    targetHeight = height * 2
-  }
-
-  if (!Number.isSafeInteger(targetWidth) || !Number.isSafeInteger(targetHeight)) {
-    throw new Error('La resolución de salida excede el límite.')
-  }
-
-  // Constrain both axes. This never clips the subject or distorts proportions.
-  const fit = Math.min(targetWidth / width, targetHeight / height)
-  const scale = preset === 'companion-2x' ? 2 : allowUpscale ? fit : Math.min(1, fit)
-  const drawWidth = Math.min(targetWidth, Math.max(1, Math.floor(width * scale + 1e-6)))
-  const drawHeight = Math.min(targetHeight, Math.max(1, Math.floor(height * scale + 1e-6)))
+  // Export is intentionally 1:1. The source is never enlarged, reduced,
+  // centered in a new print canvas or otherwise resampled.
   return {
-    preset, width: targetWidth, height: targetHeight, dpi,
-    x: Math.floor((targetWidth - drawWidth) / 2),
-    y: Math.floor((targetHeight - drawHeight) / 2),
-    drawWidth, drawHeight, upscaled: scale > 1 + 1e-6,
+    preset,
+    width,
+    height,
+    dpi,
+    x: 0,
+    y: 0,
+    drawWidth: width,
+    drawHeight: height,
+    upscaled: false,
   }
 }
 

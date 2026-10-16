@@ -7,15 +7,15 @@ import { embedSrgbIcc, inspectPng, verifyPrintPng } from '../src/components/imag
 const profile: AlphaOptimizationSettings = { method: 'dtf', dtfMode: 'halftone', cleanupPercent: 10, cellPixels: 8 }
 assert.equal(DEFAULT_ALPHA_SETTINGS.pattern, 'stochastic')
 const xl = getExportGeometry(3000, 3975, 'print-40x53')
-assert.deepEqual([xl.width, xl.height, xl.dpi], [4724, 6260, 300])
-assert.ok(xl.x >= 0 && xl.y >= 0)
-assert.ok(xl.drawWidth <= xl.width && xl.drawHeight <= xl.height)
+assert.deepEqual([xl.width, xl.height, xl.dpi], [3000, 3975, 300])
+assert.deepEqual([xl.x, xl.y, xl.drawWidth, xl.drawHeight, xl.upscaled], [0, 0, 3000, 3975, false])
 
 const medium = getExportGeometry(2000, 2000, 'print-35x40')
-assert.deepEqual([medium.width, medium.height, medium.dpi], [4134, 4724, 300])
-assert.ok(medium.drawHeight <= medium.height && medium.drawWidth <= medium.width)
+assert.deepEqual([medium.width, medium.height, medium.dpi], [2000, 2000, 300])
+assert.deepEqual([medium.x, medium.y, medium.drawWidth, medium.drawHeight, medium.upscaled], [0, 0, 2000, 2000, false])
 const icon = getExportGeometry(2000, 2000, 'companion-2x')
-assert.deepEqual([icon.width, icon.height, icon.dpi], [4000, 4000, null])
+assert.deepEqual([icon.width, icon.height, icon.dpi], [2000, 2000, null])
+assert.equal(icon.upscaled, false)
 
 const img = { width: 16, height: 16, data: new Uint8ClampedArray(16 * 16 * 4) } as ImageData
 for (let i = 0; i < img.data.length; i += 4) {
@@ -133,4 +133,4 @@ assert.equal(icc.toString('ascii', 36, 40), 'acsp')
 assert.equal(icc.toString('ascii', 16, 20), 'RGB ')
 assert.deepEqual(await inspectPng(withProfile), details)
 textResult()
-function textResult() { process.stdout.write('Images Studio print QA: geometry, DTF detail preservation / strip continuity, RGBA8, 300 ppp and real ICC sRGB passed.\n') }
+function textResult() { process.stdout.write('Images Studio print QA: no-resample geometry, DTF detail preservation / strip continuity, RGBA8, 300 ppp and real ICC sRGB passed.\n') }
