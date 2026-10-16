@@ -26,7 +26,7 @@ const samePrintMetadata = async (original: Blob, compressed: Blob) => {
 }
 
 /**
- * Safe, optional, browser-local Oxipng. No pixels, ICC or pHYs may change.
+ * Safe browser-local PNG recompression. No pixels, ICC or pHYs may change.
  * Any failure, timeout, metadata mismatch or size increase keeps the source.
  */
 export async function optimizePngLosslessly(source: Blob): Promise<CompressionResult> {
@@ -54,13 +54,15 @@ export async function optimizePngLosslessly(source: Blob): Promise<CompressionRe
     try {
       worker = new Worker(new URL('./pngOptimize.worker.ts', import.meta.url), { type: 'module' })
     } catch {
-      return fallback('failed', 'El navegador no pudo iniciar el compresor.')
+      return fallback('failed', 'El navegador no pudo iniciar la optimización; se utilizó el PNG original.')
     }
 
-    const timeoutMs = window.matchMedia('(max-width: 720px)').matches ? 75_000 : 150_000
+    // Never trap an export behind compression. Native streaming normally finishes
+    // much sooner; on slow/memory-constrained devices we immediately fall back.
+    const timeoutMs = window.matchMedia('(max-width: 720px)').matches ? 20_000 : 35_000
     const output = await new Promise<ArrayBuffer>((resolve, reject) => {
       const timer = window.setTimeout(() => {
-        reject(new Error('Tiempo máximo de optimización alcanzado.'))
+        reject(new Error('La optimización excedió el tiempo seguro; se utilizó el PNG original.'))
       }, timeoutMs)
       worker.addEventListener('message', (event: MessageEvent<WorkerOutput>) => {
         if (event.data.id !== 1) return
@@ -70,7 +72,7 @@ export async function optimizePngLosslessly(source: Blob): Promise<CompressionRe
       }, { once: true })
       worker.addEventListener('error', (event) => {
         window.clearTimeout(timer)
-        reject(new Error(event.message || 'Falló el compresor WebAssembly.'))
+        reject(new Error(event.message || 'Falló el compresor nativo.'))
       }, { once: true })
       // Transfer the input buffer instead of creating a second large copy.
       worker.postMessage({ id: 1, png: input }, [input])
