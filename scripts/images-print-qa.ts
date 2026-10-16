@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { deflateSync, inflateSync } from 'node:zlib'
 import { getExportGeometry } from '../src/components/images/printExport'
-import { optimizeImageAlpha, analyzeAlpha, type AlphaOptimizationSettings } from '../src/components/images/alphaOptimization'
+import { DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, analyzeAlpha, type AlphaOptimizationSettings, type DtfPattern } from '../src/components/images/alphaOptimization'
 import { embedSrgbIcc, inspectPng, verifyPrintPng } from '../src/components/images/colorManagement'
 
 const profile: AlphaOptimizationSettings = { method: 'dtf', dtfMode: 'halftone', cleanupPercent: 10, cellPixels: 8 }
+assert.equal(DEFAULT_ALPHA_SETTINGS.pattern, 'stochastic')
 const xl = getExportGeometry(3000, 3975, 'print-40x53')
 assert.deepEqual([xl.width, xl.height, xl.dpi], [4724, 6260, 300])
 assert.ok(xl.x >= 0 && xl.y >= 0)
@@ -47,6 +48,13 @@ for (let i = 0; i < artwork.data.length; i += 4) {
   }
 }
 assert.equal(analyzeAlpha(artwork).partial, 0)
+
+for (const pattern of ['stochastic', 'dots', 'lines', 'ordered'] as DtfPattern[]) {
+  const sample = { width: 19, height: 17, data: new Uint8ClampedArray(19 * 17 * 4) } as ImageData
+  for (let i = 0; i < sample.data.length; i += 4) sample.data.set([120, 80, 200, 128], i)
+  optimizeImageAlpha(sample, { ...profile, pattern, detailProtection: 0 })
+  assert.equal(analyzeAlpha(sample).partial, 0, pattern + ' must quantize alpha to 0/255')
+}
 
 // Processing chunks with a one-row halo must match a full-frame DTF pass.
 const continuous = { width: 13, height: 11, data: new Uint8ClampedArray(13 * 11 * 4) } as ImageData

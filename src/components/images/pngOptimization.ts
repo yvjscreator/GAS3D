@@ -57,9 +57,9 @@ export async function optimizePngLosslessly(source: Blob): Promise<CompressionRe
       return fallback('failed', 'El navegador no pudo iniciar la optimización; se utilizó el PNG original.')
     }
 
-    // Never trap an export behind compression. Native streaming normally finishes
-    // much sooner; on slow/memory-constrained devices we immediately fall back.
-    const timeoutMs = window.matchMedia('(max-width: 720px)').matches ? 20_000 : 35_000
+    // Never trap an export behind compression. If the native recompressor cannot
+    // finish quickly, terminate it and return the verified source PNG unchanged.
+    const timeoutMs = window.matchMedia('(max-width: 720px)').matches ? 8_000 : 12_000
     const output = await new Promise<ArrayBuffer>((resolve, reject) => {
       const timer = window.setTimeout(() => {
         reject(new Error('La optimización excedió el tiempo seguro; se utilizó el PNG original.'))

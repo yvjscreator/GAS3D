@@ -1,5 +1,6 @@
 export type PrintMethod = 'dtg' | 'dtf'
 export type DtfAlphaMode = 'halftone' | 'solid' | 'preserve' | 'aggressive'
+export type DtfPattern = 'stochastic' | 'dots' | 'lines' | 'ordered'
 export type AlphaOptimizationSettings = {
   method: PrintMethod
   dtfMode: DtfAlphaMode
@@ -7,6 +8,8 @@ export type AlphaOptimizationSettings = {
   cleanupPercent: number
   /** Approximate DTF dot pitch, in output pixels (8 = fine). */
   cellPixels: number
+  /** Halftone distribution. Stochastic avoids visible ordered-grid/cross artifacts. */
+  pattern?: DtfPattern
   /** How strongly local high-contrast contours are protected (0..100). */
   detailProtection?: number
 }
@@ -15,6 +18,7 @@ export const DEFAULT_ALPHA_SETTINGS: AlphaOptimizationSettings = {
   dtfMode: 'halftone',
   cleanupPercent: 10,
   cellPixels: 8,
+  pattern: 'stochastic',
   detailProtection: 85,
 }
 
@@ -32,6 +36,49 @@ export function analyzeAlpha(image: ImageData): AlphaStatistics {
 
 export const shouldOptimizeAlpha = (settings: AlphaOptimizationSettings) =>
   settings.method === 'dtf' && settings.dtfMode !== 'preserve'
+
+const bayer4 = [
+  0, 8, 2, 10,
+  12, 4, 14, 6,
+  3, 11, 1, 9,
+  15, 7, 13, 5,
+]
+
+const dot4 = [
+  15, 9, 10, 16,
+  8, 2, 3, 11,
+  7, 1, 4, 12,
+  14, 6, 5, 13,
+]
+
+function hash01(x: number, y: number) {
+  let value = Math.imul(x ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(y ^ 0xc2b2ae35, 0x27d4eb2f)
+  value ^= value >>> 15
+  value = Math.imul(value, 0x2c1b3c6d)
+  value ^= value >>> 12
+  value = Math.imul(value, 0x297a2d39)
+  value ^= value >>> 15
+  return (value >>> 0) / 0x1_0000_0000
+}
+
+function patternCutoff(pattern: DtfPattern, x: number, y: number, cellPixels: number) {
+  // Preserve the existing three dot-size choices while changing only the
+  // spatial distribution. A block is 2/3/4 px for fine/medium/coarse.
+  const block = Math.max(1, Math.min(8, Math.round(cellPixels / 4)))
+  const px = Math.floor(x / block)
+  const py = Math.floor(y / block)
+
+  if (pattern === 'stochastic') return Math.max(1 / 256, hash01(px, py))
+
+  const localX = ((px % 4) + 4) & 3
+  const localY = ((py % 4) + 4) & 3
+  if (pattern === 'ordered') return (bayer4[localY * 4 + localX] + 0.5) / 16
+  if (pattern === 'dots') return (dot4[localY * 4 + localX] - 0.5) / 16
+
+  // Diagonal line screen: coverage expands the stripe instead of creating
+  // checker/cross intersections.
+  return ((((px + py) & 3) + 0.5) / 4)
+}
 
 /**
  * Apply treatment at final print size. Per-pixel operations use global Y to
@@ -60,24 +107,16 @@ export function optimizeImageAlpha(
   // never blends RGB values from neighboring pixels or modifies opaque artwork.
   // It only quantizes PARTIAL ALPHA at the location of each original pixel.
   // Full-opacity areas, internal lines and local color texture remain intact.
-  const bayer4 = [
-    0, 8, 2, 10,
-    12, 4, 14, 6,
-    3, 11, 1, 9,
-    15, 7, 13, 5,
-  ]
-  // Work against an immutable snapshot: pixels already quantized in a previous
-  // column must never be mistaken for missing source detail.
   const source = new Uint8ClampedArray(data)
   const protection = settings.dtfMode === 'aggressive' ? 0
     : Math.max(0, Math.min(1, (settings.detailProtection ?? 85) / 100))
-  const dot = Math.max(1, Math.min(5, Math.round(settings.cellPixels / 4)))
+  const pattern = settings.pattern ?? 'stochastic'
   const solidAlpha = 255 - Math.round(82 * protection)
   const edgeAlpha = 160 - Math.round(80 * protection)
   const rgbEdgeThreshold = 72 - Math.round(49 * protection)
 
   for (let y = 0; y < height; y++) {
-    const patternY = Math.floor((globalY + y) / dot) & 3
+    const patternY = globalY + y
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4
       const alpha = source[i + 3]
@@ -115,8 +154,7 @@ export function optimizeImageAlpha(
         continue
       }
 
-      const patternX = Math.floor(x / dot) & 3
-      const cutoff = (bayer4[patternY * 4 + patternX] + 0.5) / 16
+      const cutoff = patternCutoff(pattern, x, patternY, settings.cellPixels)
       if (alpha / 255 >= cutoff) {
         data[i + 3] = 255
       } else {

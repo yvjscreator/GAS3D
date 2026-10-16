@@ -904,6 +904,7 @@
   display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
   gap:5px; min-width:0;
 }
+.images-dtf-pattern>div { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .images-dtf-pitch button {
   min-width:0; min-height:30px; border:1px solid #38545d;
   border-radius:6px; color:#abbec8; background:#182731;

@@ -14,7 +14,7 @@ import { paintNativeDetail } from './detailPreview'
 import { ImagesBatchSidebar } from './ImagesBatchSidebar'
 import { EXPORT_PRESETS, getExportGeometry, resolveExportPreset, type ExportPreset } from './printExport'
 import { describeCompression, type CompressionResult } from './pngOptimization'
-import { analyzeAlpha, DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings, type PrintMethod, type DtfAlphaMode, type AlphaStatistics } from './alphaOptimization'
+import { analyzeAlpha, DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings, type PrintMethod, type DtfAlphaMode, type DtfPattern, type AlphaStatistics } from './alphaOptimization'
 import './imagesStudio.css'
 
 const MAX_IMAGE_PIXELS = 30_000_000
@@ -32,6 +32,7 @@ const PNG_OPTIMIZE_KEY = 'gas3d.images.optimize-png.v1'
 const ALPHA_CLEANUP_KEY = 'gas3d.images.alpha-cleanup.v1'
 const DETAIL_PROTECTION_KEY = 'gas3d.images.detail-protection.v1'
 const DTF_DOT_SIZE_KEY = 'gas3d.images.dtf-dot-size.v1'
+const DTF_PATTERN_KEY = 'gas3d.images.dtf-pattern.v1'
 
 const readOutputPreset = (): ExportPreset => {
   try {
@@ -136,6 +137,12 @@ export function ImagesStudio() {
       return stored === 12 || stored === 16 ? stored : 8
     } catch { return 8 }
   })
+  const [dtfPattern, setDtfPattern] = useState<DtfPattern>(() => {
+    try {
+      const stored = window.localStorage.getItem(DTF_PATTERN_KEY)
+      return stored === 'dots' || stored === 'lines' || stored === 'ordered' ? stored : 'stochastic'
+    } catch { return 'stochastic' }
+  })
   const [alphaStats, setAlphaStats] = useState<{ original: AlphaStatistics; result: AlphaStatistics } | null>(null)
   const [preset, setPreset] = useState<ImagePreset | null>('balanced')
   const [settings, setSettings] = useState<InkRemovalSettings>(() => ({ ...imagePresets[initialInkMode()].balanced.settings }))
@@ -164,8 +171,9 @@ export function ImagesStudio() {
     dtfMode: dtfAlphaMode,
     cleanupPercent: alphaCleanup,
     cellPixels: dtfDotSize,
+    pattern: dtfPattern,
     detailProtection,
-  }), [printMethod, dtfAlphaMode, alphaCleanup, dtfDotSize, detailProtection])
+  }), [printMethod, dtfAlphaMode, alphaCleanup, dtfDotSize, dtfPattern, detailProtection])
   const exportGeometry = dimensions ? getExportGeometry(dimensions.width, dimensions.height, outputPreset, allowUpscale) : null
 
   useEffect(() => {
@@ -220,10 +228,11 @@ export function ImagesStudio() {
       window.localStorage.setItem(ALPHA_CLEANUP_KEY, String(alphaCleanup))
       window.localStorage.setItem(DETAIL_PROTECTION_KEY, String(detailProtection))
       window.localStorage.setItem(DTF_DOT_SIZE_KEY, String(dtfDotSize))
+      window.localStorage.setItem(DTF_PATTERN_KEY, dtfPattern)
     } catch {
       // The print pipeline works without localStorage.
     }
-  }, [printMethod, dtfAlphaMode, embedProfile, optimizePng, alphaCleanup, detailProtection, dtfDotSize])
+  }, [printMethod, dtfAlphaMode, embedProfile, optimizePng, alphaCleanup, detailProtection, dtfDotSize, dtfPattern])
 
   useEffect(() => {
     const onDown = (event: KeyboardEvent) => {
@@ -1015,6 +1024,20 @@ export function ImagesStudio() {
                     disabled={busy === 'batch' || busy === 'exporting'}
                     onChange={(event) => { setDetailProtection(Number(event.currentTarget.value)); invalidateBatch() }}/>
                 </label>}
+                <div className="images-dtf-pitch images-dtf-pattern">
+                  <strong>Patrón de trama</strong>
+                  <div role="group" aria-label="Patrón de trama DTF">
+                    {([
+                      ['Orgánico', 'stochastic'],
+                      ['Puntos', 'dots'],
+                      ['Líneas', 'lines'],
+                      ['Ordenado', 'ordered'],
+                    ] as const).map(([label, id]) =>
+                      <button type="button" key={id} className={dtfPattern === id ? 'active' : ''}
+                        aria-pressed={dtfPattern === id} disabled={busy === 'batch' || busy === 'exporting'}
+                        onClick={() => { setDtfPattern(id); invalidateBatch() }}>{label}</button>)}
+                  </div>
+                </div>
                 <div className="images-dtf-pitch">
                   <strong>Tamaño de punto</strong>
                   <div role="group" aria-label="Tamaño de punto de trama DTF">
@@ -1033,6 +1056,7 @@ export function ImagesStudio() {
               </div>}
               <p className="images-production-explain">
                 DTF: conserva colores originales y sólidos; la trama se genera a tamaño final.
+                Orgánico evita cuadrículas y cruces visibles; «Ordenado» conserva el patrón clásico.
                 El modo protegido prioriza detalles de contraste. Verifica el tamaño mínimo del punto
                 y el resultado del RIP con el taller. Usa zoom para evaluar trazos finos.
               </p>
@@ -1083,7 +1107,7 @@ export function ImagesStudio() {
               disabled={busy === 'batch' || busy === 'exporting'}
               onClick={() => { setOptimizePng((value) => !value); setCompressionReport(null); invalidateBatch() }}>
               <span><strong>Optimización PNG sin pérdida</strong>
-                <small>Oxipng · conserva RGBA, colores, transparencia, ICC y 300 ppp</small></span>
+                <small>Compresión nativa · conserva RGBA, colores, transparencia, ICC y 300 ppp</small></span>
               <span className={optimizePng ? 'images-color-switch on' : 'images-color-switch'} aria-hidden="true"><i /></span>
             </button>
             <p className="images-production-explain">
