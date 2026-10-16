@@ -85,7 +85,7 @@
 }
 .images-preview-black { background:radial-gradient(circle at 50% 40%,#080808 0,#000 70%); }
 .images-preview-shirt { background:radial-gradient(circle at 50% 36%,#3b424b,#171c23 60%,#0a0d11); }
-.images-art { width:100%; height:100%; display:flex; align-items:center; justify-content:center; min-width:0; min-height:0; }
+.images-art { position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center; min-width:0; min-height:0; }
 .images-art canvas { display:block; max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; filter:drop-shadow(0 8px 21px #0002); }
 .images-empty {
   display:flex;
@@ -946,3 +946,127 @@
   line-height:1.5;
 }
 .images-studio.is-zen .images-compression-report { padding:7px; margin-top:6px; }
+
+
+/* DTF printability analysis */
+.images-dtf-risk-overlay {
+  position:absolute;
+  left:50%;
+  top:50%;
+  z-index:2;
+  display:block;
+  max-width:100%;
+  max-height:100%;
+  width:auto;
+  height:auto;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  user-select:none;
+  mix-blend-mode:normal;
+}
+.images-shirt-print .images-dtf-risk-overlay { z-index:3; }
+
+.images-dtf-analysis { padding-bottom:8px; }
+.images-dtf-size-picker {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:5px;
+}
+.images-dtf-size-picker button,
+.images-dtf-analysis-actions button {
+  min-height:34px;
+  padding:7px 8px;
+  border:1px solid #314954;
+  border-radius:7px;
+  background:#111e27;
+  color:#9fb0bd;
+  font:inherit;
+  font-size:10px;
+  font-weight:800;
+  cursor:pointer;
+}
+.images-dtf-size-picker button.active,
+.images-dtf-analysis-actions button.active {
+  color:#e9fff5;
+  border-color:#68b991;
+  background:#285642;
+}
+.images-dtf-size-picker button:disabled { cursor:wait; opacity:.55; }
+.images-dtf-custom-size {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px;
+  margin-top:8px;
+}
+.images-dtf-custom-size label { display:grid; gap:4px; color:#8295a5; font-size:9px; font-weight:800; }
+.images-dtf-custom-size input {
+  min-width:0;
+  width:100%;
+  height:32px;
+  padding:0 8px;
+  border:1px solid #334a55;
+  border-radius:6px;
+  background:#0d1820;
+  color:#e7f0f6;
+  font:inherit;
+  font-size:11px;
+}
+.images-dtf-analysis-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+  margin-top:9px;
+}
+.images-dtf-analysis-card {
+  display:grid;
+  gap:3px;
+  min-width:0;
+  padding:9px;
+  border:1px solid #30434d;
+  border-radius:8px;
+  background:#0d1820;
+}
+.images-dtf-analysis-card span { color:#81929e; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+.images-dtf-analysis-card strong { color:#e7eff5; font-size:14px; line-height:1.15; }
+.images-dtf-analysis-card small { color:#81929e; font-size:8px; }
+.images-dtf-analysis-card.ok { border-color:#2f624b; background:#102219; }
+.images-dtf-analysis-card.ok strong,
+.images-dtf-analysis-card.ok small { color:#a9e9c5; }
+.images-dtf-analysis-card.warn { border-color:#806735; background:#251f10; }
+.images-dtf-analysis-card.warn strong,
+.images-dtf-analysis-card.warn small { color:#f1d37b; }
+.images-dtf-analysis-card.risk { border-color:#7a3d3d; background:#271313; }
+.images-dtf-analysis-card.risk strong,
+.images-dtf-analysis-card.risk small { color:#f1a1a1; }
+
+.images-dtf-analysis-actions {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+  margin-top:8px;
+}
+.images-dtf-analysis-actions button {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+}
+.images-dtf-risk-legend {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  margin-top:8px;
+  color:#8fa0ad;
+  font-size:8px;
+  font-weight:750;
+}
+.images-dtf-risk-legend span { display:flex; align-items:center; gap:5px; }
+.images-dtf-risk-legend i { width:8px; height:8px; border-radius:50%; box-shadow:0 0 0 1px #ffffff22; }
+.images-dtf-risk-legend i.thin { background:rgb(239,78,78); }
+.images-dtf-risk-legend i.small { background:rgb(245,137,52); }
+.images-dtf-risk-legend i.alpha { background:rgb(245,196,72); }
+
+@media (max-width:720px) {
+  .images-dtf-analysis-grid,
+  .images-dtf-analysis-actions { grid-template-columns:1fr; }
+}
