@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, Shirt, Upload, X, List, Scan, Layers3 } from 'lucide-react'
+import { Copy, Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, ShieldCheck, Shirt, Upload, X, List, Scan, Layers3 } from 'lucide-react'
 import {
   imagePresets,
   removeFabricInk,
@@ -15,6 +15,7 @@ import { ImagesBatchSidebar } from './ImagesBatchSidebar'
 import { EXPORT_PRESETS, getExportGeometry, resolveExportPreset, type ExportPreset } from './printExport'
 import { describeCompression, type CompressionResult } from './pngOptimization'
 import { analyzeAlpha, DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings, type PrintMethod, type DtfAlphaMode, type DtfPattern, type AlphaStatistics } from './alphaOptimization'
+import { analyzeDtfPrintability, buildDtfPromptBlock, DTF_PRINT_SIZES, resolveDtfPrintSize, type DtfPrintabilityAnalysis, type DtfPrintSizePreset } from './dtfAnalysis'
 import './imagesStudio.css'
 
 const MAX_IMAGE_PIXELS = 30_000_000
@@ -33,6 +34,9 @@ const ALPHA_CLEANUP_KEY = 'gas3d.images.alpha-cleanup.v1'
 const DETAIL_PROTECTION_KEY = 'gas3d.images.detail-protection.v1'
 const DTF_DOT_SIZE_KEY = 'gas3d.images.dtf-dot-size.v1'
 const DTF_PATTERN_KEY = 'gas3d.images.dtf-pattern.v1'
+const DTF_PRINT_SIZE_KEY = 'gas3d.images.dtf-print-size.v1'
+const DTF_CUSTOM_WIDTH_KEY = 'gas3d.images.dtf-custom-width.v1'
+const DTF_CUSTOM_HEIGHT_KEY = 'gas3d.images.dtf-custom-height.v1'
 
 const readOutputPreset = (): ExportPreset => {
   try {
@@ -101,6 +105,7 @@ export function ImagesStudio() {
   const batchIdRef = useRef(0)
   const previewRef = useRef<HTMLDivElement | null>(null)
   const detailCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const riskOverlayRef = useRef<HTMLCanvasElement | null>(null)
   const zoomRef = useRef<ZoomPosition>({ ...initialZoom })
   const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
   const lastCtrlPressRef = useRef(0)
@@ -144,6 +149,24 @@ export function ImagesStudio() {
       return stored === 'dots' || stored === 'lines' || stored === 'ordered' ? stored : 'stochastic'
     } catch { return 'stochastic' }
   })
+  const [dtfPrintSizePreset, setDtfPrintSizePreset] = useState<DtfPrintSizePreset>(() => {
+    try {
+      const stored = window.localStorage.getItem(DTF_PRINT_SIZE_KEY) as DtfPrintSizePreset | null
+      return DTF_PRINT_SIZES.some((option) => option.id === stored) ? stored! : '40x53'
+    } catch { return '40x53' }
+  })
+  const [dtfCustomWidth, setDtfCustomWidth] = useState(() => {
+    try { return Math.max(0.1, Number(window.localStorage.getItem(DTF_CUSTOM_WIDTH_KEY) ?? 20) || 20) }
+    catch { return 20 }
+  })
+  const [dtfCustomHeight, setDtfCustomHeight] = useState(() => {
+    try { return Math.max(0.1, Number(window.localStorage.getItem(DTF_CUSTOM_HEIGHT_KEY) ?? 20) || 20) }
+    catch { return 20 }
+  })
+  const [dtfAnalysisSource, setDtfAnalysisSource] = useState<ImageData | null>(null)
+  const [dtfAnalysis, setDtfAnalysis] = useState<DtfPrintabilityAnalysis | null>(null)
+  const [showDtfRiskOverlay, setShowDtfRiskOverlay] = useState(false)
+  const [dtfPromptCopied, setDtfPromptCopied] = useState(false)
   const [alphaStats, setAlphaStats] = useState<{ original: AlphaStatistics; result: AlphaStatistics } | null>(null)
   const [preset, setPreset] = useState<ImagePreset | null>('balanced')
   const [settings, setSettings] = useState<InkRemovalSettings>(() => ({ ...imagePresets[initialInkMode()].balanced.settings }))
@@ -177,6 +200,7 @@ export function ImagesStudio() {
     detailProtection,
   }), [printMethod, dtfAlphaMode, alphaCleanup, dtfDotSize, dtfPattern, detailProtection])
   const exportGeometry = dimensions ? getExportGeometry(dimensions.width, dimensions.height, outputPreset, allowUpscale) : null
+  const dtfPrintSize = useMemo(() => resolveDtfPrintSize(dtfPrintSizePreset, dtfCustomWidth, dtfCustomHeight), [dtfPrintSizePreset, dtfCustomWidth, dtfCustomHeight])
 
   useEffect(() => {
     return () => {
@@ -235,6 +259,16 @@ export function ImagesStudio() {
       // The print pipeline works without localStorage.
     }
   }, [printMethod, dtfAlphaMode, embedProfile, optimizePng, alphaCleanup, detailProtection, dtfDotSize, dtfPattern])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DTF_PRINT_SIZE_KEY, dtfPrintSizePreset)
+      window.localStorage.setItem(DTF_CUSTOM_WIDTH_KEY, String(dtfCustomWidth))
+      window.localStorage.setItem(DTF_CUSTOM_HEIGHT_KEY, String(dtfCustomHeight))
+    } catch {
+      // DTF analysis still works without persistent browser storage.
+    }
+  }, [dtfPrintSizePreset, dtfCustomWidth, dtfCustomHeight])
 
   useEffect(() => {
     const onDown = (event: KeyboardEvent) => {
@@ -371,11 +405,37 @@ export function ImagesStudio() {
       const after = analyzeAlpha(optimizedPreview)
       ctx.putImageData(originalVisible ? sourcePreview : optimizedPreview, 0, 0)
       setAlphaStats({ original: before, result: after })
+      setDtfAnalysisSource(optimizedPreview)
       setRemovedPercent(Math.round(result.removedPixels / (sourcePreview.width * sourcePreview.height) * 100))
     })
 
     return () => cancelAnimationFrame(frame)
   }, [sourcePreview, settings, originalVisible, previewMode, inkMode, alphaSettings])
+
+  useEffect(() => {
+    if (printMethod !== 'dtf' || !dtfAnalysisSource || !dimensions) {
+      setDtfAnalysis(null)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setDtfAnalysis(analyzeDtfPrintability(dtfAnalysisSource, dtfPrintSize, dimensions))
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [printMethod, dtfAnalysisSource, dimensions, dtfPrintSize])
+
+  useEffect(() => {
+    const overlay = riskOverlayRef.current
+    if (!overlay) return
+    const context = overlay.getContext('2d')
+    if (!context) return
+    if (!showDtfRiskOverlay || !dtfAnalysis || originalVisible) {
+      context.clearRect(0, 0, overlay.width, overlay.height)
+      return
+    }
+    if (overlay.width !== dtfAnalysis.overlay.width) overlay.width = dtfAnalysis.overlay.width
+    if (overlay.height !== dtfAnalysis.overlay.height) overlay.height = dtfAnalysis.overlay.height
+    context.putImageData(dtfAnalysis.overlay, 0, 0)
+  }, [showDtfRiskOverlay, dtfAnalysis, originalVisible, previewMode])
 
   useEffect(() => {
     const viewport = previewRef.current
@@ -614,6 +674,9 @@ export function ImagesStudio() {
     bitmapRef.current?.close()
     bitmapRef.current = null
     setSourcePreview(null)
+    setDtfAnalysisSource(null)
+    setDtfAnalysis(null)
+    setShowDtfRiskOverlay(false)
     setAlphaStats(null)
     setDimensions(null)
     setFile(null)
@@ -727,6 +790,16 @@ export function ImagesStudio() {
       setError(cause instanceof Error ? cause.message : 'No se pudo generar el ZIP.')
     } finally {
       setBusy(null)
+    }
+  }
+
+  const copyDtfPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(buildDtfPromptBlock(dtfPrintSize))
+      setDtfPromptCopied(true)
+      window.setTimeout(() => setDtfPromptCopied(false), 1600)
+    } catch {
+      setError('No se pudo copiar el bloque DTF al portapapeles.')
     }
   }
 
@@ -854,9 +927,11 @@ export function ImagesStudio() {
                 <div className="images-shirt-neck" />
                 <div className="images-shirt-print">
                   <canvas ref={canvasRef} aria-label={`Arte procesado sobre tela ${inkMode === 'black' ? 'negra' : 'blanca'}`} />
+                  {printMethod === 'dtf' && showDtfRiskOverlay && <canvas ref={riskOverlayRef} className="images-dtf-risk-overlay" aria-label="Zonas de riesgo DTF" />}
                 </div>
               </div> : <div className="images-art">
                 <canvas ref={canvasRef} aria-label="Vista previa del arte procesado" />
+                {printMethod === 'dtf' && showDtfRiskOverlay && <canvas ref={riskOverlayRef} className="images-dtf-risk-overlay" aria-label="Zonas de riesgo DTF" />}
               </div>}
             </> : <button className="images-empty" onClick={() => inputRef.current?.click()} disabled={busy === 'loading'}>
               <span className="images-upload-icon"><ImagePlus size={30} strokeWidth={1.5} /></span>
@@ -1114,6 +1189,70 @@ export function ImagesStudio() {
             </p>
             {compressionReport && <p className="images-compression-report" role="status">{compressionReport}</p>}
           </section>
+
+          {printMethod === 'dtf' && <section className="images-production-section images-dtf-analysis" aria-label="Análisis de impresión DTF">
+            <div className="images-output-heading">
+              <span>06 / ANÁLISIS DTF</span>
+              <h3>Riesgo a tamaño final</h3>
+            </div>
+            <div className="images-dtf-size-picker" role="group" aria-label="Tamaño final de impresión">
+              {DTF_PRINT_SIZES.map((option) => <button type="button" key={option.id}
+                className={dtfPrintSizePreset === option.id ? 'active' : ''}
+                aria-pressed={dtfPrintSizePreset === option.id}
+                disabled={busy === 'batch' || busy === 'exporting'}
+                onClick={() => setDtfPrintSizePreset(option.id)}>
+                {option.name}
+              </button>)}
+            </div>
+            {dtfPrintSizePreset === 'custom' && <div className="images-dtf-custom-size">
+              <label><span>Ancho cm</span><input type="number" min="0.1" step="0.1" value={dtfCustomWidth}
+                onChange={(event) => setDtfCustomWidth(Math.max(0.1, Number(event.currentTarget.value) || 0.1))}/></label>
+              <label><span>Alto cm</span><input type="number" min="0.1" step="0.1" value={dtfCustomHeight}
+                onChange={(event) => setDtfCustomHeight(Math.max(0.1, Number(event.currentTarget.value) || 0.1))}/></label>
+            </div>}
+            <p className="images-production-explain">
+              Se analiza el arte procesado a <strong>{dtfPrintSize.widthCm} × {dtfPrintSize.heightCm} cm</strong>.
+              Línea mínima objetivo: <strong>0,4 mm</strong>. El diagnóstico no modifica el PNG.
+            </p>
+            {dtfAnalysis ? <>
+              <div className="images-dtf-analysis-grid">
+                <div className={'images-dtf-analysis-card ' + dtfAnalysis.resolutionStatus}>
+                  <span>Resolución efectiva</span>
+                  <strong>{Math.round(dtfAnalysis.effectivePpi)} ppp</strong>
+                  <small>{dtfAnalysis.resolutionStatus === 'ok' ? 'Correcta' : dtfAnalysis.resolutionStatus === 'warn' ? 'Revisar' : 'Riesgo'}</small>
+                </div>
+                <div className={'images-dtf-analysis-card ' + (dtfAnalysis.thinPixels ? 'risk' : 'ok')}>
+                  <span>Líneas &lt; 0,4 mm</span>
+                  <strong>{dtfAnalysis.thinPixels ? dtfAnalysis.thinPercent.toFixed(1) + '%' : '0%'}</strong>
+                  <small>{dtfAnalysis.thinPixels ? numberFormatter.format(dtfAnalysis.thinPixels) + ' px marcados' : 'Correcto'}</small>
+                </div>
+                <div className={'images-dtf-analysis-card ' + (dtfAnalysis.smallComponents ? 'warn' : 'ok')}>
+                  <span>Detalles aislados</span>
+                  <strong>{dtfAnalysis.smallComponents}</strong>
+                  <small>{dtfAnalysis.smallComponents ? 'Revisar islas pequeñas' : 'Correcto'}</small>
+                </div>
+                <div className={'images-dtf-analysis-card ' + (dtfAnalysis.alphaBinary || dtfAlphaMode === 'preserve' ? 'ok' : 'warn')}>
+                  <span>Alfa final</span>
+                  <strong>{dtfAnalysis.alphaBinary ? '0 / 255' : 'Parcial'}</strong>
+                  <small>{dtfAlphaMode === 'preserve' && !dtfAnalysis.alphaBinary ? 'Permitido por Conservar alfa' : dtfAnalysis.alphaBinary ? 'Correcto' : 'Revisar'}</small>
+                </div>
+              </div>
+              <div className="images-dtf-analysis-actions">
+                <button type="button" className={showDtfRiskOverlay ? 'active' : ''}
+                  aria-pressed={showDtfRiskOverlay} onClick={() => setShowDtfRiskOverlay((value) => !value)}>
+                  <ShieldCheck size={15} /> {showDtfRiskOverlay ? 'Ocultar zonas de riesgo' : 'Mostrar zonas de riesgo'}
+                </button>
+                <button type="button" onClick={() => void copyDtfPrompt()}>
+                  <Copy size={15} /> {dtfPromptCopied ? 'Copiado' : 'Copiar bloque para prompt'}
+                </button>
+              </div>
+              {showDtfRiskOverlay && <div className="images-dtf-risk-legend">
+                <span><i className="thin" />Rojo: trazo fino</span>
+                <span><i className="small" />Naranja: isla pequeña</span>
+                <span><i className="alpha" />Amarillo: alfa parcial</span>
+              </div>}
+            </> : <p className="images-alpha-diagnostic">Carga una imagen para calcular el diagnóstico DTF.</p>}
+          </section>}
 
           <div className="images-bottom-actions">
             <button onClick={() => inputRef.current?.click()} className="images-replace" disabled={busy === 'batch' || busy === 'exporting'}>
