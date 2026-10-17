@@ -78,7 +78,11 @@ async function recompressPng(input: ArrayBuffer): Promise<ArrayBuffer> {
   }
   if (firstIdat < 0 || lastIdatEnd < 0 || !idatParts.length) throw new Error('PNG sin datos IDAT.')
 
-  const recompressed = new Blob(idatParts)
+  const recompressed = new Blob(idatParts.map((part) => {
+    const copy = new Uint8Array(part.byteLength)
+    copy.set(part)
+    return copy.buffer
+  }))
     .stream()
     .pipeThrough(new DecompressionStream('deflate'))
     .pipeThrough(new CompressionStream('deflate'))
