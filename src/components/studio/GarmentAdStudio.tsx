@@ -15,7 +15,7 @@ import { AdvancedDirectorPanel } from './AdvancedDirectorPanel'
 import { AdvancedTimeline } from './AdvancedTimeline'
 import { EditorHeader } from './EditorHeader'
 import { EditorStatusBar } from './EditorStatusBar'
-import { activeAssetClips, activeClip, clipOpacity, createDefaultCamera, getAdvancedDirectorFrame, getCollectionDirectorFrame, isCompleteCollectionItem, isValidCollectionSize } from '../../config/advancedDirectors'
+import { activeAssetClips, activeClip, clipOpacity, createDefaultCamera, getDirectorFrame, isCompleteCollectionItem, isValidCollectionSize } from '../../config/advancedDirectors'
 import type { VariantCameraPreset } from '../../types/studio'
 import { AlertTriangle, AudioLines, Clapperboard, Image, Images, RefreshCw, X } from '../icons'
 import { beatDuration, hasBeatMap } from '../../utils/beatSync'
@@ -38,7 +38,6 @@ const collectionPrints = (item: CollectionItem | null, template: Record<PrintPla
   return result
 }
 const collectionZones = (item: CollectionItem | null, template: Record<PrintPlacement, PrintZoneAdjustment>) => item ? { ...template, [item.placement]: item.zoneAdjustment, [item.companionPlacement]: item.companionZoneAdjustment } : template
-const directorFrameAt = (project: DirectorProject, time: number, items: CollectionItem[], beatSync: BeatSyncSettings, combinations = useStudioStore.getState().designCombinations) => project.id === 'collection' ? getCollectionDirectorFrame(project, time, items, beatSync) : getAdvancedDirectorFrame(project, time, beatSync, combinations)
 const timelineHeightKey = 'garment-ad-studio:timeline-height'
 const timelineCollapsedKey = 'garment-ad-studio:timeline-collapsed'
 const clampTimelineHeight = (value: number) => Math.min(55, Math.max(22, value))
@@ -87,7 +86,7 @@ export function GarmentAdStudio() {
   const completeCollectionItems = studio.collectionItems.filter(isCompleteCollectionItem)
   const orderedDirectorClips = [...(advancedProject.tracks.find((track) => track.type === 'director')?.clips ?? [])].sort((a, b) => a.start - b.start)
   const activeDirectorClipIndex = Math.max(0, orderedDirectorClips.findIndex((clip) => advancedProject.playhead >= clip.start && advancedProject.playhead <= clip.start + clip.duration))
-  const preloadItemIds = orderedDirectorClips.slice(activeDirectorClipIndex, activeDirectorClipIndex + 2).flatMap((clip) => clip.itemIds ?? (clip.collectionItemId ? [clip.collectionItemId] : []))
+  const preloadItemIds = orderedDirectorClips.slice(activeDirectorClipIndex, activeDirectorClipIndex + 3).flatMap((clip) => clip.itemIds ?? (clip.collectionItemId ? [clip.collectionItemId] : []))
   const adaptivePreloadUrls = studio.campaignMode === 'collection'
     ? [...new Set(preloadItemIds)].flatMap((id) => { const item = completeCollectionItems.find((candidate) => candidate.id === id); return item ? [item.asset.url, item.companionAsset.url] : [] })
     : [studio.variantAssets.large.url, studio.variantAssets.small.url]
@@ -206,7 +205,7 @@ export function GarmentAdStudio() {
     const tick = (timestamp: number) => {
       started ??= timestamp - startAt * 1000
       const elapsed = Math.min(project.duration, (timestamp - started) / 1000); publishPlaybackTime(elapsed); syncPreviewMusic(elapsed)
-      const state = useStudioStore.getState(); const directed = directorFrameAt(state.advancedProjects[state.activeDirectorId], elapsed, state.collectionItems, state.beatSync)
+      const state = useStudioStore.getState(); const directed = getDirectorFrame(state.advancedProjects[state.activeDirectorId], elapsed, state.collectionItems, state.beatSync)
       if (directed?.collectionItemId && directed.collectionItemId !== state.activeCollectionItemId) state.setActiveCollectionItemId(directed.collectionItemId)
       else if (directed?.designCombinationId && directed.designCombinationId !== state.activeDesignCombinationId) state.setActiveDesignCombinationId(directed.designCombinationId)
       if (elapsed < project.duration) previewFrame.current = requestAnimationFrame(tick)
@@ -227,7 +226,7 @@ export function GarmentAdStudio() {
   }
   const seekAdvanced = (time: number) => {
     pauseAdvanced(); setStagePlaybackState('scrubbing'); publishPlaybackTime(time, true); if (media.current instanceof HTMLVideoElement) media.current.currentTime = media.current.duration ? time % media.current.duration : time
-    const state = useStudioStore.getState(); const directed = directorFrameAt(state.advancedProjects[state.activeDirectorId], time, state.collectionItems, state.beatSync)
+    const state = useStudioStore.getState(); const directed = getDirectorFrame(state.advancedProjects[state.activeDirectorId], time, state.collectionItems, state.beatSync)
     if (directed?.collectionItemId && directed.collectionItemId !== state.activeCollectionItemId) { timelineSelectionUpdate.current = true; studio.setActiveCollectionItemId(directed.collectionItemId) }
     else if (directed?.designCombinationId && directed.designCombinationId !== state.activeDesignCombinationId) { timelineSelectionUpdate.current = true; studio.setActiveDesignCombinationId(directed.designCombinationId) }
   }
@@ -265,7 +264,7 @@ export function GarmentAdStudio() {
       onFrame: (seconds) => { stageTimeRef.current = seconds },
       onProgress: (seconds) => {
         const state = useStudioStore.getState()
-        const directed = directorFrameAt(state.advancedProjects[state.activeDirectorId], seconds, state.collectionItems, state.beatSync)
+        const directed = getDirectorFrame(state.advancedProjects[state.activeDirectorId], seconds, state.collectionItems, state.beatSync)
         if (directed?.collectionItemId && directed.collectionItemId !== state.activeCollectionItemId) state.setActiveCollectionItemId(directed.collectionItemId)
         else if (directed?.designCombinationId && directed.designCombinationId !== state.activeDesignCombinationId) state.setActiveDesignCombinationId(directed.designCombinationId)
         if (Math.abs(seconds - lastPublishedRecording.current) >= .1) {
@@ -300,7 +299,7 @@ export function GarmentAdStudio() {
   const stageUsesProject = !framingMode
   const advancedTime = studio.recordingStatus === 'recording' ? studio.recordingElapsed : advancedProject.playhead
   const timelineStageActive = stagePlaybackState !== 'editing' || studio.recordingStatus === 'recording'
-  const directorFrame = stageUsesProject && timelineStageActive ? directorFrameAt(advancedProject, advancedTime, studio.collectionItems, studio.beatSync) : null
+  const directorFrame = stageUsesProject && timelineStageActive ? getDirectorFrame(advancedProject, advancedTime, studio.collectionItems, studio.beatSync) : null
   const variantTemplate = studio.prints
   const zoneTemplate = studio.printZoneAdjustments
   const editingCompanion = collectionMode && studio.activeCollectionAssetRole === 'companion'
@@ -400,7 +399,7 @@ export function GarmentAdStudio() {
       </section>
       <section className="zen-workspace">
         <audio ref={musicMedia} className="music-preview-media" src={studio.music.url ?? undefined} preload="auto" />
-        <AdStage format={studio.format} background={studio.background} mediaRef={media} onCanvasReady={(nextCanvas) => { canvasRef.current = nextCanvas }} viewer={viewer} overlayLayers={studio.overlayLayers} layerOrder={studio.layerOrder} selectedLayerId={studio.selectedLayerId} systemLayerTimings={studio.systemLayerTimings} duration={advancedProject.duration} recordingStatus={studio.recordingStatus} recordingElapsed={studio.recordingElapsed} directorFrame={directorFrame} advancedProject={stageUsesProject ? advancedProject : null} advancedTime={advancedTime} playbackTimeRef={stageTimeRef} beatSync={studio.beatSync} advancedGridViews={stageUsesProject ? gridViews : null} playbackState={studio.recordingStatus === 'recording' ? 'recording' : stagePlaybackState} collectionItems={completeCollectionItems} designCombinations={studio.designCombinations} onSelectLayer={studio.selectLayer} onUpdateOverlay={studio.updateOverlayLayer} />
+        <AdStage format={studio.format} background={studio.background} mediaRef={media} onCanvasReady={(nextCanvas) => { canvasRef.current = nextCanvas }} viewer={viewer} overlayLayers={studio.overlayLayers} layerOrder={studio.layerOrder} selectedLayerId={studio.selectedLayerId} systemLayerTimings={studio.systemLayerTimings} duration={advancedProject.duration} recordingStatus={studio.recordingStatus} recordingElapsed={studio.recordingElapsed} directorFrame={directorFrame} advancedProject={stageUsesProject ? advancedProject : null} advancedTime={advancedTime} playbackTimeRef={stageTimeRef} beatSync={studio.beatSync} advancedGridViews={stageUsesProject ? gridViews : null} playbackState={studio.recordingStatus === 'recording' ? 'recording' : stagePlaybackState} collectionItems={completeCollectionItems} designCombinations={studio.designCombinations} variantAssets={studio.variantAssets} onSelectLayer={studio.selectLayer} onUpdateOverlay={studio.updateOverlayLayer} />
       </section>
     </div>
   </main>

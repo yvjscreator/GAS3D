@@ -126,6 +126,7 @@ export function useRecording() {
     }
     const cleanupAudio = () => { audioElements.forEach((element) => { element.pause(); element.removeAttribute('src'); element.load() }); void audioContext?.close(); videoStream.getTracks().forEach((track) => track.stop()) }
     let frame = 0; const started = performance.now(); let recorder: MediaRecorder
+    let lastDirectorClipId = activeClip(advancedProject, 'director', 0)?.id ?? null
     const draw = (seconds: number) => {
       context.clearRect(0, 0, composition.width, composition.height); context.fillStyle = '#000'; context.fillRect(0, 0, composition.width, composition.height)
       drawBackground(seconds)
@@ -160,7 +161,20 @@ export function useRecording() {
         context.globalAlpha = baseOpacity; context.shadowColor = settings.shadowEnabled && !hasBox ? 'rgba(0,0,0,.72)' : 'transparent'; context.shadowBlur = settings.shadowEnabled && !hasBox ? fontSize * .28 : 0; context.shadowOffsetY = settings.shadowEnabled && !hasBox ? fontSize * .08 : 0; context.fillStyle = settings.color; context.fillText(settings.text, x, y); context.restore()
       })
     }
-    const loop = () => { const seconds = Math.min(duration, (performance.now() - started) / 1000); onFrame?.(seconds); updateAudio(seconds); draw(seconds); onProgress(seconds); frame = requestAnimationFrame(loop) }
+    const loop = () => {
+      const seconds = Math.min(duration, (performance.now() - started) / 1000)
+      onFrame?.(seconds)
+      updateAudio(seconds)
+      const directorClip = activeClip(advancedProject, 'director', seconds)
+      const nextDirectorClipId = directorClip?.id ?? null
+      const sceneChanged = nextDirectorClipId !== lastDirectorClipId
+      lastDirectorClipId = nextDirectorClipId
+      // Give the WebGL stage one RAF to bind the newly directed garment assets.
+      // captureStream repeats the previous clean frame instead of recording a wrong-print flash.
+      if (!sceneChanged) draw(seconds)
+      onProgress(seconds)
+      frame = requestAnimationFrame(loop)
+    }
     const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9', 'video/webm'].find((value) => MediaRecorder.isTypeSupported(value))
     try { recorder = new MediaRecorder(captureStream, mime ? { mimeType: mime, videoBitsPerSecond: bitrate, audioBitsPerSecond: 192_000 } : undefined) } catch { cleanupAudio(); onError('No se pudo iniciar MediaRecorder en este navegador.'); return }
     const chunks: BlobPart[] = []

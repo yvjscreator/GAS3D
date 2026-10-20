@@ -395,6 +395,12 @@ export function getCollectionDirectorFrame(project: DirectorProject, time: numbe
   }
 }
 
+export function getDirectorFrame(project: DirectorProject, time: number, items: CollectionItem[], beatSync?: BeatSyncSettings, combinations: readonly DesignCombination[] = []) {
+  return project.id === 'collection'
+    ? getCollectionDirectorFrame(project, time, items, beatSync)
+    : getAdvancedDirectorFrame(project, time, beatSync, combinations)
+}
+
 export function activeAssetClips(project: DirectorProject, assetId: string, time: number) {
   return project.tracks
     .filter((track) => !track.hidden)

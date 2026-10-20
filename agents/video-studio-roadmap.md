@@ -67,7 +67,7 @@ Verified current behavior:
 | 3 | Exhibition motion vs transition motion | DONE |
 | 4 | Narrative shot hierarchy | DONE |
 | 5 | Premium director transitions | DONE |
-| 6 | Preview/export parity and scene preroll | PLANNED |
+| 6 | Preview/export parity and scene preroll | DONE |
 | 7 | Quick Video mode | PLANNED |
 | 8 | Default UX, migration and QA | PLANNED |
 
@@ -259,7 +259,7 @@ Implementation notes:
 
 ## Phase 6 — Preview/export parity and scene preroll
 
-Status: **PLANNED**
+Status: **DONE**
 
 Goal: make preview and exported video evaluate the same cinematographic state at the same timestamp.
 
@@ -285,7 +285,13 @@ Acceptance:
 - Background media remains synchronized after seeking and replay.
 
 Implementation notes:
-- _Pending._
+- Added shared `getDirectorFrame()` so preview and studio playback use the same director-frame resolver.
+- During playback/recording, `AdStage` now derives garment color, print applications and print-zone adjustments directly from the timestamp's directed collection item/design combination instead of relying on UI selection state.
+- Variants playback receives the variant asset library directly so a directed combination can be rendered without waiting for active-selection state.
+- Adaptive preview preload now prepares the active scene plus the next two director clips.
+- Recording detects director-clip boundaries and gives the WebGL stage one RAF to bind the new garment assets; capture repeats the previous clean frame instead of recording a one-frame wrong-design flash.
+- Existing full recording preflight still prepares all used artwork/background/audio resources before capture.
+- UI selection may continue following playback for editing feedback, but it is no longer the visual source of truth during directed playback.
 
 ---
 
