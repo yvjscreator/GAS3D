@@ -27,6 +27,13 @@ export type TimelineTrackType = 'background' | 'director' | 'label' | 'image' | 
 export type TimelineClipType = 'background' | 'directorShot' | 'gridScene' | 'variantLabel' | 'image' | 'text' | 'music' | 'backgroundAudio'
 export type GarmentMotionId = 'turntableRight' | 'turntableLeft' | 'whipCompanion' | 'heroArc' | 'detailPush' | 'companionReveal'
 
+export interface ShotTimingProfile {
+  hold: number
+  prepare: number
+  transition: number
+  settle: number
+}
+
 export interface PresentationScene {
   id: string
   kind: PresentationSceneKind
@@ -157,6 +164,7 @@ export interface TimelineClip {
   itemIds?: string[]
   shotKind?: DirectorShotKind
   garmentMotion?: GarmentMotionId
+  shotTiming?: ShotTimingProfile
   sceneTransition?: LayerTransition
   unsyncedStart?: number
   unsyncedDuration?: number

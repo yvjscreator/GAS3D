@@ -19,6 +19,7 @@ import type {
 import { garmentVariantPresets } from './garmentVariants'
 import { defaultCollectionMotionIds, defaultCollectionTransitionIds, evaluateGarmentMotion, placementFacing } from './garmentMotions'
 import { cueDuration, hasBeatMap, rhythmicProgress } from '../utils/beatSync'
+import { defaultShotTimingProfile, evaluateShotTiming } from '../utils/shotTiming'
 import { buildPresentationPlan } from '../utils/presentationPlanner'
 import { defaultEnabledShotTypes } from './directorShots'
 
@@ -135,7 +136,7 @@ function variantTracks(presentationMode: PresentationMode, enabledShotTypes: rea
       const planItem = planItems.find((item) => item.id === combinationId)
       const combinationIndex = Math.max(0, planItems.findIndex((item) => item.id === combinationId))
       const names: Record<Exclude<DirectorShotKind, 'groupShowcase'>, string> = { itemShowcase: planItem?.name ?? `Combinación ${variantIds.indexOf(combinationId) + 1}`, hero: 'Toma hero', detailLarge: 'Acercamiento principal', detailSmall: 'Detalle companion' }
-      directorClips.push(clip({ type: 'directorShot', name: names[scene.kind], start: cursor, duration, variantId: planItem?.presetId, designCombinationId: combinationId, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, garmentMotion: enabledMotions[combinationIndex % enabledMotions.length], sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
+      directorClips.push(clip({ type: 'directorShot', name: names[scene.kind], start: cursor, duration, variantId: planItem?.presetId, designCombinationId: combinationId, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, garmentMotion: enabledMotions[combinationIndex % enabledMotions.length], shotTiming: defaultShotTimingProfile(), sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
     }
     scene.itemIds.forEach((id) => {
       const planItem = planItems.find((item) => item.id === id)
@@ -209,7 +210,7 @@ export function createCollectionProject(items: CollectionItem[], overlays: Stage
       if (item) {
         const itemIndex = items.findIndex((candidate) => candidate.id === item.id)
         const shotNames: Record<Exclude<DirectorShotKind, 'groupShowcase'>, string> = { itemShowcase: item.name, hero: `${item.name} · Hero`, detailLarge: `${item.name} · Principal`, detailSmall: `${item.name} · Companion` }
-        directorClips.push(clip({ type: 'directorShot', name: shotNames[scene.kind], start: cursor, duration, collectionItemId: item.id, sceneId: scene.id, itemIds: scene.itemIds, shotKind: scene.kind, garmentMotion: enabledMotions[itemIndex % enabledMotions.length], sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
+        directorClips.push(clip({ type: 'directorShot', name: shotNames[scene.kind], start: cursor, duration, collectionItemId: item.id, sceneId: scene.id, itemIds: scene.itemIds, shotKind: scene.kind, garmentMotion: enabledMotions[itemIndex % enabledMotions.length], shotTiming: defaultShotTimingProfile(), sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
       }
     }
     sceneItems.filter((item) => item.label.enabled).forEach((item) => {
@@ -320,7 +321,9 @@ export function getAdvancedDirectorFrame(project: DirectorProject, time: number,
   const variant = garmentVariantPresets.find((candidate) => candidate.id === (combination?.presetId ?? item.variantId)) ?? garmentVariantPresets[0]
   const camera = combination?.camera ?? project.cameras[item.variantId ?? variant.id]
   const rawLocal = Math.min(1, Math.max(0, (time - item.start) / Math.max(.1, item.duration)))
-  const local = beatSync && hasBeatMap(beatSync) ? rhythmicProgress(rawLocal, beatSync.style) : rawLocal
+  const rhythmicLocal = beatSync && hasBeatMap(beatSync) ? rhythmicProgress(rawLocal, beatSync.style) : rawLocal
+  const timing = evaluateShotTiming(rhythmicLocal, item.shotTiming)
+  const local = timing.motionProgress
   const smooth = local * local * (3 - 2 * local)
   const placement = item.shotKind === 'detailSmall' ? combination?.companionPlacement ?? variant.smallPlacement : combination?.mainPlacement ?? variant.largePlacement
   const baseFacing = placementFacing[placement]
@@ -354,7 +357,9 @@ export function getCollectionDirectorFrame(project: DirectorProject, time: numbe
   const item = shot?.collectionItemId ? items.find((candidate) => candidate.id === shot.collectionItemId) : null
   if (!shot || !item) return null
   const rawLocal = Math.min(1, Math.max(0, (time - shot.start) / Math.max(.1, shot.duration)))
-  const local = beatSync && hasBeatMap(beatSync) ? rhythmicProgress(rawLocal, beatSync.style) : rawLocal
+  const rhythmicLocal = beatSync && hasBeatMap(beatSync) ? rhythmicProgress(rawLocal, beatSync.style) : rawLocal
+  const timing = evaluateShotTiming(rhythmicLocal, shot.shotTiming)
+  const local = timing.motionProgress
   const camera = item.camera
   const motion = evaluateGarmentMotion(shot.garmentMotion ?? 'turntableRight', local, item.placement, item.companionPlacement)
   const target: [number, number, number] = [camera.target[0] - camera.composition[0] * 1.35, camera.target[1] + camera.composition[1] * 1.75, camera.target[2]]

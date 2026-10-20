@@ -62,7 +62,7 @@ Verified current behavior:
 
 | Phase | Name | Status |
 | --- | --- | --- |
-| 1 | Semantic shot timing | PLANNED |
+| 1 | Semantic shot timing | DONE |
 | 2 | Musical phrase/downbeat synchronization | PLANNED |
 | 3 | Exhibition motion vs transition motion | PLANNED |
 | 4 | Narrative shot hierarchy | PLANNED |
@@ -75,7 +75,7 @@ Verified current behavior:
 
 ## Phase 1 — Semantic shot timing
 
-Status: **PLANNED**
+Status: **DONE**
 
 Goal: stop treating a clip's normalized `0 → 1` progress as one continuous movement.
 
@@ -104,7 +104,13 @@ Acceptance:
 - Existing projects without timing-profile fields still render.
 
 Implementation notes:
-- _Pending._
+- Added serializable `ShotTimingProfile` to director clips without splitting the timeline into sub-clips.
+- Added pure `evaluateShotTiming()` in `src/utils/shotTiming.ts` with deterministic HOLD / PREPARE / TRANSITION / SETTLE evaluation.
+- Default profile is 62% hold, 13% prepare, 20% transition and 5% settle.
+- Newly generated director shots store the default profile explicitly; old clips without the field use the same safe default at runtime.
+- Both `getAdvancedDirectorFrame()` and `getCollectionDirectorFrame()` now use semantic motion progress, so strong motion remains at zero during HOLD.
+- Existing `manualTiming` preservation remains unchanged because shot timing is orthogonal to clip start/duration.
+- Phase 3 will refine motion inside each phase; Phase 1 intentionally gates the existing motion curve.
 
 ---
 
