@@ -403,6 +403,7 @@ Implementation notes:
 - Full browser/GPU visual QA still requires the deployed application; code-level regression coverage is now part of every production build.
 - Post-implementation static review corrected the 120 BPM mixed-film QA expectation to 30s: the 2.4s minimum for `detailLarge` correctly expands its 2s cue to the next full 4s cue.
 - Explicitly typed the Quick Video 2×2 fallback shot list as `DirectorShotKind[]` to keep strict TypeScript inference stable.
+- Render build follow-up: updated `AdvancedGridViewer` to convert rhythmic progress through `evaluateShotTiming()` before calling `evaluateGarmentMotion()`, fixing strict TypeScript errors and keeping grid motion on the same semantic timing model as individual shots.
 
 ---
 

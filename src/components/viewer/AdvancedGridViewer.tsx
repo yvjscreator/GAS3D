@@ -9,6 +9,7 @@ import { getGridLayout } from '../../utils/gridLayout'
 import { evaluateGarmentMotion } from '../../config/garmentMotions'
 import type { GarmentMotionId } from '../../types/studio'
 import { rhythmicProgress } from '../../utils/beatSync'
+import { evaluateShotTiming } from '../../utils/shotTiming'
 import { renderAssetManager } from '../../render/RenderAssetManager'
 
 export type GridVariantView = {
@@ -38,12 +39,13 @@ function GridGarment({ view, color, time, duration }: { view: GridVariantView; c
     const localTime = time - (view.beatDelay ?? 0)
     const rawProgress = Math.max(0, Math.min(1, localTime / Math.max(.1, duration - (view.beatDelay ?? 0))))
     const progress = view.beatStyle ? rhythmicProgress(rawProgress, view.beatStyle) : rawProgress
+    const timing = evaluateShotTiming(progress)
     group.current.visible = localTime >= 0
     const entrance = Math.max(0, Math.min(1, localTime / .24))
     const scale = .86 + .14 * entrance * entrance * (3 - 2 * entrance)
     group.current.scale.setScalar(scale)
     group.current.rotation.y = view.motion && view.companionPlacement
-      ? evaluateGarmentMotion(view.motion, progress, view.primaryPlacement ?? 'frontCenter', view.companionPlacement).rotation
+      ? evaluateGarmentMotion(view.motion, timing, view.primaryPlacement ?? 'frontCenter', view.companionPlacement).rotation
       : (view.baseRotation ?? 0) + progress * Math.PI * 2
   })
   return <>
@@ -80,7 +82,8 @@ function GridRenderer({ views, color, time, duration }: { views: GridVariantView
       const localTime = time - (view.beatDelay ?? 0)
       const rawProgress = Math.max(0, Math.min(1, localTime / Math.max(.1, duration - (view.beatDelay ?? 0))))
       const progress = view.beatStyle ? rhythmicProgress(rawProgress, view.beatStyle) : rawProgress
-      const cameraScale = view.motion && view.companionPlacement ? evaluateGarmentMotion(view.motion, progress, view.primaryPlacement ?? 'frontCenter', view.companionPlacement).cameraScale : 1
+      const timing = evaluateShotTiming(progress)
+      const cameraScale = view.motion && view.companionPlacement ? evaluateGarmentMotion(view.motion, timing, view.primaryPlacement ?? 'frontCenter', view.companionPlacement).cameraScale : 1
       camera.position.set(...view.camera.position).sub(new THREE.Vector3(...view.camera.target)).multiplyScalar(cameraScale).add(new THREE.Vector3(...view.camera.target))
       camera.lookAt(view.camera.target[0] - view.camera.composition[0] * 1.25, view.camera.target[1] + view.camera.composition[1] * 1.5, view.camera.target[2])
       camera.fov = view.camera.fov; camera.aspect = width / height; camera.updateProjectionMatrix()
