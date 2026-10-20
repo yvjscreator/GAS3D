@@ -69,7 +69,7 @@ check(dynamicDirectorClips.every((item) => item.directorTransition === 'matchRot
 
 const beatSync = { ...defaultBeatSyncSettings(), enabled: true, bpm: 120, barsPerChange: 1, offset: 0 }
 const synced = applyBeatSyncToProject(createDirectorProject('cinematic', [], true, false, allShots, 'mixed'), beatSync)
-equal(synced.duration, 28, 'El modo mixto no respetó la nueva jerarquía rítmica de tomas')
+equal(synced.duration, 30, 'El modo mixto no respetó la nueva jerarquía rítmica y los mínimos legibles de tomas')
 const syncedDirector = synced.tracks.find((track) => track.type === 'director')?.clips ?? []
 for (const label of synced.tracks.filter((track) => track.type === 'label').flatMap((track) => track.clips)) {
   const scene = syncedDirector.find((clip) => clip.sceneId === label.sceneId)

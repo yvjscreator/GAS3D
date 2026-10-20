@@ -322,7 +322,7 @@ export const useStudioStore = create<StudioState>((set) => ({
       collectionTransitionIds: preset.transitionIds,
       beatSync,
     }
-    const gridShotTypes = preset.enabledShotTypes.includes('groupShowcase') ? preset.enabledShotTypes : ['groupShowcase', ...preset.enabledShotTypes]
+    const gridShotTypes: DirectorShotKind[] = preset.enabledShotTypes.includes('groupShowcase') ? preset.enabledShotTypes : ['groupShowcase', ...preset.enabledShotTypes]
     const cinematic = { ...applyQuickTimingProfile(rebuildVariantProject(generationState, 'cinematic', preset.enabledShotTypes, preset.presentationMode), preset.shotTiming), playhead: 0 }
     const grid2x2 = { ...applyQuickTimingProfile(rebuildVariantProject(generationState, 'grid2x2', gridShotTypes, 'grouped'), preset.shotTiming), playhead: 0 }
     const collection = { ...applyQuickTimingProfile(rebuildCollectionProject(generationState, state.collectionItems, preset.motionIds, preset.transitionIds, beatSync, preset.presentationMode, preset.enabledShotTypes), preset.shotTiming), playhead: 0 }

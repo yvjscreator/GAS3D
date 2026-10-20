@@ -401,6 +401,8 @@ Implementation notes:
 - Added automated QA assertions for semantic HOLD behavior, downbeat quantization, readable high-BPM cues, Match Rotation, Premium quick preset, generated timing/transition metadata and manual-timing preservation.
 - `npm run build` now includes both image-print QA and roadmap/video-director QA after TypeScript/Vite compilation.
 - Full browser/GPU visual QA still requires the deployed application; code-level regression coverage is now part of every production build.
+- Post-implementation static review corrected the 120 BPM mixed-film QA expectation to 30s: the 2.4s minimum for `detailLarge` correctly expands its 2s cue to the next full 4s cue.
+- Explicitly typed the Quick Video 2×2 fallback shot list as `DirectorShotKind[]` to keep strict TypeScript inference stable.
 
 ---
 
