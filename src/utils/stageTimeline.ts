@@ -57,7 +57,8 @@ export function evaluateDirectorFrame(project: DirectorProject | null | undefine
   if (playbackState === 'editing') return permanentFrame()
   const item = activeClip(project, 'director', time)
   if (!item) return { ...permanentFrame(), visible: false, opacity: 0 }
-  const transition = evaluateLayerFrame({ start: item.start, duration: item.duration, enter: item.sceneTransition ?? 'none', exit: item.sceneTransition ?? 'none' }, time)
+  const legacyTransition = item.directorTransition ? 'none' : item.sceneTransition ?? 'none'
+  const transition = evaluateLayerFrame({ start: item.start, duration: item.duration, enter: legacyTransition, exit: legacyTransition }, time)
   const opacity = clipOpacity(item, time) * transition.opacity
   return { ...transition, visible: transition.visible && opacity > 0, opacity }
 }

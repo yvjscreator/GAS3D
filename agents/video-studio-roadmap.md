@@ -66,7 +66,7 @@ Verified current behavior:
 | 2 | Musical phrase/downbeat synchronization | DONE |
 | 3 | Exhibition motion vs transition motion | DONE |
 | 4 | Narrative shot hierarchy | DONE |
-| 5 | Premium director transitions | PLANNED |
+| 5 | Premium director transitions | DONE |
 | 6 | Preview/export parity and scene preroll | PLANNED |
 | 7 | Quick Video mode | PLANNED |
 | 8 | Default UX, migration and QA | PLANNED |
@@ -219,7 +219,7 @@ Implementation notes:
 
 ## Phase 5 — Premium director transitions
 
-Status: **PLANNED**
+Status: **DONE**
 
 Goal: stop relying on generic 2D layer transitions as the primary transition language for the garment.
 
@@ -247,7 +247,13 @@ Acceptance:
 - Generic slide transitions are no longer required for premium garment flow.
 
 Implementation notes:
-- _Pending._
+- Added dedicated `DirectorTransitionId`; director transitions are no longer represented by generic `LayerTransition`.
+- Added `directorTransitions.ts` with Cut, Premium Orbit, Whip Reveal, Match Rotation, Detail Dive and Occlusion Cut.
+- New director clips store `directorTransition`; legacy `sceneTransition` remains readable and is only evaluated when no director transition exists.
+- Match Rotation inspects the following shot and aligns the outgoing rotation toward its starting print orientation.
+- Detail Dive and Occlusion Cut use camera-distance modulation rather than 2D layer translation.
+- Persisted legacy transition selections are normalized to the closest new director transition, avoiding immediate data loss before the full schema migration in Phase 8.
+- Advanced Director UI now presents cinematic director transitions instead of slide/fade layer transitions.
 
 ---
 

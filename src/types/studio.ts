@@ -13,6 +13,7 @@ export const printPlacements: PrintPlacement[] = ['frontCenter', 'frontChest', '
 export type VariantAssetRole = 'large' | 'small'
 export type GarmentVariantId = 'frontLeftSleeve' | 'frontBack' | 'backRightSleeve' | 'backChest'
 export type LayerTransition = 'none' | 'fade' | 'slideLeft' | 'slideRight' | 'slideUp' | 'zoom'
+export type DirectorTransitionId = 'cut' | 'premiumOrbit' | 'whipReveal' | 'matchRotation' | 'detailDive' | 'occlusionCut'
 export type SystemLayerId = 'background' | 'garment'
 export type CampaignMode = 'variants' | 'collection'
 export type PresentationMode = 'grouped' | 'sequential' | 'mixed'
@@ -165,6 +166,8 @@ export interface TimelineClip {
   shotKind?: DirectorShotKind
   garmentMotion?: GarmentMotionId
   shotTiming?: ShotTimingProfile
+  directorTransition?: DirectorTransitionId
+  /** Legacy 2D transition retained for persisted projects and non-director compatibility. */
   sceneTransition?: LayerTransition
   unsyncedStart?: number
   unsyncedDuration?: number

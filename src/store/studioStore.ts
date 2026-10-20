@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import type { AlphaPipelineMode, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DesignCombination, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportFps, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
+import type { AlphaPipelineMode, AssetQualityProfile, AudioTrackSettings, BackgroundSettings, BeatSyncSettings, CameraViewSettings, CampaignMode, CollectionAssetRole, CollectionItem, DesignCombination, DirectorId, DirectorProject, DirectorShotKind, EditorMode, ExportFps, ExportQualityId, FormatId, GarmentMotionId, GarmentVariantId, LayerTiming, LayerTransition, DirectorTransitionId, PresentationMode, PrintAlignment, PrintAlignmentRequest, PrintPlacement, PrintSettings, PrintZoneAdjustment, RecordingStatus, StageLayerId, StageOverlayLayer, SystemLayerId, TimelineClip, VariantAsset, VariantAssetRole, VariantCameraPreset, VariantLabelSettings } from '../types/studio'
 import { ADVANCED_SCHEMA_VERSION, applyBeatSyncToProject, createCollectionProject, createDefaultCamera, createDefaultLabel, createDirectorProject, getProjectDuration, isCompleteCollectionItem, preserveManualTimelineEdits } from '../config/advancedDirectors'
-import { defaultCollectionMotionIds, defaultCollectionTransitionIds } from '../config/garmentMotions'
+import { defaultCollectionMotionIds } from '../config/garmentMotions'
+import { defaultDirectorTransitionIds, normalizeDirectorTransition } from '../config/directorTransitions'
 import { defaultBeatSyncSettings } from '../utils/beatSync'
 import { defaultEnabledShotTypes } from '../config/directorShots'
 import { garmentVariantPresets } from '../config/garmentVariants'
@@ -16,7 +17,7 @@ type StudioState = {
   collectionItems: CollectionItem[]; activeCollectionItemId: string | null
   activeCollectionAssetRole: CollectionAssetRole; setActiveCollectionAssetRole: (role: CollectionAssetRole) => void
   collectionMotionIds: GarmentMotionId[]; toggleCollectionMotion: (id: GarmentMotionId) => void
-  collectionTransitionIds: LayerTransition[]; toggleCollectionTransition: (id: LayerTransition) => void
+  collectionTransitionIds: DirectorTransitionId[]; toggleCollectionTransition: (id: DirectorTransitionId) => void
   addCollectionItem: (item: CollectionItem) => void
   updateCollectionItem: (id: string, value: Partial<CollectionItem>) => void
   removeCollectionItem: (id: string) => void
@@ -216,7 +217,8 @@ const initialCollectionItems = (persisted.collectionItems ?? []).map((item) => {
   }
 })
 const initialCollectionMotionIds = persisted.collectionMotionIds?.filter((id) => defaultCollectionMotionIds.includes(id)) ?? defaultCollectionMotionIds
-const initialCollectionTransitionIds = persisted.collectionTransitionIds?.filter((id) => defaultCollectionTransitionIds.includes(id)) ?? defaultCollectionTransitionIds
+const initialCollectionTransitionIds = (persisted.collectionTransitionIds ?? []).map(normalizeDirectorTransition).filter((id): id is DirectorTransitionId => Boolean(id))
+if (!initialCollectionTransitionIds.length) initialCollectionTransitionIds.push(...defaultDirectorTransitionIds)
 const initialPresentationMode: PresentationMode = persisted.presentationMode ?? 'mixed'
 const initialEnabledShotTypes = persisted.enabledShotTypes?.filter((kind) => defaultEnabledShotTypes.includes(kind)) ?? defaultEnabledShotTypes
 const initialOverlayLayers = (persisted.overlayLayers ?? []).map((layer) => layer.type === 'image' ? { ...layer, url: null } : layer)

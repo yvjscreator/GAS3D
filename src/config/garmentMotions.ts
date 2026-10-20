@@ -1,4 +1,4 @@
-import type { GarmentMotionId, LayerTransition, PrintPlacement } from '../types/studio'
+import type { GarmentMotionId, PrintPlacement } from '../types/studio'
 import type { ShotTimingFrame } from '../utils/shotTiming'
 
 export type GarmentMotionDefinition = {
@@ -17,15 +17,6 @@ export const garmentMotionDefinitions: GarmentMotionDefinition[] = [
 ]
 
 export const defaultCollectionMotionIds: GarmentMotionId[] = garmentMotionDefinitions.map((motion) => motion.id)
-
-export const collectionTransitionDefinitions: { id: Exclude<LayerTransition, 'none'>; name: string; description: string }[] = [
-  { id: 'fade', name: 'Fundido', description: 'Entrada y salida suave entre tomas.' },
-  { id: 'slideLeft', name: 'Barrido izquierdo', description: 'La composición entra siguiendo el sentido del montaje.' },
-  { id: 'slideRight', name: 'Barrido derecho', description: 'Contrabarrido para alternar el ritmo visual.' },
-  { id: 'slideUp', name: 'Elevación', description: 'La prenda aparece desde la base del encuadre.' },
-  { id: 'zoom', name: 'Zoom suave', description: 'Escala cinematográfica para unir planos generales y detalles.' },
-]
-export const defaultCollectionTransitionIds: LayerTransition[] = ['none', ...collectionTransitionDefinitions.map((transition) => transition.id)]
 
 export const placementFacing: Record<PrintPlacement, number> = {
   frontCenter: 0,

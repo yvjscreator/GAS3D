@@ -8,6 +8,7 @@ import type {
   TimelineClip,
   TimelineTrack,
   LayerTransition,
+  DirectorTransitionId,
   VariantCameraPreset,
   VariantLabelSettings,
   BeatSyncSettings,
@@ -17,7 +18,8 @@ import type {
   DirectorFrame,
 } from '../types/studio'
 import { garmentVariantPresets } from './garmentVariants'
-import { defaultCollectionMotionIds, defaultCollectionTransitionIds, evaluateGarmentMotion, placementFacing } from './garmentMotions'
+import { defaultCollectionMotionIds, evaluateGarmentMotion, placementFacing } from './garmentMotions'
+import { defaultDirectorTransitionIds, evaluateDirectorTransition } from './directorTransitions'
 import { hasBeatMap, nextDownbeat, quantizedCueDuration, rhythmicProgress } from '../utils/beatSync'
 import { defaultShotTimingProfile, evaluateShotTiming } from '../utils/shotTiming'
 import { buildPresentationPlan } from '../utils/presentationPlanner'
@@ -117,9 +119,9 @@ export function preserveManualTimelineEdits(generated: DirectorProject, previous
   return { ...draft, tracks: normalizedTracks, duration, playhead: Math.min(previous.playhead, duration), zoom: previous.zoom, selectedClipId }
 }
 
-function variantTracks(presentationMode: PresentationMode, enabledShotTypes: readonly DirectorShotKind[], combinations: readonly DesignCombination[], motions: readonly GarmentMotionId[], transitions: readonly LayerTransition[]) {
+function variantTracks(presentationMode: PresentationMode, enabledShotTypes: readonly DirectorShotKind[], combinations: readonly DesignCombination[], motions: readonly GarmentMotionId[], transitions: readonly DirectorTransitionId[]) {
   const enabledMotions = motions.length ? motions : defaultCollectionMotionIds.slice(0, 1)
-  const transitionAt = (index: number) => transitions.length ? transitions[index % transitions.length] : 'none' as const
+  const transitionAt = (index: number) => transitions.length ? transitions[index % transitions.length] : 'cut' as const
   const planItems = combinations.length ? combinations.filter((item) => item.enabled).map((item) => ({ id: item.id, name: item.name, presetId: item.presetId, label: item.label })) : garmentVariantPresets.map((item) => ({ id: item.id, name: item.label, presetId: item.id, label: createDefaultLabel(item.id) }))
   const variantIds = planItems.map((item) => item.id)
   const rawPlan = buildPresentationPlan(variantIds, presentationMode, enabledShotTypes)
@@ -130,13 +132,13 @@ function variantTracks(presentationMode: PresentationMode, enabledShotTypes: rea
   let cursor = 0
   plan.scenes.forEach((scene) => {
     const duration = shotDefinition(scene.kind).defaultDuration
-    if (scene.kind === 'groupShowcase') directorClips.push(clip({ type: 'gridScene', name: `${scene.itemIds.length} combinaciones`, start: cursor, duration, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
+    if (scene.kind === 'groupShowcase') directorClips.push(clip({ type: 'gridScene', name: `${scene.itemIds.length} combinaciones`, start: cursor, duration, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, directorTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
     else {
       const combinationId = scene.itemIds[0]
       const planItem = planItems.find((item) => item.id === combinationId)
       const combinationIndex = Math.max(0, planItems.findIndex((item) => item.id === combinationId))
       const names: Record<Exclude<DirectorShotKind, 'groupShowcase'>, string> = { itemShowcase: planItem?.name ?? `Combinación ${variantIds.indexOf(combinationId) + 1}`, hero: 'Toma hero', detailLarge: 'Acercamiento principal', detailSmall: 'Detalle companion' }
-      directorClips.push(clip({ type: 'directorShot', name: names[scene.kind], start: cursor, duration, variantId: planItem?.presetId, designCombinationId: combinationId, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, garmentMotion: enabledMotions[combinationIndex % enabledMotions.length], shotTiming: defaultShotTimingProfile(), sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
+      directorClips.push(clip({ type: 'directorShot', name: names[scene.kind], start: cursor, duration, variantId: planItem?.presetId, designCombinationId: combinationId, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, garmentMotion: enabledMotions[combinationIndex % enabledMotions.length], shotTiming: defaultShotTimingProfile(), directorTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
     }
     scene.itemIds.forEach((id) => {
       const planItem = planItems.find((item) => item.id === id)
@@ -156,7 +158,7 @@ function variantTracks(presentationMode: PresentationMode, enabledShotTypes: rea
   return { tracks, plan }
 }
 
-export function createDirectorProject(id: DirectorId, overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes, presentationMode: PresentationMode = 'mixed', combinations: readonly DesignCombination[] = [], motions: readonly GarmentMotionId[] = defaultCollectionMotionIds, transitions: readonly LayerTransition[] = defaultCollectionTransitionIds): DirectorProject {
+export function createDirectorProject(id: DirectorId, overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes, presentationMode: PresentationMode = 'mixed', combinations: readonly DesignCombination[] = [], motions: readonly GarmentMotionId[] = defaultCollectionMotionIds, transitions: readonly DirectorTransitionId[] = defaultDirectorTransitionIds): DirectorProject {
   if (id === 'collection') return createCollectionProject([], overlays, musicAvailable, backgroundAudio)
   const definition = directorDefinitions.find((item) => item.id === id)!
   const variantPlan = variantTracks(id === 'grid2x2' ? 'grouped' : presentationMode, enabledShotTypes, combinations, motions, transitions)
@@ -191,9 +193,9 @@ export const COLLECTION_ITEM_DURATION = 4
 export const isCompleteCollectionItem = (item: CollectionItem) => Boolean(item.asset.name && item.companionAsset.name)
 export const isValidCollectionSize = (count: number) => count >= 2
 
-export function createCollectionProject(items: CollectionItem[], overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, motions: GarmentMotionId[] = defaultCollectionMotionIds, transitions: LayerTransition[] = defaultCollectionTransitionIds, previous?: DirectorProject, beatSync?: BeatSyncSettings, presentationMode: PresentationMode = 'mixed', enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes): DirectorProject {
+export function createCollectionProject(items: CollectionItem[], overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, motions: GarmentMotionId[] = defaultCollectionMotionIds, transitions: DirectorTransitionId[] = defaultDirectorTransitionIds, previous?: DirectorProject, beatSync?: BeatSyncSettings, presentationMode: PresentationMode = 'mixed', enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes): DirectorProject {
   const enabledMotions = motions.length ? motions : defaultCollectionMotionIds.slice(0, 1)
-  const transitionAt = (index: number) => transitions.length ? transitions[index % transitions.length] : 'none' as const
+  const transitionAt = (index: number) => transitions.length ? transitions[index % transitions.length] : 'cut' as const
   const directorClips: TimelineClip[] = []
   const labelClips = new Map<string, TimelineClip[]>()
   const plan = buildPresentationPlan(items.map((item) => item.id), presentationMode, enabledShotTypes)
@@ -206,13 +208,13 @@ export function createCollectionProject(items: CollectionItem[], overlays: Stage
     const sceneItems = scene.itemIds.map((id) => items.find((item) => item.id === id)).filter((item): item is CollectionItem => Boolean(item))
     if (scene.kind === 'groupShowcase') {
       const groupNumber = plan.groups.findIndex((group) => group[0] === scene.itemIds[0]) + 1
-      directorClips.push(clip({ type: 'gridScene', name: `Colección ${groupNumber} · ${sceneItems.length} diseños`, start: cursor, duration, sceneId: scene.id, itemIds: scene.itemIds, sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
+      directorClips.push(clip({ type: 'gridScene', name: `Colección ${groupNumber} · ${sceneItems.length} diseños`, start: cursor, duration, sceneId: scene.id, itemIds: scene.itemIds, directorTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
     } else {
       const item = sceneItems[0]
       if (item) {
         const itemIndex = items.findIndex((candidate) => candidate.id === item.id)
         const shotNames: Record<Exclude<DirectorShotKind, 'groupShowcase'>, string> = { itemShowcase: item.name, hero: `${item.name} · Hero`, detailLarge: `${item.name} · Principal`, detailSmall: `${item.name} · Companion` }
-        directorClips.push(clip({ type: 'directorShot', name: shotNames[scene.kind], start: cursor, duration, collectionItemId: item.id, sceneId: scene.id, itemIds: scene.itemIds, shotKind: scene.kind, garmentMotion: enabledMotions[itemIndex % enabledMotions.length], shotTiming: defaultShotTimingProfile(), sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
+        directorClips.push(clip({ type: 'directorShot', name: shotNames[scene.kind], start: cursor, duration, collectionItemId: item.id, sceneId: scene.id, itemIds: scene.itemIds, shotKind: scene.kind, garmentMotion: enabledMotions[itemIndex % enabledMotions.length], shotTiming: defaultShotTimingProfile(), directorTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
       }
     }
     sceneItems.filter((item) => item.label.enabled).forEach((item) => {
@@ -339,22 +341,28 @@ export function getAdvancedDirectorFrame(project: DirectorProject, time: number,
   const placement = item.shotKind === 'detailSmall' ? combination?.companionPlacement ?? variant.smallPlacement : combination?.mainPlacement ?? variant.largePlacement
   const baseFacing = placementFacing[placement]
   const motion = evaluateGarmentMotion(item.garmentMotion ?? 'turntableRight', timing, combination?.mainPlacement ?? variant.largePlacement, combination?.companionPlacement ?? variant.smallPlacement)
+  const shotIndex = track?.clips.indexOf(item) ?? 0
+  const nextItem = track?.clips[shotIndex + 1]
+  const nextCombination = nextItem?.designCombinationId ? combinations.find((candidate) => candidate.id === nextItem.designCombinationId) : null
+  const nextVariant = garmentVariantPresets.find((candidate) => candidate.id === (nextCombination?.presetId ?? nextItem?.variantId))
+  const nextPlacement = nextItem?.shotKind === 'detailSmall' ? nextCombination?.companionPlacement ?? nextVariant?.smallPlacement : nextCombination?.mainPlacement ?? nextVariant?.largePlacement
+  const baseRotation = motion.rotation + (baseFacing - placementFacing[combination?.mainPlacement ?? variant.largePlacement])
+  const directorTransition = evaluateDirectorTransition(item.directorTransition, timing, baseRotation, nextPlacement ? placementFacing[nextPlacement] : undefined)
   const target: [number, number, number] = [
     camera.target[0] - camera.composition[0] * 1.35,
     camera.target[1] + camera.composition[1] * 1.75 + (placement === 'frontChest' ? .42 : placement.includes('Sleeve') ? .34 : 0),
     camera.target[2],
   ]
   const distanceScale = item.shotKind?.startsWith('detail') ? .58 + .08 * (1 - smooth) : item.shotKind === 'hero' ? .94 : 1
-  const position = camera.position.map((value, index) => target[index] + (value - camera.target[index]) * distanceScale * motion.cameraScale) as [number, number, number]
-  const shotIndex = track?.clips.indexOf(item) ?? 0
+  const position = camera.position.map((value, index) => target[index] + (value - camera.target[index]) * distanceScale * motion.cameraScale * directorTransition.cameraScale) as [number, number, number]
   return {
     variantId: combination?.presetId ?? item.variantId ?? variant.id,
     designCombinationId: combination?.id,
-    rotation: motion.rotation + (baseFacing - placementFacing[combination?.mainPlacement ?? variant.largePlacement]),
+    rotation: baseRotation + directorTransition.rotationOffset,
     cameraPosition: position,
     cameraTarget: target,
     cameraFov: camera.fov,
-    garmentOpacity: clipOpacity(item, time),
+    garmentOpacity: clipOpacity(item, time) * directorTransition.opacity,
     shotLabel: item.name.toUpperCase(),
     shotIndex,
     shotCount: track?.clips.length ?? 1,
@@ -373,11 +381,16 @@ export function getCollectionDirectorFrame(project: DirectorProject, time: numbe
   const local = timing.motionProgress
   const camera = item.camera
   const motion = evaluateGarmentMotion(shot.garmentMotion ?? 'turntableRight', timing, item.placement, item.companionPlacement)
+  const shotIndex = track?.clips.indexOf(shot) ?? 0
+  const nextShot = track?.clips.slice(shotIndex + 1).find((candidate) => candidate.type === 'directorShot')
+  const nextCollectionItem = nextShot?.collectionItemId ? items.find((candidate) => candidate.id === nextShot.collectionItemId) : null
+  const nextPlacement = nextShot?.shotKind === 'detailSmall' ? nextCollectionItem?.companionPlacement : nextCollectionItem?.placement
+  const directorTransition = evaluateDirectorTransition(shot.directorTransition, timing, motion.rotation, nextPlacement ? placementFacing[nextPlacement] : undefined)
   const target: [number, number, number] = [camera.target[0] - camera.composition[0] * 1.35, camera.target[1] + camera.composition[1] * 1.75, camera.target[2]]
-  const position = camera.position.map((value, index) => target[index] + (value - camera.target[index]) * motion.cameraScale) as [number, number, number]
+  const position = camera.position.map((value, index) => target[index] + (value - camera.target[index]) * motion.cameraScale * directorTransition.cameraScale) as [number, number, number]
   return {
-    variantId: 'frontLeftSleeve', collectionItemId: item.id, rotation: motion.rotation,
-    cameraPosition: position, cameraTarget: target, cameraFov: camera.fov, garmentOpacity: clipOpacity(shot, time),
+    variantId: 'frontLeftSleeve', collectionItemId: item.id, rotation: motion.rotation + directorTransition.rotationOffset,
+    cameraPosition: position, cameraTarget: target, cameraFov: camera.fov, garmentOpacity: clipOpacity(shot, time) * directorTransition.opacity,
     shotLabel: item.name.toUpperCase(), shotIndex: track?.clips.indexOf(shot) ?? 0, shotCount: track?.clips.length ?? 1,
   }
 }

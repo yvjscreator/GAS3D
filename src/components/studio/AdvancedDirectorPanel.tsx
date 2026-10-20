@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
 import { isCompleteCollectionItem } from '../../config/advancedDirectors'
 import { directorShotDefinitions } from '../../config/directorShots'
-import { collectionTransitionDefinitions, garmentMotionDefinitions, placementFacing } from '../../config/garmentMotions'
+import { garmentMotionDefinitions, placementFacing } from '../../config/garmentMotions'
+import { directorTransitionDefinitions } from '../../config/directorTransitions'
 import { useStudioStore } from '../../store/studioStore'
-import type { CameraViewSettings, LayerTransition, PresentationMode, VariantCameraPreset } from '../../types/studio'
-import { Aperture, ArrowLeft, ArrowRight, ArrowUp, Blend, Check, EllipsisVertical, Eye, EyeOff, Frame, Grid2X2, Orbit, Repeat2, Rotate3D, RotateCcw, RotateCw, Save, Scissors, Search, Sparkles, Split, Zap, ZoomIn } from '../icons'
+import type { CameraViewSettings, DirectorTransitionId, LayerTransition, PresentationMode, VariantCameraPreset } from '../../types/studio'
+import { Aperture, Check, EllipsisVertical, Eye, EyeOff, Frame, Grid2X2, Orbit, Repeat2, Rotate3D, RotateCcw, RotateCw, Save, Scissors, Search, Sparkles, Split, Zap, ZoomIn } from '../icons'
 import { MasterDetailLayout, ResponsiveOptionGrid, SegmentedControl } from '../ui'
 
 const alignmentPoints: [number, number][] = [[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
 const transitions: { id: LayerTransition; label: string }[] = [{ id: 'none', label: 'Sin transición' }, { id: 'fade', label: 'Fundido' }, { id: 'slideLeft', label: 'Desde izquierda' }, { id: 'slideRight', label: 'Desde derecha' }, { id: 'slideUp', label: 'Desde abajo' }, { id: 'zoom', label: 'Zoom suave' }]
 const shotIcons = { groupShowcase: Grid2X2, itemShowcase: Rotate3D, hero: Sparkles, detailLarge: Search, detailSmall: Aperture }
-const transitionIcons = { none: Scissors, fade: Blend, slideLeft: ArrowLeft, slideRight: ArrowRight, slideUp: ArrowUp, zoom: ZoomIn }
+const transitionIcons: Record<DirectorTransitionId, typeof Scissors> = { cut: Scissors, premiumOrbit: Orbit, whipReveal: Zap, matchRotation: Repeat2, detailDive: ZoomIn, occlusionCut: Aperture }
 const motionIcons = { turntableRight: RotateCw, turntableLeft: RotateCcw, whipCompanion: Zap, heroArc: Orbit, detailPush: Search, companionReveal: Repeat2 }
 
 export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancelFraming, onSaveFraming, onResetFraming, onDraftFov, onDraftComposition }: {
@@ -69,7 +70,7 @@ export function AdvancedDirectorPanel({ framing, draft, onBeginFraming, onCancel
     <div className="advanced-section-title"><Rotate3D size={14} /><span>Movimientos disponibles</span></div>
     <ResponsiveOptionGrid minWidth={170}>{garmentMotionDefinitions.map((motion) => { const Icon = motionIcons[motion.id]; return <label key={motion.id} className="collection-option-card"><input type="checkbox" checked={studio.collectionMotionIds.includes(motion.id)} onChange={() => studio.toggleCollectionMotion(motion.id)} /><Icon size={16} /><span><strong>{motion.name}</strong><small>{motion.description}</small></span></label> })}</ResponsiveOptionGrid>
     <div className="advanced-section-title"><Blend size={14} /><span>Transiciones disponibles</span></div>
-    <ResponsiveOptionGrid minWidth={170}>{([{ id: 'none' as const, name: 'Corte limpio', description: 'Cambio directo, preciso y sin efecto.' }, ...collectionTransitionDefinitions]).map((transition) => { const Icon = transitionIcons[transition.id]; return <label key={transition.id} className="collection-option-card"><input type="checkbox" checked={studio.collectionTransitionIds.includes(transition.id)} onChange={() => studio.toggleCollectionTransition(transition.id)} /><Icon size={16} /><span><strong>{transition.name}</strong><small>{transition.description}</small></span></label> })}</ResponsiveOptionGrid>
+    <ResponsiveOptionGrid minWidth={170}>{directorTransitionDefinitions.map((transition) => { const Icon = transitionIcons[transition.id]; return <label key={transition.id} className="collection-option-card"><input type="checkbox" checked={studio.collectionTransitionIds.includes(transition.id)} onChange={() => studio.toggleCollectionTransition(transition.id)} /><Icon size={16} /><span><strong>{transition.name}</strong><small>{transition.description}</small></span></label> })}</ResponsiveOptionGrid>
     <div className="advanced-section-title"><Frame size={14} /><span>{collectionMode ? 'Diseños' : 'Combinaciones'}</span></div>
     <div className="direction-entity-selector">{collectionMode ? participatingItems.map((item) => <button key={item.id} className={studio.activeCollectionItemId === item.id ? 'active' : ''} onClick={() => selectCollectionItem(item)}>{(item.asset.thumbnailUrl || item.asset.url) && <img src={(item.asset.thumbnailUrl || item.asset.url)!} alt="" />}<span><strong>{item.name}</strong><small>{item.placement} + {item.companionPlacement}</small></span></button>) : participatingCombinations.map((combination) => <button key={combination.id} className={studio.activeDesignCombinationId === combination.id ? 'active' : ''} onClick={() => selectDesignCombination(combination)}>{(studio.variantAssets.large.thumbnailUrl || studio.variantAssets.large.url) && <img src={(studio.variantAssets.large.thumbnailUrl || studio.variantAssets.large.url)!} alt="" />}<span><strong>{combination.name}</strong><small>{combination.mainPlacement} + {combination.companionPlacement}</small></span></button>)}</div>
     {!labelTargets.length && <p className="advanced-current-variant">No hay {collectionMode ? 'prendas completas' : 'combinaciones activas'} en la película.</p>}</div>
