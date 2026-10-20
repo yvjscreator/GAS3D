@@ -65,7 +65,7 @@ Verified current behavior:
 | 1 | Semantic shot timing | DONE |
 | 2 | Musical phrase/downbeat synchronization | DONE |
 | 3 | Exhibition motion vs transition motion | DONE |
-| 4 | Narrative shot hierarchy | PLANNED |
+| 4 | Narrative shot hierarchy | DONE |
 | 5 | Premium director transitions | PLANNED |
 | 6 | Preview/export parity and scene preroll | PLANNED |
 | 7 | Quick Video mode | PLANNED |
@@ -185,7 +185,7 @@ Implementation notes:
 
 ## Phase 4 — Narrative shot hierarchy
 
-Status: **PLANNED**
+Status: **DONE**
 
 Goal: give hero/main-print shots more visual time and importance than secondary details.
 
@@ -208,7 +208,12 @@ Acceptance:
 - Changing enabled shot types still produces a valid ordered plan.
 
 Implementation notes:
-- _Pending._
+- `DirectorShotDefinition` is now the single source of truth for rhythmic units, default duration, minimum readable duration, narrative priority and variants-mode scope.
+- Main presentation shots are intentionally heavier: `itemShowcase` and `hero` use two rhythmic units; large/small details remain one unit.
+- Non-synced durations are differentiated: group 8.0s, item 4.8s, hero 5.2s, main detail 3.4s, companion detail 2.8s.
+- The readability floors previously hard-coded in `advancedDirectors.ts` now come from the shot definitions.
+- The old hidden rule that hero/details only applied to the first variants-mode item is now explicit as `variantScope: 'lead'`; item showcase remains `all`.
+- Collection and variants generation both consume the same shot-definition timing data.
 
 ---
 

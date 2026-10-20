@@ -21,7 +21,7 @@ import { defaultCollectionMotionIds, defaultCollectionTransitionIds, evaluateGar
 import { hasBeatMap, nextDownbeat, quantizedCueDuration, rhythmicProgress } from '../utils/beatSync'
 import { defaultShotTimingProfile, evaluateShotTiming } from '../utils/shotTiming'
 import { buildPresentationPlan } from '../utils/presentationPlanner'
-import { defaultEnabledShotTypes } from './directorShots'
+import { defaultEnabledShotTypes, shotDefinition } from './directorShots'
 
 export const ADVANCED_SCHEMA_VERSION = 9
 export const directorDefinitions: { id: DirectorId; name: string; description: string; duration: number }[] = [
@@ -123,13 +123,13 @@ function variantTracks(presentationMode: PresentationMode, enabledShotTypes: rea
   const planItems = combinations.length ? combinations.filter((item) => item.enabled).map((item) => ({ id: item.id, name: item.name, presetId: item.presetId, label: item.label })) : garmentVariantPresets.map((item) => ({ id: item.id, name: item.label, presetId: item.id, label: createDefaultLabel(item.id) }))
   const variantIds = planItems.map((item) => item.id)
   const rawPlan = buildPresentationPlan(variantIds, presentationMode, enabledShotTypes)
-  const heroId = planItems[0]?.id
-  const plan = { ...rawPlan, scenes: rawPlan.scenes.filter((scene) => scene.kind === 'groupShowcase' || scene.kind === 'itemShowcase' || scene.itemIds[0] === heroId) }
+  const leadId = planItems[0]?.id
+  const plan = { ...rawPlan, scenes: rawPlan.scenes.filter((scene) => shotDefinition(scene.kind).variantScope === 'all' || scene.itemIds[0] === leadId) }
   const directorClips: TimelineClip[] = []
   const labelClips = new Map<string, TimelineClip[]>()
   let cursor = 0
   plan.scenes.forEach((scene) => {
-    const duration = scene.kind === 'groupShowcase' ? 8 : scene.kind === 'itemShowcase' ? 3.4 : scene.kind === 'hero' ? 4.4 : 3
+    const duration = shotDefinition(scene.kind).defaultDuration
     if (scene.kind === 'groupShowcase') directorClips.push(clip({ type: 'gridScene', name: `${scene.itemIds.length} combinaciones`, start: cursor, duration, shotKind: scene.kind, sceneId: scene.id, itemIds: scene.itemIds, sceneTransition: transitionAt(directorClips.length), fadeIn: 0, fadeOut: 0 }))
     else {
       const combinationId = scene.itemIds[0]
@@ -191,14 +191,6 @@ export const COLLECTION_ITEM_DURATION = 4
 export const isCompleteCollectionItem = (item: CollectionItem) => Boolean(item.asset.name && item.companionAsset.name)
 export const isValidCollectionSize = (count: number) => count >= 2
 
-const minimumReadableShotDuration = (kind?: DirectorShotKind) => {
-  if (kind === 'groupShowcase') return 4
-  if (kind === 'hero' || kind === 'itemShowcase') return 3.2
-  if (kind === 'detailLarge') return 2.4
-  if (kind === 'detailSmall') return 2
-  return 2
-}
-
 export function createCollectionProject(items: CollectionItem[], overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, motions: GarmentMotionId[] = defaultCollectionMotionIds, transitions: LayerTransition[] = defaultCollectionTransitionIds, previous?: DirectorProject, beatSync?: BeatSyncSettings, presentationMode: PresentationMode = 'mixed', enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes): DirectorProject {
   const enabledMotions = motions.length ? motions : defaultCollectionMotionIds.slice(0, 1)
   const transitionAt = (index: number) => transitions.length ? transitions[index % transitions.length] : 'none' as const
@@ -208,9 +200,9 @@ export function createCollectionProject(items: CollectionItem[], overlays: Stage
   let cursor = 0
   plan.scenes.forEach((scene, sceneIndex) => {
     const synchronizedDuration = beatSync && hasBeatMap(beatSync)
-      ? quantizedCueDuration(beatSync, scene.rhythmicUnits, minimumReadableShotDuration(scene.kind))
+      ? quantizedCueDuration(beatSync, scene.rhythmicUnits, shotDefinition(scene.kind).minimumDuration)
       : null
-    const duration = synchronizedDuration !== null ? synchronizedDuration + (sceneIndex === 0 ? Math.max(0, beatSync!.offset) : 0) : scene.kind === 'groupShowcase' ? COLLECTION_GRID_DURATION : COLLECTION_ITEM_DURATION
+    const duration = synchronizedDuration !== null ? synchronizedDuration + (sceneIndex === 0 ? Math.max(0, beatSync!.offset) : 0) : shotDefinition(scene.kind).defaultDuration
     const sceneItems = scene.itemIds.map((id) => items.find((item) => item.id === id)).filter((item): item is CollectionItem => Boolean(item))
     if (scene.kind === 'groupShowcase') {
       const groupNumber = plan.groups.findIndex((group) => group[0] === scene.itemIds[0]) + 1
@@ -286,7 +278,8 @@ export function applyBeatSyncToProject(project: DirectorProject, beatSync: BeatS
     }
     const units = item.type === 'gridScene' ? 2 : 1
     const start = index === 0 ? 0 : nextDownbeat(cursor, beatSync)
-    const musicalDuration = quantizedCueDuration(beatSync, units, minimumReadableShotDuration(item.shotKind ?? (item.type === 'gridScene' ? 'groupShowcase' : undefined)))
+    const definition = item.shotKind ? shotDefinition(item.shotKind) : item.type === 'gridScene' ? shotDefinition('groupShowcase') : null
+    const musicalDuration = quantizedCueDuration(beatSync, definition?.rhythmicUnits ?? units, definition?.minimumDuration ?? 2)
     const duration = musicalDuration + (index === 0 ? Math.max(0, beatSync.offset) : 0)
     timing.set(item.id, { start, duration })
     cursor = start + duration
