@@ -69,7 +69,7 @@ Verified current behavior:
 | 5 | Premium director transitions | DONE |
 | 6 | Preview/export parity and scene preroll | DONE |
 | 7 | Quick Video mode | DONE |
-| 8 | Default UX, migration and QA | PLANNED |
+| 8 | Default UX, migration and QA | DONE |
 
 ---
 
@@ -349,7 +349,7 @@ Implementation notes:
 
 ## Phase 8 — Default UX, migration and QA
 
-Status: **PLANNED**
+Status: **DONE**
 
 Goal: make Quick Video the approachable entry point while preserving the complete advanced studio.
 
@@ -392,7 +392,15 @@ Acceptance:
 - The complete QA matrix has been exercised and failures documented/fixed.
 
 Implementation notes:
-- _Pending._
+- Quick Video is now the default experience for sessions that have not explicitly chosen a mode; Advanced remains one click away.
+- Bumped `ADVANCED_SCHEMA_VERSION` from 9 to 10.
+- Schema rebuild now runs `preserveManualTimelineEdits()` for existing variant projects before restoring cameras/labels/playhead, so manual timing survives the migration.
+- Legacy transition selections continue to normalize through the Phase 5 compatibility map.
+- Quick generation resets generated project playheads to 0 and guarantees the secondary 2×2 project always has a group shot.
+- Updated `scripts/roadmap-qa.ts` for director transitions and the new 28s rhythmic hierarchy at 120 BPM.
+- Added automated QA assertions for semantic HOLD behavior, downbeat quantization, readable high-BPM cues, Match Rotation, Premium quick preset, generated timing/transition metadata and manual-timing preservation.
+- `npm run build` now includes both image-print QA and roadmap/video-director QA after TypeScript/Vite compilation.
+- Full browser/GPU visual QA still requires the deployed application; code-level regression coverage is now part of every production build.
 
 ---
 

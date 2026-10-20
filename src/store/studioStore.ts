@@ -267,12 +267,13 @@ const initialActiveDesignCombinationId = persisted.activeDesignCombinationId && 
 const createSeededProject = (id: DirectorId) => {
   const project = applyBeatSyncToProject(createDirectorProject(id, initialOverlayLayers, Boolean(persisted.music?.name), Boolean(persisted.background?.videoAudioEnabled), initialEnabledShotTypes, initialPresentationMode, initialDesignCombinations, initialCollectionMotionIds, initialCollectionTransitionIds), initialBeatSync)
   const previous = persistedProjects?.[id]
-  if (previous) return {
-    ...project,
-    cameras: Object.fromEntries(variantIds.map((variant) => [variant, { ...project.cameras[variant], ...previous.cameras?.[variant] }])) as Record<GarmentVariantId, VariantCameraPreset>,
-    labels: Object.fromEntries(variantIds.map((variant) => [variant, { ...project.labels[variant], ...previous.labels?.[variant] }])) as Record<GarmentVariantId, VariantLabelSettings>,
-    zoom: previous.zoom ?? project.zoom,
-    playhead: Math.min(previous.playhead ?? 0, project.duration),
+  if (previous) {
+    const migrated = preserveManualTimelineEdits({
+      ...project,
+      cameras: Object.fromEntries(variantIds.map((variant) => [variant, { ...project.cameras[variant], ...previous.cameras?.[variant] }])) as Record<GarmentVariantId, VariantCameraPreset>,
+      labels: Object.fromEntries(variantIds.map((variant) => [variant, { ...project.labels[variant], ...previous.labels?.[variant] }])) as Record<GarmentVariantId, VariantLabelSettings>,
+    }, previous)
+    return { ...migrated, zoom: previous.zoom ?? migrated.zoom, playhead: Math.min(previous.playhead ?? 0, migrated.duration) }
   }
   if (!persisted.cameraView) return project
   return { ...project, cameras: Object.fromEntries(variantIds.map((variant) => [variant, { ...project.cameras[variant], position: [...persisted.cameraView!.position], target: [...persisted.cameraView!.target] }])) as Record<GarmentVariantId, VariantCameraPreset> }
@@ -306,7 +307,7 @@ const rebuildVariantProject = (state: StudioState, id: 'cinematic' | 'grid2x2', 
 }
 export const useStudioStore = create<StudioState>((set) => ({
   canUndo: false, canRedo: false, undo: performUndo, redo: performRedo,
-  studioExperienceMode: persisted.studioExperienceMode ?? 'advanced',
+  studioExperienceMode: persisted.studioExperienceMode ?? 'quick',
   setStudioExperienceMode: (studioExperienceMode) => set({ studioExperienceMode }),
   quickVideoSettings: initialQuickVideoSettings,
   setQuickVideoSettings: (value) => set((state) => ({ quickVideoSettings: { ...state.quickVideoSettings, ...value } })),
@@ -321,9 +322,10 @@ export const useStudioStore = create<StudioState>((set) => ({
       collectionTransitionIds: preset.transitionIds,
       beatSync,
     }
-    const cinematic = applyQuickTimingProfile(rebuildVariantProject(generationState, 'cinematic', preset.enabledShotTypes, preset.presentationMode), preset.shotTiming)
-    const grid2x2 = applyQuickTimingProfile(rebuildVariantProject(generationState, 'grid2x2', preset.enabledShotTypes, 'grouped'), preset.shotTiming)
-    const collection = applyQuickTimingProfile(rebuildCollectionProject(generationState, state.collectionItems, preset.motionIds, preset.transitionIds, beatSync, preset.presentationMode, preset.enabledShotTypes), preset.shotTiming)
+    const gridShotTypes = preset.enabledShotTypes.includes('groupShowcase') ? preset.enabledShotTypes : ['groupShowcase', ...preset.enabledShotTypes]
+    const cinematic = { ...applyQuickTimingProfile(rebuildVariantProject(generationState, 'cinematic', preset.enabledShotTypes, preset.presentationMode), preset.shotTiming), playhead: 0 }
+    const grid2x2 = { ...applyQuickTimingProfile(rebuildVariantProject(generationState, 'grid2x2', gridShotTypes, 'grouped'), preset.shotTiming), playhead: 0 }
+    const collection = { ...applyQuickTimingProfile(rebuildCollectionProject(generationState, state.collectionItems, preset.motionIds, preset.transitionIds, beatSync, preset.presentationMode, preset.enabledShotTypes), preset.shotTiming), playhead: 0 }
     return {
       presentationMode: preset.presentationMode,
       enabledShotTypes: preset.enabledShotTypes,

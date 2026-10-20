@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { buildPresentationGroups, buildPresentationPlan } from '../src/utils/presentationPlanner'
 import { applyBeatSyncToProject, createCollectionProject, createDefaultLabel, createDirectorProject } from '../src/config/advancedDirectors'
-import { defaultBeatSyncSettings } from '../src/utils/beatSync'
+import { defaultBeatSyncSettings, nextDownbeat, quantizedCueDuration } from '../src/utils/beatSync'
+import { evaluateShotTiming } from '../src/utils/shotTiming'
+import { evaluateDirectorTransition } from '../src/config/directorTransitions'
+import { defaultQuickVideoSettings, resolveQuickVideoPreset } from '../src/config/quickVideoPresets'
 import { buildRecordingResourceManifest } from '../src/utils/recordingPreflight'
 import { evaluateBackgroundFrame, evaluateDirectorFrame } from '../src/utils/stageTimeline'
 import { getExportResolution } from '../src/config/exportPresets'
@@ -55,23 +58,54 @@ const dynamicCombinations = Array.from({ length: 4 }, (_, index) => ({
   presetId: index < 2 ? 'frontLeftSleeve' : undefined,
   label: { ...createDefaultLabel(`Combinación ${index + 1}`), enabled: index !== 3 },
 })) as DesignCombination[]
-const dynamicProject = createDirectorProject('cinematic', [], false, false, ['groupShowcase', 'itemShowcase'], 'mixed', dynamicCombinations, ['turntableLeft'], ['slideRight'])
+const dynamicProject = createDirectorProject('cinematic', [], false, false, ['groupShowcase', 'itemShowcase'], 'mixed', dynamicCombinations, ['turntableLeft'], ['matchRotation'])
 const dynamicDirectorClips = dynamicProject.tracks.find((track) => track.type === 'director')?.clips ?? []
 equal(dynamicProject.presentationPlan?.itemIds, ['combination-1', 'combination-3', 'combination-4'], 'El director dinámico no respetó combinaciones habilitadas y su orden')
 check(dynamicDirectorClips.every((item) => !item.itemIds?.includes('combination-2')), 'Una combinación deshabilitada llegó a la película')
 check(dynamicDirectorClips.some((item) => item.designCombinationId === 'combination-3'), 'Las tomas individuales no conservan el ID dinámico')
 equal(dynamicProject.tracks.filter((track) => track.type === 'label').length, 2, 'Se creó una pista para una etiqueta desactivada')
 check(dynamicDirectorClips.filter((item) => item.type === 'directorShot').every((item) => item.garmentMotion === 'turntableLeft'), 'El movimiento elegido no llegó a las tomas dinámicas')
-check(dynamicDirectorClips.every((item) => item.sceneTransition === 'slideRight'), 'La transición elegida no llegó a todo el montaje dinámico')
+check(dynamicDirectorClips.every((item) => item.directorTransition === 'matchRotation'), 'La transición de director elegida no llegó a todo el montaje dinámico')
 
 const beatSync = { ...defaultBeatSyncSettings(), enabled: true, bpm: 120, barsPerChange: 1, offset: 0 }
 const synced = applyBeatSyncToProject(createDirectorProject('cinematic', [], true, false, allShots, 'mixed'), beatSync)
-equal(synced.duration, 18, 'El modo mixto no alineó una escena grupal y siete individuales al ritmo')
+equal(synced.duration, 28, 'El modo mixto no respetó la nueva jerarquía rítmica de tomas')
 const syncedDirector = synced.tracks.find((track) => track.type === 'director')?.clips ?? []
 for (const label of synced.tracks.filter((track) => track.type === 'label').flatMap((track) => track.clips)) {
   const scene = syncedDirector.find((clip) => clip.sceneId === label.sceneId)
   check(Boolean(scene) && scene!.start === label.start && scene!.duration === label.duration, 'Una etiqueta perdió sincronía con su escena')
 }
+
+const semanticHold = evaluateShotTiming(.5)
+equal(semanticHold.phase, 'hold', 'El timing semántico abandonó HOLD demasiado pronto')
+equal(semanticHold.motionProgress, 0, 'HOLD volvió a ejecutar movimiento fuerte')
+check(evaluateShotTiming(.8).phase === 'transition', 'La ventana de transición semántica no es determinista')
+equal(quantizedCueDuration(beatSync, 1, 3.2), 4, 'Un hero a 120 BPM no se expandió hasta un cue legible')
+equal(nextDownbeat(2.15, beatSync), 4, 'El siguiente downbeat no quedó cuantizado al compás')
+
+const transitionFrame = evaluateDirectorTransition('matchRotation', { phase: 'transition', local: 1, overall: .95, motionProgress: .9 }, 0, Math.PI / 2)
+check(Math.abs(transitionFrame.rotationOffset - Math.PI / 2) < .0001, 'Match Rotation no alinea la salida con la orientación siguiente')
+
+const quickPremium = resolveQuickVideoPreset(defaultQuickVideoSettings())
+equal(quickPremium.presentationMode, 'mixed', 'Premium rápido dejó de usar narrativa mixta')
+check(quickPremium.shotTiming.hold >= .7, 'Premium rápido dejó de reservar tiempo dominante de exhibición')
+check(quickPremium.transitionIds.includes('matchRotation'), 'Premium rápido perdió Match Rotation')
+
+const generatedSemanticProject = createDirectorProject('cinematic', [], false, false, allShots, 'mixed')
+const generatedDirectorShots = generatedSemanticProject.tracks.find((track) => track.type === 'director')?.clips.filter((clip) => clip.type === 'directorShot') ?? []
+check(generatedDirectorShots.every((clip) => Boolean(clip.shotTiming)), 'Una toma nueva no recibió ShotTimingProfile')
+check(generatedSemanticProject.tracks.find((track) => track.type === 'director')?.clips.every((clip) => Boolean(clip.directorTransition)), 'Una toma nueva no recibió transición de director')
+
+const manualProject = createDirectorProject('cinematic', [], false, false, allShots, 'mixed')
+const manualTrack = manualProject.tracks.find((track) => track.type === 'director')!
+const manualTarget = manualTrack.clips.find((clip) => clip.type === 'directorShot')!
+manualTarget.start = 1.25
+manualTarget.duration = 5.5
+manualTarget.manualTiming = true
+const manualSynced = applyBeatSyncToProject(manualProject, beatSync)
+const manualAfterSync = manualSynced.tracks.find((track) => track.type === 'director')?.clips.find((clip) => clip.id === manualTarget.id)
+equal(manualAfterSync?.start, 1.25, 'Beat sync sobrescribió el inicio manual')
+equal(manualAfterSync?.duration, 5.5, 'Beat sync sobrescribió la duración manual')
 
 const collectionItems = Array.from({ length: 12 }, (_, index) => ({
   id: `collection-${index + 1}`, name: `Diseño ${index + 1}`, asset: { name: 'principal.png' }, companionAsset: { name: 'companion.png' }, label: { ...createDefaultLabel(`Diseño ${index + 1}`), enabled: index !== 1 },
@@ -127,7 +161,13 @@ const studioShellSource = readFileSync('src/components/studio/GarmentAdStudio.ts
 check(studioShellSource.includes('garment-ad-studio:timeline-height'), 'La altura de timeline dejó de persistirse')
 check(studioShellSource.includes('garment-ad-studio:timeline-collapsed'), 'El estado colapsado de timeline dejó de persistirse')
 check(!studioShellSource.includes('<AnimationPanel'), 'Animación legacy volvió a duplicar los controles de Dirección')
-check(!studioShellSource.includes('studioMode') && !studioShellSource.includes('getProfessional'), 'El shell volvió a bifurcarse entre Básico y Avanzado')
+check(!studioShellSource.includes('getProfessional'), 'El shell volvió a depender del camino profesional legacy')
+check(studioShellSource.includes('<QuickVideoPanel') && studioShellSource.includes("studioExperienceMode === 'quick'"), 'El shell perdió la entrada de Video rápido')
+const studioStoreSource = readFileSync('src/store/studioStore.ts', 'utf8')
+check(studioStoreSource.includes("studioExperienceMode: persisted.studioExperienceMode ?? 'quick'"), 'Video rápido dejó de ser la entrada predeterminada')
+check(studioStoreSource.includes('preserveManualTimelineEdits({'), 'La migración dejó de preservar timing manual')
+check(readFileSync('src/config/advancedDirectors.ts', 'utf8').includes('ADVANCED_SCHEMA_VERSION = 10'), 'El schema del rediseño de video no avanzó a v10')
+
 const collectionPanelSource = readFileSync('src/components/studio/CampaignPanel.tsx', 'utf8')
 check(collectionPanelSource.includes('onDoubleClick') && collectionPanelSource.includes('.filter((placement)'), 'Colección perdió la selección P/C contextual o volvió a mostrar ubicaciones ocupadas')
 check(collectionPanelSource.includes('<PrintZoneInspector') && collectionPanelSource.includes('companionZoneAdjustment'), 'Colección perdió los controles completos o la zona independiente del Companion')

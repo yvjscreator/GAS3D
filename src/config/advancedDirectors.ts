@@ -25,7 +25,7 @@ import { defaultShotTimingProfile, evaluateShotTiming } from '../utils/shotTimin
 import { buildPresentationPlan } from '../utils/presentationPlanner'
 import { defaultEnabledShotTypes, shotDefinition } from './directorShots'
 
-export const ADVANCED_SCHEMA_VERSION = 9
+export const ADVANCED_SCHEMA_VERSION = 10
 export const directorDefinitions: { id: DirectorId; name: string; description: string; duration: number }[] = [
   { id: 'cinematic', name: 'Presentación cinematográfica', description: 'Variantes, toma hero y acercamientos dirigidos.', duration: 24 },
   { id: 'grid2x2', name: 'Comparativa 2 × 2', description: 'Hasta cuatro combinaciones giran simultáneamente.', duration: 12 },
