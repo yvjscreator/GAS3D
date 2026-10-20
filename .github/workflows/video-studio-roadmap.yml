@@ -1,0 +1,46 @@
+name: Video Studio roadmap guard
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  roadmap-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Require roadmap update for phase commits
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          message="$(git log -1 --pretty=%B)"
+
+          if ! printf '%s' "$message" | grep -Eiq 'video-phase-[1-8]'; then
+            echo "Not a Video Studio phase commit; nothing to enforce."
+            exit 0
+          fi
+
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            changed="$(git diff --name-only HEAD^ HEAD)"
+          else
+            changed="$(git show --pretty='' --name-only HEAD)"
+          fi
+
+          echo "Phase commit detected:"
+          printf '%s\n' "$message"
+          echo "Changed files:"
+          printf '%s\n' "$changed"
+
+          if ! printf '%s\n' "$changed" | grep -Fxq 'agents/video-studio-roadmap.md'; then
+            echo "::error::Commits marked video-phase-N must update agents/video-studio-roadmap.md in the same commit."
+            exit 1
+          fi
+
+          echo "Roadmap update present."
