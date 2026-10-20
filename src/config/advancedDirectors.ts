@@ -18,7 +18,7 @@ import type {
 } from '../types/studio'
 import { garmentVariantPresets } from './garmentVariants'
 import { defaultCollectionMotionIds, defaultCollectionTransitionIds, evaluateGarmentMotion, placementFacing } from './garmentMotions'
-import { cueDuration, hasBeatMap, rhythmicProgress } from '../utils/beatSync'
+import { hasBeatMap, nextDownbeat, quantizedCueDuration, rhythmicProgress } from '../utils/beatSync'
 import { defaultShotTimingProfile, evaluateShotTiming } from '../utils/shotTiming'
 import { buildPresentationPlan } from '../utils/presentationPlanner'
 import { defaultEnabledShotTypes } from './directorShots'
@@ -191,6 +191,14 @@ export const COLLECTION_ITEM_DURATION = 4
 export const isCompleteCollectionItem = (item: CollectionItem) => Boolean(item.asset.name && item.companionAsset.name)
 export const isValidCollectionSize = (count: number) => count >= 2
 
+const minimumReadableShotDuration = (kind?: DirectorShotKind) => {
+  if (kind === 'groupShowcase') return 4
+  if (kind === 'hero' || kind === 'itemShowcase') return 3.2
+  if (kind === 'detailLarge') return 2.4
+  if (kind === 'detailSmall') return 2
+  return 2
+}
+
 export function createCollectionProject(items: CollectionItem[], overlays: StageOverlayLayer[] = [], musicAvailable = false, backgroundAudio = false, motions: GarmentMotionId[] = defaultCollectionMotionIds, transitions: LayerTransition[] = defaultCollectionTransitionIds, previous?: DirectorProject, beatSync?: BeatSyncSettings, presentationMode: PresentationMode = 'mixed', enabledShotTypes: readonly DirectorShotKind[] = defaultEnabledShotTypes): DirectorProject {
   const enabledMotions = motions.length ? motions : defaultCollectionMotionIds.slice(0, 1)
   const transitionAt = (index: number) => transitions.length ? transitions[index % transitions.length] : 'none' as const
@@ -199,8 +207,10 @@ export function createCollectionProject(items: CollectionItem[], overlays: Stage
   const plan = buildPresentationPlan(items.map((item) => item.id), presentationMode, enabledShotTypes)
   let cursor = 0
   plan.scenes.forEach((scene, sceneIndex) => {
-    const rhythmicCue = beatSync && hasBeatMap(beatSync) ? cueDuration(beatSync) : null
-    const duration = rhythmicCue ? rhythmicCue * scene.rhythmicUnits + (sceneIndex === 0 ? beatSync!.offset : 0) : scene.kind === 'groupShowcase' ? COLLECTION_GRID_DURATION : COLLECTION_ITEM_DURATION
+    const synchronizedDuration = beatSync && hasBeatMap(beatSync)
+      ? quantizedCueDuration(beatSync, scene.rhythmicUnits, minimumReadableShotDuration(scene.kind))
+      : null
+    const duration = synchronizedDuration !== null ? synchronizedDuration + (sceneIndex === 0 ? Math.max(0, beatSync!.offset) : 0) : scene.kind === 'groupShowcase' ? COLLECTION_GRID_DURATION : COLLECTION_ITEM_DURATION
     const sceneItems = scene.itemIds.map((id) => items.find((item) => item.id === id)).filter((item): item is CollectionItem => Boolean(item))
     if (scene.kind === 'groupShowcase') {
       const groupNumber = plan.groups.findIndex((group) => group[0] === scene.itemIds[0]) + 1
@@ -265,13 +275,21 @@ export function applyBeatSyncToProject(project: DirectorProject, beatSync: BeatS
     const duration = getProjectDuration(restored)
     return { ...restored, duration, playhead: Math.min(restored.playhead, duration), tracks: tracks.map((track) => track.id === 'background' ? { ...track, clips: track.clips.map((item, index) => index === 0 ? { ...item, duration } : item) } : track) }
   }
-  const cue = cueDuration(beatSync)
   const ordered = [...directorTrack.clips].sort((a, b) => a.start - b.start)
   const timing = new Map<string, { start: number; duration: number }>()
+  let cursor = 0
   ordered.forEach((item, index) => {
+    if (item.manualTiming) {
+      timing.set(item.id, { start: item.start, duration: item.duration })
+      cursor = Math.max(cursor, item.start + item.duration)
+      return
+    }
     const units = item.type === 'gridScene' ? 2 : 1
-    const start = index === 0 ? 0 : [...timing.values()].reduce((end, value) => Math.max(end, value.start + value.duration), 0)
-    timing.set(item.id, { start, duration: cue * units + (index === 0 ? beatSync.offset : 0) })
+    const start = index === 0 ? 0 : nextDownbeat(cursor, beatSync)
+    const musicalDuration = quantizedCueDuration(beatSync, units, minimumReadableShotDuration(item.shotKind ?? (item.type === 'gridScene' ? 'groupShowcase' : undefined)))
+    const duration = musicalDuration + (index === 0 ? Math.max(0, beatSync.offset) : 0)
+    timing.set(item.id, { start, duration })
+    cursor = start + duration
   })
   const alignedDirector = directorTrack.clips.map((item) => {
     const next = timing.get(item.id)!

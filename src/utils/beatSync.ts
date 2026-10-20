@@ -23,8 +23,27 @@ export function beatDuration(settings: BeatSyncSettings) {
   return 60 / Math.max(40, settings.bpm || DEFAULT_BPM)
 }
 
+export function barDuration(settings: BeatSyncSettings) {
+  return beatDuration(settings) * BEATS_PER_BAR
+}
+
 export function cueDuration(settings: BeatSyncSettings) {
-  return beatDuration(settings) * BEATS_PER_BAR * settings.barsPerChange
+  return barDuration(settings) * settings.barsPerChange
+}
+
+export function nextDownbeat(seconds: number, settings: BeatSyncSettings) {
+  const bar = barDuration(settings)
+  const origin = Math.max(0, settings.offset)
+  if (seconds <= origin) return origin
+  const bars = Math.ceil((seconds - origin - 1e-6) / bar)
+  return Number((origin + Math.max(0, bars) * bar).toFixed(6))
+}
+
+export function quantizedCueDuration(settings: BeatSyncSettings, rhythmicUnits = 1, minimumSeconds = 0) {
+  const cue = cueDuration(settings)
+  const requested = cue * Math.max(1, rhythmicUnits)
+  if (requested >= minimumSeconds) return requested
+  return cue * Math.max(1, Math.ceil(minimumSeconds / cue))
 }
 
 export function beatSequenceDuration(cueCount: number, settings: BeatSyncSettings, fallback: number) {

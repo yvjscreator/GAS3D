@@ -63,7 +63,7 @@ Verified current behavior:
 | Phase | Name | Status |
 | --- | --- | --- |
 | 1 | Semantic shot timing | DONE |
-| 2 | Musical phrase/downbeat synchronization | PLANNED |
+| 2 | Musical phrase/downbeat synchronization | DONE |
 | 3 | Exhibition motion vs transition motion | PLANNED |
 | 4 | Narrative shot hierarchy | PLANNED |
 | 5 | Premium director transitions | PLANNED |
@@ -116,7 +116,7 @@ Implementation notes:
 
 ## Phase 2 — Musical phrase/downbeat synchronization
 
-Status: **PLANNED**
+Status: **DONE**
 
 Goal: use music to place scene exits/landings, not to force constant motion on every beat.
 
@@ -140,7 +140,12 @@ Acceptance:
 - Beat sync off reproduces non-synced timing behavior.
 
 Implementation notes:
-- _Pending._
+- Added explicit `barDuration()`, `nextDownbeat()` and `quantizedCueDuration()` helpers while preserving the existing BPM/offset analysis.
+- Beat-synced scene lengths are now quantized to complete cue windows and therefore land on musical bar boundaries.
+- Added readability floors: group 4.0s, hero/item showcase 3.2s, main detail 2.4s and companion detail 2.0s; high BPM expands to the next complete cue instead of shortening the shot below the floor.
+- Collection generation uses the same quantized cue rule and still respects the detected initial offset.
+- Variant beat-sync now preserves `manualTiming` clips and resumes automatic timing on the next downbeat after them.
+- Beat-sync-disabled restoration remains unchanged.
 
 ---
 
