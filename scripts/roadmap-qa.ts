@@ -185,4 +185,16 @@ const timelineSource = readFileSync('src/components/studio/AdvancedTimeline.tsx'
 check(timelineSource.includes('canSplit') && timelineSource.includes("track.type === 'background'"), 'Timeline volvió a mostrar acciones imposibles')
 check(readFileSync('src/components/studio/BackgroundPanel.tsx', 'utf8').includes("background.type !== 'color' && range('Desenfoque'"), 'Escena volvió a mostrar desenfoque sin efecto para un fondo de color')
 
+// Structural guard for the column-first Quick Video experience.
+// A browser review remains required for responsive visual acceptance.
+const quickPanelSource = readFileSync('src/components/studio/QuickVideoPanel.tsx', 'utf8')
+const advancedStyleSource = readFileSync('src/advanced.css', 'utf8')
+check(quickPanelSource.includes('quick-style-grid') && quickPanelSource.includes('quick-controls-grid') && quickPanelSource.includes('quick-resource-grid'), 'Video rápido perdió alguna cuadrícula de opciones')
+check(quickPanelSource.includes('<SelectableCard') && !quickPanelSource.includes('collection-option-card'), 'Video rápido regresó a tarjetas checkbox inadecuadas para presets')
+check(advancedStyleSource.includes('.quick-style-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }') || advancedStyleSource.includes('.quick-resource-grid,.quick-style-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }'), 'Los estilos rápidos ya no presentan tres columnas en escritorio')
+check(advancedStyleSource.includes('.quick-controls-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }'), 'Los ajustes rápidos ya no aprovechan cuatro columnas en escritorio')
+check(advancedStyleSource.includes('@container (max-width:700px)') && advancedStyleSource.includes('@container (max-width:470px)'), 'Faltan adaptaciones de columnas por ancho de contenedor')
+check(advancedStyleSource.includes('.editor-column.quick-experience') && studioShellSource.includes("' quick-experience'"), 'Modo rápido volvió a reservar una fila vacía de timeline')
+check(readFileSync('AGENTS.md', 'utf8').includes('agents/ui-layout-guidelines.md'), 'Falta la regla transversal de composición responsive en AGENTS')
+
 console.log(`Roadmap QA completado: ${assertions} verificaciones.`)

@@ -34,6 +34,19 @@ For work belonging to roadmap phases 1–8:
 
 The GitHub workflow `.github/workflows/video-studio-roadmap.yml` enforces item 2 for phase-marked commits.
 
+## Responsive, column-first interface design (all GAS3D screens)
+
+Mandatory guidance: `agents/ui-layout-guidelines.md`.
+
+- Do not build wide desktop workspaces as a monotonous vertical list of full-width controls. When there is usable horizontal space, distribute independent options and settings into intentional columns.
+- Before implementing UI, inspect the existing page layout, CSS grid rows/columns, container queries and the project's shared components. Reuse the existing visual system instead of inventing isolated, mismatched controls.
+- Use CSS Grid with `repeat(..., minmax(0, 1fr))`, `min-width: 0`, and container-query breakpoints for responsive layouts. Do not let option cards collapse to narrow slivers or make copy wrap one word per line.
+- Group related options into coherent visual sections: preset cards side by side; multiple settings on the same row; related actions grouped horizontally. Reserve single-column stacking for narrow layouts or genuinely sequential content.
+- When conditionally hiding a panel (for example a timeline), update the parent grid tracks as well so the hidden region does not leave an empty row.
+- Use shared tokens, typography, buttons, tabs and surfaces. Ensure selected, hover, disabled and keyboard-focus states are visible.
+- For layout work, verify at desktop, medium-width and narrow widths. If visual/browser verification cannot be performed, say so and do not claim the layout was visually validated.
+- Add an appropriate regression check when introducing a new major screen; documentation by itself is not a guarantee.
+
 ### General safety for repository edits
 
 - Fetch the current file before updating it.

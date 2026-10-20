@@ -69,7 +69,7 @@ Verified current behavior:
 | 5 | Premium director transitions | DONE |
 | 6 | Preview/export parity and scene preroll | DONE |
 | 7 | Quick Video mode | DONE |
-| 8 | Default UX, migration and QA | DONE |
+| 8 | Default UX, migration and QA | IN_PROGRESS |
 
 ---
 
@@ -349,7 +349,7 @@ Implementation notes:
 
 ## Phase 8 — Default UX, migration and QA
 
-Status: **DONE**
+Status: **IN_PROGRESS**
 
 Goal: make Quick Video the approachable entry point while preserving the complete advanced studio.
 
@@ -406,6 +406,11 @@ Implementation notes:
 - Render build follow-up: updated `AdvancedGridViewer` to convert rhythmic progress through `evaluateShotTiming()` before calling `evaluateGarmentMotion()`, fixing strict TypeScript errors and keeping grid motion on the same semantic timing model as individual shots.
 
 - Render build follow-up: restored the `Blend` icon import in `AdvancedDirectorPanel`; Phase 5 still uses it for the section heading even though garment transitions are now director-specific.
+
+- Visual review reopened Phase 8: Quick Video was using checkbox-oriented `collection-option-card` CSS for plain buttons, producing unusably narrow preset cards and unstyled final actions.
+- UI revision replaces these with shared `SelectableCard` surfaces and explicit 3-column style, 3-column resources, and 4-column settings grids, with 2/1-column container-query fallbacks.
+- Quick mode now changes parent editor grid rows so hiding the advanced timeline does not leave a large empty area.
+- Added universal UI layout rules in `AGENTS.md` and `agents/ui-layout-guidelines.md`. Phase 8 remains IN_PROGRESS until an actual responsive browser review confirms the result.
 
 ---
 
