@@ -5,7 +5,7 @@ import { garmentMotionDefinitions, placementFacing } from '../../config/garmentM
 import { directorTransitionDefinitions } from '../../config/directorTransitions'
 import { useStudioStore } from '../../store/studioStore'
 import type { CameraViewSettings, DirectorTransitionId, LayerTransition, PresentationMode, VariantCameraPreset } from '../../types/studio'
-import { Aperture, Check, EllipsisVertical, Eye, EyeOff, Frame, Grid2X2, Orbit, Repeat2, Rotate3D, RotateCcw, RotateCw, Save, Scissors, Search, Sparkles, Split, Zap, ZoomIn } from '../icons'
+import { Aperture, Blend, Check, EllipsisVertical, Eye, EyeOff, Frame, Grid2X2, Orbit, Repeat2, Rotate3D, RotateCcw, RotateCw, Save, Scissors, Search, Sparkles, Split, Zap, ZoomIn } from '../icons'
 import { MasterDetailLayout, ResponsiveOptionGrid, SegmentedControl } from '../ui'
 
 const alignmentPoints: [number, number][] = [[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]

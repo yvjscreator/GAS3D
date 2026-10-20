@@ -405,6 +405,8 @@ Implementation notes:
 - Explicitly typed the Quick Video 2×2 fallback shot list as `DirectorShotKind[]` to keep strict TypeScript inference stable.
 - Render build follow-up: updated `AdvancedGridViewer` to convert rhythmic progress through `evaluateShotTiming()` before calling `evaluateGarmentMotion()`, fixing strict TypeScript errors and keeping grid motion on the same semantic timing model as individual shots.
 
+- Render build follow-up: restored the `Blend` icon import in `AdvancedDirectorPanel`; Phase 5 still uses it for the section heading even though garment transitions are now director-specific.
+
 ---
 
 ## Completion protocol
