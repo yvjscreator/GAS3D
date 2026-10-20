@@ -345,7 +345,7 @@ export function getAdvancedDirectorFrame(project: DirectorProject, time: number,
   const smooth = local * local * (3 - 2 * local)
   const placement = item.shotKind === 'detailSmall' ? combination?.companionPlacement ?? variant.smallPlacement : combination?.mainPlacement ?? variant.largePlacement
   const baseFacing = placementFacing[placement]
-  const motion = evaluateGarmentMotion(item.garmentMotion ?? 'turntableRight', local, combination?.mainPlacement ?? variant.largePlacement, combination?.companionPlacement ?? variant.smallPlacement)
+  const motion = evaluateGarmentMotion(item.garmentMotion ?? 'turntableRight', timing, combination?.mainPlacement ?? variant.largePlacement, combination?.companionPlacement ?? variant.smallPlacement)
   const target: [number, number, number] = [
     camera.target[0] - camera.composition[0] * 1.35,
     camera.target[1] + camera.composition[1] * 1.75 + (placement === 'frontChest' ? .42 : placement.includes('Sleeve') ? .34 : 0),
@@ -379,7 +379,7 @@ export function getCollectionDirectorFrame(project: DirectorProject, time: numbe
   const timing = evaluateShotTiming(rhythmicLocal, shot.shotTiming)
   const local = timing.motionProgress
   const camera = item.camera
-  const motion = evaluateGarmentMotion(shot.garmentMotion ?? 'turntableRight', local, item.placement, item.companionPlacement)
+  const motion = evaluateGarmentMotion(shot.garmentMotion ?? 'turntableRight', timing, item.placement, item.companionPlacement)
   const target: [number, number, number] = [camera.target[0] - camera.composition[0] * 1.35, camera.target[1] + camera.composition[1] * 1.75, camera.target[2]]
   const position = camera.position.map((value, index) => target[index] + (value - camera.target[index]) * motion.cameraScale) as [number, number, number]
   return {

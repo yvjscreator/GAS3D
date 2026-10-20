@@ -1,4 +1,5 @@
 import type { GarmentMotionId, LayerTransition, PrintPlacement } from '../types/studio'
+import type { ShotTimingFrame } from '../utils/shotTiming'
 
 export type GarmentMotionDefinition = {
   id: GarmentMotionId
@@ -39,30 +40,61 @@ const smooth = (value: number) => { const t = clamp01(value); return t * t * (3 
 const smoother = (value: number) => { const t = clamp01(value); return t * t * t * (t * (t * 6 - 15) + 10) }
 const shortestAngle = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from))
 
-export function evaluateGarmentMotion(id: GarmentMotionId, progress: number, primary: PrintPlacement, companion: PrintPlacement) {
-  const t = clamp01(progress)
+const lerp = (from: number, to: number, amount: number) => from + (to - from) * clamp01(amount)
+
+function phaseValue(timing: ShotTimingFrame, phase: ShotTimingFrame['phase']) {
+  const order = { hold: 0, prepare: 1, transition: 2, settle: 3 } as const
+  if (order[timing.phase] > order[phase]) return 1
+  if (timing.phase !== phase) return 0
+  return smooth(timing.local)
+}
+
+export function evaluateGarmentMotion(id: GarmentMotionId, timing: ShotTimingFrame, primary: PrintPlacement, companion: PrintPlacement) {
+  const hold = phaseValue(timing, 'hold')
+  const prepare = phaseValue(timing, 'prepare')
+  const transition = phaseValue(timing, 'transition')
+  const settle = phaseValue(timing, 'settle')
   const primaryFacing = placementFacing[primary]
   const companionFacing = placementFacing[companion]
-  if (id === 'turntableLeft') return { rotation: primaryFacing + .24 - smoother(t) * Math.PI * 2, cameraScale: 1 }
+  const delta = shortestAngle(primaryFacing, companionFacing) || Math.PI
+
   if (id === 'whipCompanion') {
-    const turn = smoother((t - .28) / .25)
-    const delta = shortestAngle(primaryFacing, companionFacing) || Math.PI
-    return { rotation: primaryFacing - .12 + delta * turn + Math.sin(turn * Math.PI) * .16, cameraScale: 1 - Math.sin(turn * Math.PI) * .06 }
+    if (timing.phase === 'hold') return { rotation: primaryFacing + lerp(-.035, .035, hold), cameraScale: lerp(1, .985, hold) }
+    if (timing.phase === 'prepare') return { rotation: primaryFacing + lerp(.035, -.1, prepare), cameraScale: lerp(.985, 1.015, prepare) }
+    if (timing.phase === 'transition') {
+      const overshoot = Math.sin(transition * Math.PI) * .16
+      return { rotation: primaryFacing - .1 + delta * transition + Math.sign(delta) * overshoot, cameraScale: 1.015 - Math.sin(transition * Math.PI) * .07 }
+    }
+    return { rotation: primaryFacing + delta + lerp(Math.sign(delta) * .05, 0, settle), cameraScale: lerp(.985, 1, settle) }
   }
-  if (id === 'heroArc') {
-    const arc = -Math.cos(t * Math.PI) * .58
-    return { rotation: primaryFacing + arc, cameraScale: .98 - Math.sin(t * Math.PI) * .08 }
-  }
-  if (id === 'detailPush') {
-    const push = smooth(Math.min(1, t / .7))
-    const settle = t > .82 ? smooth((t - .82) / .18) : 0
-    return { rotation: primaryFacing - .22 + Math.sin(t * Math.PI) * .18, cameraScale: .98 - push * .34 + settle * .08 }
-  }
+
   if (id === 'companionReveal') {
-    const turn = smoother((t - .18) / .48)
-    const delta = shortestAngle(primaryFacing, companionFacing) || Math.PI
-    const overshoot = Math.sin(Math.min(1, turn) * Math.PI) * .24
-    return { rotation: primaryFacing - .28 + delta * turn + Math.sign(delta) * overshoot, cameraScale: 1 - Math.sin(turn * Math.PI) * .09 }
+    if (timing.phase === 'hold') return { rotation: primaryFacing + lerp(-.06, .045, hold), cameraScale: lerp(1, .98, hold) }
+    if (timing.phase === 'prepare') return { rotation: primaryFacing + lerp(.045, -.16, prepare), cameraScale: lerp(.98, 1.02, prepare) }
+    if (timing.phase === 'transition') {
+      const overshoot = Math.sin(transition * Math.PI) * .24
+      return { rotation: primaryFacing - .16 + delta * transition + Math.sign(delta) * overshoot, cameraScale: 1.02 - Math.sin(transition * Math.PI) * .1 }
+    }
+    return { rotation: primaryFacing + delta + lerp(Math.sign(delta) * .08, 0, settle), cameraScale: lerp(.96, 1, settle) }
   }
-  return { rotation: primaryFacing - .28 + smoother(t) * Math.PI * 2, cameraScale: 1 }
+
+  if (id === 'heroArc') {
+    if (timing.phase === 'hold') return { rotation: primaryFacing + lerp(-.14, .1, hold), cameraScale: lerp(.99, .965, hold) }
+    if (timing.phase === 'prepare') return { rotation: primaryFacing + lerp(.1, .16, prepare), cameraScale: lerp(.965, .95, prepare) }
+    if (timing.phase === 'transition') return { rotation: primaryFacing + lerp(.16, .58, transition), cameraScale: lerp(.95, .9, Math.sin(transition * Math.PI)) }
+    return { rotation: primaryFacing + lerp(.58, .5, settle), cameraScale: lerp(.95, .98, settle) }
+  }
+
+  if (id === 'detailPush') {
+    if (timing.phase === 'hold') return { rotation: primaryFacing + lerp(-.08, .04, hold), cameraScale: lerp(.98, .94, hold) }
+    if (timing.phase === 'prepare') return { rotation: primaryFacing + lerp(.04, -.06, prepare), cameraScale: lerp(.94, .9, prepare) }
+    if (timing.phase === 'transition') return { rotation: primaryFacing + lerp(-.06, .12, transition), cameraScale: lerp(.9, .66, transition) }
+    return { rotation: primaryFacing + lerp(.12, .08, settle), cameraScale: lerp(.66, .72, settle) }
+  }
+
+  const direction = id === 'turntableLeft' ? -1 : 1
+  if (timing.phase === 'hold') return { rotation: primaryFacing + direction * lerp(-.07, .07, hold), cameraScale: lerp(1, .985, hold) }
+  if (timing.phase === 'prepare') return { rotation: primaryFacing + direction * lerp(.07, .16, prepare), cameraScale: lerp(.985, .97, prepare) }
+  if (timing.phase === 'transition') return { rotation: primaryFacing + direction * lerp(.16, Math.PI * 2 - .08, smoother(transition)), cameraScale: .97 - Math.sin(transition * Math.PI) * .05 }
+  return { rotation: primaryFacing + direction * lerp(Math.PI * 2 - .08, Math.PI * 2, settle), cameraScale: lerp(.97, 1, settle) }
 }

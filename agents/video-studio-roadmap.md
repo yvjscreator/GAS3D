@@ -64,7 +64,7 @@ Verified current behavior:
 | --- | --- | --- |
 | 1 | Semantic shot timing | DONE |
 | 2 | Musical phrase/downbeat synchronization | DONE |
-| 3 | Exhibition motion vs transition motion | PLANNED |
+| 3 | Exhibition motion vs transition motion | DONE |
 | 4 | Narrative shot hierarchy | PLANNED |
 | 5 | Premium director transitions | PLANNED |
 | 6 | Preview/export parity and scene preroll | PLANNED |
@@ -151,7 +151,7 @@ Implementation notes:
 
 ## Phase 3 — Exhibition motion vs transition motion
 
-Status: **PLANNED**
+Status: **DONE**
 
 Goal: separate subtle motion used while showcasing the garment from the energetic motion used to leave the shot.
 
@@ -174,7 +174,12 @@ Acceptance:
 - Motion remains continuous across frame rates.
 
 Implementation notes:
-- _Pending._
+- `evaluateGarmentMotion()` now consumes the semantic `ShotTimingFrame` instead of one undifferentiated progress value.
+- HOLD uses restrained drift only; PREPARE introduces anticipation; TRANSITION performs the strong move; SETTLE damps into the destination.
+- `whipCompanion` and `companionReveal` hold the primary placement first and only rotate to the companion during TRANSITION.
+- `detailPush` keeps a readable framing during HOLD and reserves the strong camera push for TRANSITION.
+- Turntable motions no longer spin continuously for the entire scene; the full rotation is concentrated in the transition window.
+- Existing motion IDs remain unchanged for persisted-project compatibility.
 
 ---
 
