@@ -26,6 +26,7 @@ import { garmentModels } from '../../config/garmentModels'
 import { renderAssetManager } from '../../render/RenderAssetManager'
 import type { StagePlaybackState } from '../../utils/stageTimeline'
 import { WorkspaceTabs } from '../ui'
+import { QuickVideoPanel } from './QuickVideoPanel'
 
 const placementRotation: Record<PrintPlacement, number> = { frontCenter: 0, frontChest: 0, backCenter: Math.PI, leftSleeve: Math.PI / 2, rightSleeve: -Math.PI / 2 }
 const placementLabels: Record<PrintPlacement, string> = { frontCenter: 'Frente', frontChest: 'Pecho', backCenter: 'Espalda', leftSleeve: 'Manga izquierda', rightSleeve: 'Manga derecha' }
@@ -385,15 +386,18 @@ export function GarmentAdStudio() {
     <div className="zen-layout" style={layoutStyle}>
       <section className={`editor-column${timelineCollapsed ? ' timeline-collapsed' : ' has-editor-timeline'}`}>
         <EditorHeader canUndo={studio.canUndo} canRedo={studio.canRedo} onUndo={studio.undo} onRedo={studio.redo} renderLayers={(close) => <LayersDrawer embedded onRequestClose={close} />} renderSettings={() => <SettingsPanel onTaskChange={setAssetTask} />} layerCount={studio.layerOrder.length} playing={statusPlaying} recording={studio.recordingStatus === 'recording'} previewDisabled={recordingBusy || !projectReady} recordDisabled={recordingBusy || !projectReady} onPreview={statusPlaying ? pauseAdvanced : play} onRecord={() => { void record() }} />
-        <WorkspaceTabs value={workspace} tabs={workspaceTabs} onChange={setWorkspace} />
-        <aside className="control-drawer workspace-drawer">
-        <div className="drawer-intro"><span>{workspaceTabs.find((tab) => tab.id === workspace)?.label}</span><strong>{collectionMode ? `${completeCollectionItems.length} pares · ${buildPresentationGroups(completeCollectionItems).length} grupos · ${studio.presentationMode}` : activeCombination?.name ?? 'Configura tu producto'}</strong></div>
-        <div className="workspace-content">{workspace === 'designs' ? <CampaignPanel /> : workspace === 'scene' ? <BackgroundPanel /> : workspace === 'direction' ? directorPanel : <AudioPanel />}</div>
-        </aside>
-        <>
-          <button className="editor-split-resizer" onPointerDown={resizeTimeline} aria-label="Cambiar altura de la línea de tiempo" title="Arrastra para cambiar la altura de la línea de tiempo" />
-          <div className="timeline-slot"><AdvancedTimeline embedded collapsed={timelineCollapsed} onCollapsedChange={setTimelineVisibility} playing={advancedPlaying} onTogglePlay={advancedPlaying ? pauseAdvanced : play} onSeek={seekAdvanced} /></div>
-        </>
+        <div className="tabs"><button className={studio.studioExperienceMode === 'quick' ? 'selected' : ''} onClick={() => studio.setStudioExperienceMode('quick')}>Video rápido</button><button className={studio.studioExperienceMode === 'advanced' ? 'selected' : ''} onClick={() => studio.setStudioExperienceMode('advanced')}>Avanzado</button></div>
+        {studio.studioExperienceMode === 'quick' ? <aside className="control-drawer workspace-drawer"><QuickVideoPanel onEditAdvanced={() => studio.setStudioExperienceMode('advanced')} /></aside> : <>
+          <WorkspaceTabs value={workspace} tabs={workspaceTabs} onChange={setWorkspace} />
+          <aside className="control-drawer workspace-drawer">
+          <div className="drawer-intro"><span>{workspaceTabs.find((tab) => tab.id === workspace)?.label}</span><strong>{collectionMode ? completeCollectionItems.length + ' pares · ' + buildPresentationGroups(completeCollectionItems).length + ' grupos · ' + studio.presentationMode : activeCombination?.name ?? 'Configura tu producto'}</strong></div>
+          <div className="workspace-content">{workspace === 'designs' ? <CampaignPanel /> : workspace === 'scene' ? <BackgroundPanel /> : workspace === 'direction' ? directorPanel : <AudioPanel />}</div>
+          </aside>
+          <>
+            <button className="editor-split-resizer" onPointerDown={resizeTimeline} aria-label="Cambiar altura de la línea de tiempo" title="Arrastra para cambiar la altura de la línea de tiempo" />
+            <div className="timeline-slot"><AdvancedTimeline embedded collapsed={timelineCollapsed} onCollapsedChange={setTimelineVisibility} playing={advancedPlaying} onTogglePlay={advancedPlaying ? pauseAdvanced : play} onSeek={seekAdvanced} /></div>
+          </>
+        </>}
         <EditorStatusBar campaign={statusCampaign} selection={statusSelection} activity={statusActivity} currentTime={statusTime} duration={statusDuration} playing={statusPlaying} recordingStatus={studio.recordingStatus} recordingMessage={studio.recordingMessage} preparedResources={studio.recordingPreparedResources} totalResources={studio.recordingTotalResources} shot={directorFrame?.shotLabel} output={`${outputResolution.width}×${outputResolution.height} · ${studio.exportFps} FPS`} />
         {studio.recordingStatus === 'error' && <div className="preflight-status-banner" role="alert"><AlertTriangle size={15} /><span>{studio.recordingMessage}</span><button onClick={() => { void record() }}><RefreshCw size={13} /> Reintentar</button><button className="warning" onClick={() => { void record(true) }}><AlertTriangle size={13} /> Grabar igualmente</button><button onClick={() => studio.setRecording('idle')} aria-label="Cerrar aviso"><X size={13} /></button></div>}
       </section>

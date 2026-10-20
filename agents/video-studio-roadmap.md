@@ -68,7 +68,7 @@ Verified current behavior:
 | 4 | Narrative shot hierarchy | DONE |
 | 5 | Premium director transitions | DONE |
 | 6 | Preview/export parity and scene preroll | DONE |
-| 7 | Quick Video mode | PLANNED |
+| 7 | Quick Video mode | DONE |
 | 8 | Default UX, migration and QA | PLANNED |
 
 ---
@@ -297,7 +297,7 @@ Implementation notes:
 
 ## Phase 7 — Quick Video mode
 
-Status: **PLANNED**
+Status: **DONE**
 
 Goal: allow a useful ad to be created without interacting with the advanced timeline.
 
@@ -336,7 +336,14 @@ Acceptance:
 - Switching to advanced mode preserves the generated edit exactly.
 
 Implementation notes:
-- _Pending._
+- Added persistent Quick Video settings and a Quick/Advanced experience switch.
+- Added Premium, Editorial and Dynamic director presets in `quickVideoPresets.ts`.
+- Quick presets resolve presentation mode, shot selection, camera-motion families, director transitions, beat style/bars-per-change and semantic shot timing.
+- Design-exposure control changes HOLD/PREPARE/TRANSITION/SETTLE proportions without creating a second timeline format.
+- Target duration is treated as an approximate pacing target and trims the preset's optional shot set for shorter videos.
+- `generateQuickVideo()` rebuilds the existing cinematic/grid/collection `DirectorProject` objects and applies the quick timing profile only to non-manual director shots.
+- Added `QuickVideoPanel` with style, rhythm, camera movement, exposure and duration controls plus a direct “Editar en modo avanzado” path.
+- The advanced timeline is hidden while Quick Video is active; switching back reveals the exact generated project.
 
 ---
 

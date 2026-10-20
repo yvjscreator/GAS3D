@@ -16,6 +16,11 @@ export type LayerTransition = 'none' | 'fade' | 'slideLeft' | 'slideRight' | 'sl
 export type DirectorTransitionId = 'cut' | 'premiumOrbit' | 'whipReveal' | 'matchRotation' | 'detailDive' | 'occlusionCut'
 export type SystemLayerId = 'background' | 'garment'
 export type CampaignMode = 'variants' | 'collection'
+export type StudioExperienceMode = 'quick' | 'advanced'
+export type QuickVideoStyle = 'premium' | 'editorial' | 'dynamic'
+export type QuickVideoRhythm = 'relaxed' | 'balanced' | 'dynamic'
+export type QuickCameraMotion = 'subtle' | 'medium' | 'strong'
+export type QuickDesignExposure = 'longer' | 'normal' | 'faster'
 export type PresentationMode = 'grouped' | 'sequential' | 'mixed'
 export type DirectorShotKind = 'groupShowcase' | 'itemShowcase' | 'hero' | 'detailLarge' | 'detailSmall'
 export type PresentationSceneKind = DirectorShotKind
@@ -33,6 +38,14 @@ export interface ShotTimingProfile {
   prepare: number
   transition: number
   settle: number
+}
+
+export interface QuickVideoSettings {
+  style: QuickVideoStyle
+  rhythm: QuickVideoRhythm
+  cameraMotion: QuickCameraMotion
+  designExposure: QuickDesignExposure
+  targetDuration: 8 | 12 | 15 | 20
 }
 
 export interface PresentationScene {
