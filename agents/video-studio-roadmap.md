@@ -411,6 +411,7 @@ Implementation notes:
 - UI revision replaces these with shared `SelectableCard` surfaces and explicit 3-column style, 3-column resources, and 4-column settings grids, with 2/1-column container-query fallbacks.
 - Quick mode now changes parent editor grid rows so hiding the advanced timeline does not leave a large empty area.
 - Added universal UI layout rules in `AGENTS.md` and `agents/ui-layout-guidelines.md`. Phase 8 remains IN_PROGRESS until an actual responsive browser review confirms the result.
+- Screenshot regression: added Quick/Advanced top-level tabs created seven advanced editor children, but CSS defined only six grid rows. The workspace drawer was compressed to the 7px splitter track and all Design/Scene/Audio controls appeared blank. Added explicit seven-row definitions for expanded and collapsed timeline states, leaving Quick's four-row layout untouched. Added row-count regression assertions to `qa:roadmap`; browser verification on the deployment remains pending.
 
 ---
 

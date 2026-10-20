@@ -197,4 +197,13 @@ check(advancedStyleSource.includes('@container (max-width:700px)') && advancedSt
 check(advancedStyleSource.includes('.editor-column.quick-experience') && studioShellSource.includes("' quick-experience'"), 'Modo rápido volvió a reservar una fila vacía de timeline')
 check(readFileSync('AGENTS.md', 'utf8').includes('agents/ui-layout-guidelines.md'), 'Falta la regla transversal de composición responsive en AGENTS')
 
+// Guard the actual advanced editor grid after the Quick/Advanced mode tabs were added.
+const advancedGridRule = advancedStyleSource.match(/\.editor-column\.has-editor-timeline:not\(\.quick-experience\)\s*\{\s*grid-template-rows:([^;}]+);\s*\}/)?.[1] ?? ''
+const collapsedGridRule = advancedStyleSource.match(/\.editor-column\.timeline-collapsed:not\(\.quick-experience\)\s*\{\s*grid-template-rows:([^;}]+);\s*\}/)?.[1] ?? ''
+const definedGridRows = (value: string) => value.trim().split(/\s+(?![^()]*\))/).filter(Boolean)
+equal(definedGridRows(advancedGridRule).length, 7, 'Avanzado necesita siete filas con timeline abierta (incluyendo modo + workspace)')
+equal(definedGridRows(collapsedGridRule).length, 7, 'Avanzado necesita siete filas con timeline contraída')
+check(advancedGridRule.includes('44px 44px minmax(0,1fr) 7px'), 'La zona de controles avanzados volvió a comprimirse en la fila del separador')
+check(collapsedGridRule.includes('44px 44px minmax(0,1fr) 0 45px'), 'La zona de controles avanzados volvió a comprimirse al contraer la timeline')
+
 console.log(`Roadmap QA completado: ${assertions} verificaciones.`)

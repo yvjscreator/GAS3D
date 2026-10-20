@@ -365,3 +365,13 @@
   .quick-style-card.ui-selectable-card { min-height:115px; }
   .quick-finish-actions button { flex:1 1 auto; }
 }
+
+/* The advanced editor has SEVEN direct layout rows:
+   header, mode tabs, workspace tabs, workspace controls, splitter,
+   timeline, and status. Always reserve a distinct content row. */
+.editor-column.has-editor-timeline:not(.quick-experience) {
+  grid-template-rows:54px 44px 44px minmax(0,1fr) 7px minmax(0,var(--timeline-height)) 32px;
+}
+.editor-column.timeline-collapsed:not(.quick-experience) {
+  grid-template-rows:54px 44px 44px minmax(0,1fr) 0 45px 32px;
+}
