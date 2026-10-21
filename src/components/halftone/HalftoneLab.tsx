@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, ImagePlus, RotateCcw, Upload } from 'lucide-react'
 import './halftone-lab.css'
+import { AppLauncher } from '../navigation/AppLauncher'
 
 type HalftoneMode = 'alpha' | 'luminance'
 type PreviewBackground = 'checker' | 'black' | 'white'
@@ -278,12 +279,13 @@ export function HalftoneLab() {
   return (
     <main className="halftone-lab">
       <header className="hl-topbar">
+        <AppLauncher active="halftone" />
         <div>
           <span className="hl-eyebrow">GAS3D · PRINT TOOLS</span>
           <h1>Halftone Lab</h1>
           <p>Convierte PNG transparentes en semitono directamente en tu navegador.</p>
         </div>
-        <a className="hl-back" href="/">Volver a GAS3D</a>
+
       </header>
 
       <section className="hl-layout">

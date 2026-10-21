@@ -59,6 +59,7 @@ import {
   saveSubtitleVideo,
 } from './storage'
 import './subtitleStudio.css'
+import { AppLauncher } from '../navigation/AppLauncher'
 
 const statusLabel: Record<SubtitleJob['status'], string> = {
   queued: 'En cola',
@@ -1754,7 +1755,7 @@ export function SubtitleStudio() {
           : 'subtitle-mobile-editor tool-active'
     }>
       <header className="subtitle-mobile-header">
-        <button onClick={() => { window.location.hash = '' }}><ArrowLeft size={25} /></button>
+        <AppLauncher active="subtitles" />
         <strong>Subtitle Studio</strong>
         <button
           className={primaryMode === 'export' ? 'subtitle-mobile-export' : 'subtitle-mobile-export generate'}
@@ -1808,6 +1809,7 @@ export function SubtitleStudio() {
       <div className="subtitle-mobile-dock">{renderMobilePanel()}</div>
     </section> : <section className="subtitle-desktop-editor">
       <header className="subtitle-header">
+        <AppLauncher active="subtitles" />
         <div>
           <span className="subtitle-kicker">GAS3D · creación asistida</span>
           <h1>Subtitle Studio</h1>

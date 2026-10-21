@@ -17,6 +17,7 @@ import { describeCompression, type CompressionResult } from './pngOptimization'
 import { analyzeAlpha, DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings, type PrintMethod, type DtfAlphaMode, type DtfPattern, type AlphaStatistics } from './alphaOptimization'
 import { analyzeDtfPrintability, buildDtfPromptBlock, DTF_PRINT_SIZES, resolveDtfPrintSize, type DtfPrintabilityAnalysis, type DtfPrintSizePreset } from './dtfAnalysis'
 import './imagesStudio.css'
+import { AppLauncher } from '../navigation/AppLauncher'
 
 const MAX_IMAGE_PIXELS = 30_000_000
 const MAX_IMAGE_BYTES = 60 * 1024 * 1024
@@ -829,6 +830,7 @@ export function ImagesStudio() {
     }} onDrop={dropFile}>
       <input ref={inputRef} className="images-file-input" type="file" multiple={workspaceMode === 'batch'} accept="image/png,image/jpeg,image/webp" onChange={chooseFile} aria-label={workspaceMode === 'batch' ? 'Cargar imágenes del lote' : 'Cargar una imagen'} />
       <div className="images-heading">
+        <AppLauncher active="images" />
         <div>
           <span className="images-eyebrow">GAS3D / Preparación de estampados</span>
           <h1>Images <span>Studio</span></h1>

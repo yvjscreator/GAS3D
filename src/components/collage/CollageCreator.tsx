@@ -12,6 +12,7 @@ import {
 } from './collageStorage'
 import { getCollageGeometry, getImageDimensions, renderCollage, type CollageQuality } from './collageRenderer'
 import './collageCreator.css'
+import { AppLauncher } from '../navigation/AppLauncher'
 
 type CollageItem = { id: string; name: string; background: CollageBackground; url: string; width: number; height: number }
 type Feedback = { kind: 'success' | 'error'; text: string } | null
@@ -272,6 +273,7 @@ export function CollageCreator() {
   return <main className="collage-creator">
     <div className="collage-container">
       <header className="collage-header">
+        <AppLauncher active="collage" />
         <div>
           <span className="collage-eyebrow"><Layers3 size={14} /> GAS3D / HERRAMIENTA CREATIVA</span>
           <h1>Collage <span>Creator</span></h1>

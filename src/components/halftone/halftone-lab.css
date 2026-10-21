@@ -497,3 +497,15 @@
     padding: 14px;
   }
 }
+
+/* Same compact app header as the other GAS3D tools; the main editor stays unchanged. */
+.halftone-lab { padding-top:10px; }
+.halftone-lab .hl-topbar { height:auto; min-height:52px; margin-bottom:14px; padding:0 0 8px; display:grid; grid-template-columns:44px minmax(0,1fr); align-items:center; gap:9px; border-bottom:1px solid #2d3542; }
+.halftone-lab .hl-topbar h1 { font-size:17px; margin:0; }
+.halftone-lab .hl-topbar .hl-eyebrow,
+.halftone-lab .hl-topbar p { display:none; }
+@media (max-width:620px) {
+  .halftone-lab { padding:8px 12px 16px; }
+  .halftone-lab .hl-topbar { min-height:48px; display:grid; grid-template-columns:44px minmax(0,1fr); align-items:center; gap:8px; }
+  .halftone-lab .hl-topbar h1 { font-size:16px; }
+}

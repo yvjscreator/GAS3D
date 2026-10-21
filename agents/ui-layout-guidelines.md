@@ -16,6 +16,10 @@ Recommended composition for a wide studio work area:
 
 Adapt the number of columns to actual container width, not only viewport width: for example 3 → 2 → 1 for cards and 4 → 2 → 1 for settings. Do not force a third column if it leaves tiny cards. Use `grid-template-columns:repeat(N,minmax(0,1fr))`, `min-width:0` on children and container queries or breakpoints that reflect the layout's real available width.
 
+## Universal app switcher in every studio header
+
+Use `AppLauncher` from `src/components/navigation/AppLauncher.tsx` in each tool's compact header, rather than adding a second toolbar on top of one. Preserve module-specific controls: generated voice/script in subtitles, image export/Zen, and recording/preview in video. On narrow screens, keep touch targets usable and allow the menu to overlay fixed editors without clipping. The five tools must all be reachable directly.
+
 ## Preserve the existing GAS3D design language
 
 Inspect `src/styles.css`, `src/advanced.css`, `src/components/ui/primitives.tsx` and a neighboring screen before choosing markup and classes. Prefer existing `SelectableCard`, `WorkspaceTabs`, `SegmentedControl`, `ResponsiveOptionGrid`, `MasterDetailLayout`, or a dedicated style class that visually matches those primitives.

@@ -188,3 +188,16 @@ button.collage-empty:hover { background:#172636; border-color:#80bce4; }
 @media (prefers-reduced-motion:reduce) {
   .collage-creator * { scroll-behavior:auto !important; transition:none !important; }
 }
+
+/* Unified compact header; collage add/export actions stay in their native locations. */
+.collage-creator { padding-top:14px; }
+.collage-creator .collage-header { min-height:52px; height:auto; display:grid; grid-template-columns:44px minmax(0,1fr) auto; align-items:center; gap:8px; padding:0 0 9px; margin:0; }
+.collage-creator .collage-header>div:first-child { min-width:42px; flex:none; }
+.collage-creator .collage-header h1 { font-size:17px; margin:0; }
+.collage-creator .collage-header .collage-eyebrow,
+.collage-creator .collage-header p { display:none; }
+@media (max-width:600px) {
+  .collage-creator { padding-top:10px; }
+  .collage-creator .collage-header { min-height:48px; grid-template-columns:44px minmax(0,1fr); padding:0 0 6px; }
+  .collage-creator .collage-header h1 { font-size:16px; }
+}

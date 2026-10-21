@@ -1,0 +1,45 @@
+/* Shared compact GAS3D application launcher. Module action bars remain intact. */
+.gas-app-launcher { position:relative; z-index:1; flex:0 0 auto; display:grid; place-items:center; width:42px; min-width:42px; height:44px; }
+.gas-app-launcher-trigger {
+  appearance:none; display:grid; place-items:center;
+  width:40px; height:40px; padding:0; color:#e9f2fc; background:#213343;
+  border:1px solid #527088; border-radius:9px; box-shadow:0 2px 12px #0003; cursor:pointer;
+}
+.gas-app-launcher-trigger:hover,.gas-app-launcher-trigger[aria-expanded="true"] { background:#28557a; border-color:#85c4ee; }
+.gas-app-launcher-trigger:focus-visible { outline:2px solid #87d4ff; outline-offset:3px; }
+.gas-app-launcher-backdrop {
+  position:fixed; z-index:4900; inset:0; width:100%; height:100%; padding:0; border:0;
+  border-radius:0; background:#050911b6; backdrop-filter:blur(3px); cursor:default;
+}
+.gas-app-launcher-dialog {
+  position:fixed; z-index:4901;
+  top:calc(55px + env(safe-area-inset-top,0px)); left:12px;
+  width:min(342px,calc(100vw - 24px)); max-height:calc(100dvh - 75px - env(safe-area-inset-top,0px));
+  display:grid; gap:8px; padding:12px; overflow:auto;
+  color:#eaf2fd; background:#111a26; border:1px solid #51647c;
+  border-radius:13px; box-shadow:0 22px 70px #000b;
+  font-family:Manrope,ui-sans-serif,system-ui,sans-serif;
+}
+.gas-app-launcher-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:2px 3px 9px; border-bottom:1px solid #344558; }
+.gas-app-launcher-heading span { display:flex; gap:9px; align-items:center; font-size:12px; font-weight:800; letter-spacing:.03em; }
+.gas-app-launcher-heading>button { display:grid; place-items:center; min-width:36px; height:36px; background:#1e2a38; border:1px solid #344a61; border-radius:8px; color:#d3e3f4; cursor:pointer; }
+.gas-app-launcher-options { display:grid; gap:6px; }
+.gas-app-launcher-option {
+  display:flex; align-items:center; gap:11px; width:100%; min-height:57px;
+  padding:8px 10px; background:#172331; color:#dbe6f4;
+  text-align:left; border:1px solid #2e4053; border-radius:9px; cursor:pointer;
+}
+.gas-app-launcher-option:hover,.gas-app-launcher-option:focus-visible { background:#253b51; border-color:#699ec4; }
+.gas-app-launcher-option.is-active { background:#193e5d; border-color:#6dbbef; }
+.gas-app-launcher-icon { display:grid; place-items:center; flex:0 0 auto; width:38px; height:38px; color:#9dcced; background:#25394e; border-radius:8px; }
+.gas-app-launcher-option-label { min-width:0; display:grid; gap:3px; flex:1; }
+.gas-app-launcher-option-label strong { color:#f0f7ff; font-size:12px; }
+.gas-app-launcher-option-label small { color:#92aac0; font-size:10px; }
+.gas-app-launcher-current { align-self:center; color:#a3d4f5; font-size:9px; }
+.gas-app-launcher-dialog button:focus-visible { outline:2px solid #8fd5ff; outline-offset:2px; }
+@media (max-width:720px) {
+  .gas-app-launcher { width:42px; min-width:42px; height:46px; }
+  .gas-app-launcher-trigger { width:40px; height:40px; }
+  .gas-app-launcher-dialog { top:calc(54px + env(safe-area-inset-top,0px)); }
+}
+@media (prefers-reduced-motion:reduce) { .gas-app-launcher-backdrop { backdrop-filter:none; } }

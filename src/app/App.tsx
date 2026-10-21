@@ -28,23 +28,8 @@ export default function App() {
     }
   }, [])
 
-  const openTool = (next: AppTool) => {
-    if (next === 'subtitles') window.location.hash = '/subtitles'
-    else if (next === 'images') window.location.hash = '/images'
-    else if (next === 'collage') window.location.hash = '/collage'
-    else if (next === 'halftone') window.location.hash = '/halftone'
-    else window.location.hash = '/garment'
-    setTool(next)
-  }
-
   return <>
-    <nav className={tool === 'subtitles' ? 'gas-tool-switcher subtitle-tool-switcher' : tool === 'collage' ? 'gas-tool-switcher collage-tool-switcher' : 'gas-tool-switcher'} aria-label="Herramientas GAS3D">
-      <button className={tool === 'garment' ? 'active' : ''} onClick={() => openTool('garment')}>3D Studio</button>
-      <button className={tool === 'subtitles' ? 'active' : ''} onClick={() => openTool('subtitles')}>Subtítulos</button>
-      <button className={tool === 'images' ? 'active' : ''} onClick={() => openTool('images')}>Images</button>
-      <button className={tool === 'collage' ? 'active' : ''} onClick={() => openTool('collage')}>Collage</button>
-      <button className={tool === 'halftone' ? 'active' : ''} onClick={() => openTool('halftone')}>Halftone Lab</button>
-    </nav>
+    {/* Each studio owns its compact header and the shared AppLauncher. */}
     {tool === 'subtitles' ? <SubtitleStudio /> : tool === 'images' ? <ImagesStudio /> : tool === 'collage' ? <CollageCreator /> : tool === 'halftone' ? <HalftoneLab /> : <GarmentAdStudio />}
   </>
 }

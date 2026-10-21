@@ -301,3 +301,13 @@ h2 { font-size:var(--font-ui-section); }
   .design-adjustment-grid .range-row.wide { grid-column:auto; }
   .variant-ready-actions { align-items:stretch; flex-direction:column; }.variant-ready-actions .text-button { margin-left:0; }
 }
+
+/* GAS3D compact launcher within the original Video Studio editing toolbar. */
+.editor-header .editor-history-tools>.gas-app-launcher { flex:0 0 42px; }
+@media (max-width:650px) {
+  .editor-header { min-height:48px; height:48px; padding-inline:4px; gap:4px; }
+  .editor-header .ui-tool-group { gap:3px; }
+  .editor-header .editor-history-tools>.gas-app-launcher { flex-basis:36px; min-width:36px; width:36px; }
+  .editor-header .gas-app-launcher-trigger { width:34px; height:38px; }
+  .editor-header .ui-icon-button { min-width:30px; padding:0 5px; }
+}

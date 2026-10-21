@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Circle, Layers3, Pause, Play, Redo2, Settings2, Undo2 } from '../icons'
 import { IconButton, Popover, ToolGroup } from '../ui'
+import { AppLauncher } from '../navigation/AppLauncher'
 
 type Props = {
   canUndo: boolean
@@ -23,6 +24,7 @@ export function EditorHeader({ canUndo, canRedo, onUndo, onRedo, renderLayers, r
   const [settingsOpen, setSettingsOpen] = useState(false)
   return <header className="editor-header">
     <ToolGroup label="Edición" className="editor-history-tools">
+      <AppLauncher active="garment" />
       <IconButton icon={Undo2} label="Deshacer" shortcut="Ctrl + Z" disabled={!canUndo} onClick={onUndo} />
       <IconButton icon={Redo2} label="Rehacer" shortcut="Ctrl + Shift + Z" disabled={!canRedo} onClick={onRedo} />
       <Popover open={layersOpen} onOpenChange={(next) => { setLayersOpen(next); if (next) setSettingsOpen(false) }} placement="viewport" width={380} className="layers-popover" trigger={({ open, toggle }) => <IconButton icon={Layers3} label={open ? 'Cerrar capas' : 'Abrir capas'} text={`Capas${layerCount ? ` ${layerCount}` : ''}`} aria-expanded={open} onClick={toggle} />}>{renderLayers(() => setLayersOpen(false))}</Popover>

@@ -2306,3 +2306,16 @@
     contain-intrinsic-size:96px 78px;
   }
 }
+
+/* GAS3D shared compact application header — keep script/voice/generate action intact. */
+.subtitle-studio .subtitle-header { min-height:54px; display:grid; grid-template-columns:44px minmax(0,1fr) auto; align-items:center; gap:9px; padding:0 3px 10px; margin-bottom:14px; }
+.subtitle-studio .subtitle-header h1 { font-size:16px; margin:1px 0; }
+.subtitle-studio .subtitle-header .subtitle-kicker,
+.subtitle-studio .subtitle-header p { display:none; }
+@media (max-width:720px) {
+  .subtitle-mobile-editor { --subtitle-header-h:48px; }
+  .subtitle-studio .subtitle-mobile-header { grid-template-columns:44px minmax(0,1fr) auto; gap:6px; padding:0 7px !important; }
+  .subtitle-studio .subtitle-mobile-header .gas-app-launcher { width:42px; }
+  .subtitle-studio .subtitle-mobile-header>button { min-height:40px; height:40px; }
+  .subtitle-studio .subtitle-mobile-header>strong { font-size:12px; text-align:left; }
+}

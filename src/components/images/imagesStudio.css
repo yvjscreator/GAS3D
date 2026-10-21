@@ -1070,3 +1070,22 @@
   .images-dtf-analysis-grid,
   .images-dtf-analysis-actions { grid-template-columns:1fr; }
 }
+
+/* Unified compact app header; preserve Images Studio Zen/export controls. */
+.images-studio { padding-top:14px; }
+.images-studio .images-heading { position:relative; min-height:52px; margin-bottom:12px; padding-left:51px; }
+.images-studio .images-heading>.gas-app-launcher { position:absolute; top:50%; left:0; transform:translateY(-50%); }
+.images-studio .images-heading h1 { font-size:17px; }
+.images-studio .images-heading .images-eyebrow,
+.images-studio .images-heading p { display:none; }
+.images-studio.is-zen .images-heading { padding:0 10px 0 55px; }
+.images-studio.is-zen .images-heading>.gas-app-launcher { left:7px; }
+@media (max-width:720px) {
+  .images-studio { padding:9px 10px 22px; }
+  .images-studio .images-heading { min-height:48px; margin-bottom:7px; gap:6px; padding-left:46px; }
+  .images-studio .images-heading h1 { font-size:14px; }
+  .images-studio .images-heading-actions { gap:4px; }
+  .images-studio .images-heading-actions button { max-width:100%; }
+  .images-studio .images-zen-button span { display:none; }
+  .images-studio.is-zen .images-heading { padding-left:51px; }
+}

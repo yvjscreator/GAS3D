@@ -36,9 +36,23 @@ const huge = Array.from({ length: 20 }, () => ({ width: 4000, height: 6000 }))
 check(!getCollageGeometry(huge, 'maximum').withinLimits, 'Huge maximum output must be rejected rather than silently reduced')
 check(getCollageGeometry(huge, 'compatible').withinLimits, 'Compatible mode must meet mobile caps')
 
+const launcher = source('src/components/navigation/AppLauncher.tsx')
+const launcherCss = source('src/components/navigation/appLauncher.css')
+check(launcher.includes('LayoutGrid') && launcher.includes("createPortal") && launcher.includes("aria-haspopup=\"dialog\""), 'Shared accessible launcher missing')
+check(launcher.includes("MODULES.map") && launcher.includes("window.location.hash = hash"), 'App launcher must navigate all modules without browser back')
+check(launcher.includes("event.key === 'Escape'") && launcher.includes("aria-current={active === id ? 'page'"), 'App launcher close/current state missing')
+for (const path of ['src/components/studio/EditorHeader.tsx', 'src/components/subtitles/SubtitleStudio.tsx', 'src/components/images/ImagesStudio.tsx', 'src/components/collage/CollageCreator.tsx', 'src/components/halftone/HalftoneLab.tsx']) {
+  check(source(path).includes('<AppLauncher active='), 'Global launcher missing from ' + path)
+}
+check(launcherCss.includes('.gas-app-launcher-dialog') && launcherCss.includes('z-index:4901'), 'Launcher must appear above full screen modes')
+check(source('src/components/subtitles/SubtitleStudio.tsx').includes('onClick={() => void runPrimaryAction()}'), 'Subtitle generation header action was lost')
+check(source('src/components/images/ImagesStudio.tsx').includes('className="images-export"'), 'Image export action was lost')
+check(source('src/components/studio/EditorHeader.tsx').includes('onClick={onRecord}'), 'Video recording action was lost')
+
 const app = source('src/app/App.tsx')
 check(app.includes("'#/collage'") && app.includes('<CollageCreator />'), 'Collage route missing from GAS3D tool selector')
 check(app.includes("'#/halftone'") && app.includes('<HalftoneLab />'), 'Halftone Lab route missing from GAS3D tool selector')
+check(!app.includes('<nav className={tool ==='), 'Old floating application tab bar must not cover individual headers')
 const page = source('src/components/collage/CollageCreator.tsx')
 check(page.includes('type="file" accept="image/*" multiple'), 'Native multiple-photo picker missing')
 check(page.includes('collage-preview-board') && page.includes('collage-preview-tile') && page.includes('aspectRatio:'), 'Source aspect ratios missing from horizontal preview')

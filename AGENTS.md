@@ -34,6 +34,13 @@ For work belonging to roadmap phases 1–8:
 
 The GitHub workflow `.github/workflows/video-studio-roadmap.yml` enforces item 2 for phase-marked commits.
 
+## Shared GAS3D application navigation
+
+- All modules use the compact four-squares launcher from `src/components/navigation/AppLauncher.tsx` in their own existing header. Never place a second floating tab bar over native module controls.
+- Preserve each module's primary actions in its header, especially the Subtitle Studio generate/script/voice/export action, Images Studio export/Zen actions, and Video Studio preview/record/edit controls.
+- The launcher must be usable on mobile and desktop, including in full-screen/Zen modes, with overlay above app-specific chrome, Escape/outside close, keyboard navigation, and accurate current-module highlighting.
+- Navigate by hash without going through Video Studio or replacing module-local workflow buttons. All modules, including Halftone Lab, must appear in the launcher.
+
 ## Responsive, column-first interface design (all GAS3D screens)
 
 Mandatory guidance: `agents/ui-layout-guidelines.md`.
