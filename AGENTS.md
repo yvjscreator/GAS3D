@@ -58,7 +58,7 @@ Before changing `src/components/collage/**`, `src/app/App.tsx`, or shared media 
 - Always preserve original source files and full artwork: use **one common image height and individual dynamic widths from each source aspect ratio** in both preview and PNG. Never crop, stretch, or use fixed-width contain/letterbox tiles. Transparent pixels reveal the selected black or white fill; it must never form artificial sidebars. White margins between panels are independent.
 - Image Blob bytes belong in IndexedDB; localStorage holds only serializable metadata/order/background selection and last-upload reference. The last uploaded image must remain recoverable even if its panel is removed.
 - Removing or reordering one panel must not erase unrelated uploaded images. Clean revoked object URLs and obsolete IndexedDB records. Avoid network requests for personal artwork.
-- Preserve PNG export and test aspect-ratio-based output geometry (portrait/square/landscape), counts, mobile canvas size caps, preview/export parity, mobile layout breakpoints and restoration behavior whenever modifying renderer or persistence.
+- Preserve PNG export and test aspect-ratio-based output geometry (portrait/square/landscape), count limits, maximum quality without silent downscaling, explicit compatible canvas caps, touch/mouse drag ordering, preview/export parity, mobile layout and restoration behavior whenever modifying renderer or persistence.
 - Do not claim iOS/Android visual validation unless it actually ran on a device/browser.
 
 ### General safety for repository edits

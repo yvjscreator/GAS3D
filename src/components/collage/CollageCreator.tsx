@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { ArrowLeft, ArrowRight, Download, ImagePlus, Images, Layers3, RotateCcw, Trash2, Upload } from 'lucide-react'
+import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { ArrowLeft, ArrowRight, Download, ImagePlus, Images, Layers3, GripVertical, RotateCcw, Trash2, Upload } from 'lucide-react'
 import {
   loadCollageImage,
   loadLastCollageImage,
@@ -10,7 +10,7 @@ import {
   storeLastCollageImage,
   type CollageBackground,
 } from './collageStorage'
-import { getCollageGeometry, getImageDimensions, renderCollage } from './collageRenderer'
+import { getCollageGeometry, getImageDimensions, renderCollage, type CollageQuality } from './collageRenderer'
 import './collageCreator.css'
 
 type CollageItem = { id: string; name: string; background: CollageBackground; url: string; width: number; height: number }
@@ -25,14 +25,20 @@ const shortName = (name: string) => name.length > 34 ? name.slice(0, 27) + '…'
 export function CollageCreator() {
   const pickerRef = useRef<HTMLInputElement>(null)
   const activeUrls = useRef(new Set<string>())
+  const dragSession = useRef<{ id: string; pointerId: number } | null>(null)
+  const previewScrollRef = useRef<HTMLDivElement>(null)
   const [items, setItems] = useState<CollageItem[]>([])
   const [hydrating, setHydrating] = useState(true)
   const [working, setWorking] = useState<'adding' | 'exporting' | null>(null)
   const [recentName, setRecentName] = useState<string | null>(null)
   const [recentAvailable, setRecentAvailable] = useState(false)
   const [feedback, setFeedback] = useState<Feedback>(null)
+  const [quality, setQuality] = useState<CollageQuality>('maximum')
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const busy = hydrating || working !== null
-  const exportGeometry = getCollageGeometry(items)
+  const exportGeometry = getCollageGeometry(items, quality)
+  const canExport = items.length > 0 && exportGeometry.withinLimits
 
   useEffect(() => {
     let active = true
@@ -165,6 +171,63 @@ export function CollageCreator() {
     })
   }
 
+  const reorderById = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return
+    setItems((current) => {
+      const from = current.findIndex((item) => item.id === sourceId)
+      const to = current.findIndex((item) => item.id === targetId)
+      if (from < 0 || to < 0 || from === to) return current
+      const next = [...current]
+      const [picked] = next.splice(from, 1)
+      next.splice(to, 0, picked)
+      return next
+    })
+  }
+
+  // Pointer capture supports touch and mouse; only reorder on release.
+  const dragStart = (id: string, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (busy || items.length < 2 || (event.pointerType === 'mouse' && event.button !== 0)) return
+    event.preventDefault()
+    dragSession.current = { id, pointerId: event.pointerId }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setDraggingId(id)
+    setDropTargetId(id)
+  }
+
+  const targetUnderPointer = (x: number, y: number) =>
+    document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-collage-id]')?.dataset.collageId ?? null
+
+  const dragMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (dragSession.current?.pointerId !== event.pointerId) return
+    const preview = previewScrollRef.current
+    if (preview) {
+      const rect = preview.getBoundingClientRect()
+      if (event.clientY >= rect.top && event.clientY <= rect.bottom) {
+        if (event.clientX < rect.left + 44) preview.scrollLeft -= 24
+        else if (event.clientX > rect.right - 44) preview.scrollLeft += 24
+      }
+    }
+    const target = targetUnderPointer(event.clientX, event.clientY)
+    if (target && items.some((item) => item.id === target)) setDropTargetId(target)
+  }
+
+  const dragEnd = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const session = dragSession.current
+    if (!session || session.pointerId !== event.pointerId) return
+    const target = targetUnderPointer(event.clientX, event.clientY) ?? dropTargetId
+    if (target) reorderById(session.id, target)
+    dragSession.current = null
+    setDraggingId(null)
+    setDropTargetId(null)
+  }
+
+  const dragCancel = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (dragSession.current?.pointerId !== event.pointerId) return
+    dragSession.current = null
+    setDraggingId(null)
+    setDropTargetId(null)
+  }
+
   const remove = (id: string) => {
     if (busy) return
     const item = items.find((candidate) => candidate.id === id)
@@ -191,7 +254,7 @@ export function CollageCreator() {
     setWorking('exporting')
     setFeedback(null)
     try {
-      const blob = await renderCollage(items)
+      const blob = await renderCollage(items, quality)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -200,7 +263,7 @@ export function CollageCreator() {
       a.click()
       a.remove()
       window.setTimeout(() => URL.revokeObjectURL(url), 60000)
-      setFeedback({ kind: 'success', text: 'Collage PNG generado con ' + items.length + ' panel(es).' })
+      setFeedback({ kind: 'success', text: 'PNG de ' + exportGeometry.width + ' × ' + exportGeometry.height + ' px exportado con ' + items.length + ' imágenes.' })
     } catch (error) {
       setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'No se pudo exportar el collage.' })
     } finally { setWorking(null) }
@@ -216,7 +279,7 @@ export function CollageCreator() {
         </div>
         <div className="collage-desktop-actions">
           <button type="button" className="collage-btn collage-btn-secondary" disabled={busy} onClick={() => pickerRef.current?.click()}><ImagePlus size={17} /> Añadir imágenes</button>
-          <button type="button" className="collage-btn collage-btn-primary" disabled={busy || items.length === 0} onClick={() => void exportPng()}><Download size={17} /> Exportar PNG</button>
+          <button type="button" className="collage-btn collage-btn-primary" disabled={busy || !canExport} onClick={() => void exportPng()}><Download size={17} /> Exportar PNG</button>
         </div>
       </header>
 
@@ -226,10 +289,17 @@ export function CollageCreator() {
         <div className="collage-section-heading"><div><span className="collage-section-number">01</span><h2>Vista previa</h2></div><span>{items.length} paneles · Horizontal</span></div>
         {hydrating ? <div className="collage-empty"><Images size={30} /><strong>Recuperando imágenes guardadas…</strong></div> :
           items.length === 0 ? <button type="button" className="collage-empty" onClick={() => pickerRef.current?.click()}><ImagePlus size={32} /><strong>Comienza con tus imágenes</strong><span>Puedes elegir varias fotos de tu galería al mismo tiempo.</span></button> :
-          <div className="collage-scroll" tabIndex={0} aria-label="Desliza horizontalmente para explorar el collage">
-            <div className="collage-preview-board">{items.map((item, index) => <div className="collage-preview-tile" key={item.id} style={{ backgroundColor: item.background, aspectRatio: `${item.width} / ${item.height}` }}><img src={item.url} alt={'Panel ' + (index + 1) + ': ' + item.name} /><span className="collage-preview-number">{index + 1}</span></div>)}</div>
+          <div ref={previewScrollRef} className="collage-scroll" tabIndex={0} aria-label="Desliza horizontalmente para explorar el collage">
+            <div className="collage-preview-board">{items.map((item, index) => <div className={'collage-preview-tile' + (draggingId === item.id ? ' is-dragging' : '') + (draggingId && dropTargetId === item.id ? ' is-drop-target' : '')} data-collage-id={item.id} key={item.id} style={{ backgroundColor: item.background, aspectRatio: `${item.width} / ${item.height}` }}><img src={item.url} alt={'Panel ' + (index + 1) + ': ' + item.name} draggable={false} /><span className="collage-preview-number">{index + 1}</span><button type="button" className="collage-preview-drag-handle" disabled={busy || items.length < 2} aria-label={'Arrastrar para ordenar ' + item.name} onPointerDown={(event) => dragStart(item.id, event)} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragCancel}><GripVertical size={18} /></button></div>)}</div>
           </div>}
-        <div className="collage-preview-meta"><span>{items.length ? exportGeometry.width + ' × ' + exportGeometry.height + ' px · PNG' : 'Sin imágenes'}</span><span>{items.length > 1 ? 'Desliza para ver el resto →' : 'Los diseños nunca se recortan'}</span></div>
+        <div className="collage-preview-meta"><span>{items.length ? exportGeometry.width + ' × ' + exportGeometry.height + ' px · PNG' : 'Sin imágenes'}</span><span>{items.length > 1 ? 'Arrastra usando el asa ⋮⋮ para ordenar' : 'Los diseños nunca se recortan'}</span></div>
+        <div className="collage-quality" role="group" aria-label="Resolución de exportación PNG">
+          <strong>Resolución de descarga</strong>
+          <button type="button" className={quality === 'maximum' ? 'active' : ''} aria-pressed={quality === 'maximum'} onClick={() => setQuality('maximum')}>Máxima</button>
+          <button type="button" className={quality === 'compatible' ? 'active' : ''} aria-pressed={quality === 'compatible'} onClick={() => setQuality('compatible')}>Compatible</button>
+        </div>
+        {items.length > 0 && quality === 'maximum' && !canExport && <p className="collage-quality-warning" role="status">El tamaño supera el límite seguro. Selecciona Compatible para reducir la resolución de salida, sin alterar tus archivos originales.</p>}
+        {items.length > 0 && quality === 'compatible' && exportGeometry.scale < 1 && <p className="collage-quality-warning">Compatible reduce la resolución de salida para evitar problemas de memoria. Máxima conserva más detalle cuando el tamaño lo permite.</p>}
       </section>
 
       <section className="collage-manage-section" aria-label="Editar y ordenar imágenes">
@@ -238,7 +308,8 @@ export function CollageCreator() {
           <button type="button" className="collage-text-button" disabled={busy || !recentAvailable} onClick={() => void repeatLast()}><RotateCcw size={16} /> Repetir última{recentName ? ': ' + shortName(recentName) : ''}</button>
           <button type="button" className="collage-text-button collage-danger" disabled={busy || !items.length} onClick={() => void clearAll()}><Trash2 size={15} /> Vaciar collage</button>
         </div>
-        {items.length > 0 ? <div className="collage-items-grid">{items.map((item, index) => <article className="collage-item" key={item.id}>
+        {items.length > 0 ? <div className="collage-items-grid">{items.map((item, index) => <article className={'collage-item' + (draggingId === item.id ? ' is-dragging' : '') + (draggingId && dropTargetId === item.id ? ' is-drop-target' : '')} data-collage-id={item.id} key={item.id}>
+          <button type="button" className="collage-drag-handle" disabled={busy || items.length < 2} aria-label={'Arrastrar ' + item.name + ' para cambiar su posición'} onPointerDown={(event) => dragStart(item.id, event)} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragCancel}><GripVertical size={21} /></button>
           <div className="collage-item-thumb" style={{ background: item.background }}><img src={item.url} alt="" /><span>{index + 1}</span></div>
           <div className="collage-item-details">
             <strong title={item.name}>{shortName(item.name)}</strong>
@@ -260,6 +331,6 @@ export function CollageCreator() {
       <div className="collage-info"><Upload size={17} /><span>Se guarda automáticamente en el navegador de este dispositivo mediante IndexedDB y localStorage. Las imágenes no se suben a ningún servidor. La última imagen añadida se puede recuperar.</span></div>
       {feedback && <div className={'collage-feedback ' + feedback.kind} role="status">{feedback.text}</div>}
     </div>
-    <div className="collage-mobile-actions" aria-label="Acciones del collage"><button type="button" className="collage-btn collage-btn-secondary" disabled={busy} onClick={() => pickerRef.current?.click()}><ImagePlus size={18} /> Añadir</button><button type="button" className="collage-btn collage-btn-primary" disabled={busy || items.length === 0} onClick={() => void exportPng()}><Download size={18} /> {working === 'exporting' ? 'Exportando…' : 'Exportar PNG'}</button></div>
+    <div className="collage-mobile-actions" aria-label="Acciones del collage"><button type="button" className="collage-btn collage-btn-secondary" disabled={busy} onClick={() => pickerRef.current?.click()}><ImagePlus size={18} /> Añadir</button><button type="button" className="collage-btn collage-btn-primary" disabled={busy || !canExport} onClick={() => void exportPng()}><Download size={18} /> {working === 'exporting' ? 'Exportando…' : 'Exportar PNG'}</button></div>
   </main>
 }
