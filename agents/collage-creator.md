@@ -9,9 +9,10 @@
 - Add one or many image files from the native phone gallery/file picker (`image/*`, multiple).
 - Preview as a horizontally scrollable **single strip**, not a vertical/grid collage, regardless of the responsive editor layout.
 - Add, remove, reorder with left/right buttons; choose each tile's underlying **black** or **white** background.
-- Preserve artwork without cropping or applying filters. The source image is `object-fit: contain` in preview and drawn with equivalent contain math on PNG export.
-- Produce a single PNG with white outer margin and consistent white gutters, solid independent panel backgrounds, and count-derived output dimensions.
-- Export dynamically for N panels; `getCollageGeometry()` caps export at 8192 pixels wide and 16 million pixels total to reduce out-of-memory failures on phones.
+- Preserve artwork without cropping, stretching or applying filters. All panels have one shared image height, with each panel width determined by the original source aspect ratio (portrait images narrower; landscape images wider). **Never** use fixed-width tiles, letterboxing, or `contain` inside an artificially wide tile.
+- Transparent source pixels reveal that image's independently selected black/white fill. The fill does **not** create sidebars. White exterior margins and white inter-image gaps remain distinct.
+- The horizontal preview and PNG export use the **same aspect-ratio geometry** and proportional margins/gutters. Preview scrolls; export includes all images.
+- Export dynamically for N panels; `getCollageGeometry(images)` scales the full layout to at most 8192 pixels wide and 16 million pixels total to reduce out-of-memory failures on phones.
 - Store original Blobs in IndexedDB via the existing `src/utils/mediaStorage.ts` helpers. Never serialize binaries/base64 to localStorage.
 - Store the ordered manifest and selected backgrounds in localStorage under `gas3d.collage.manifest.v1`.
 - Keep a separate `collage:last` original Blob in IndexedDB and saved last filename in the manifest. “Repetir última” works even after removing the last panel.
@@ -42,8 +43,8 @@ Browsers do not guarantee support for every `image/*` encoding. The source must 
 
 - [x] Added independent GAS3D route and tool selector.
 - [x] Multi-image mobile gallery picker, remove and reordering.
-- [x] Black/white fill per panel and noncropped art.
-- [x] One horizontal PNG, count-derived geometry with mobile memory caps.
+- [x] Black/white fill only beneath transparent pixels; uncropped art with dynamic panel widths at a common height.
+- [x] One horizontal PNG, source-aspect-ratio geometry with mobile memory caps and matching preview proportions.
 - [x] IndexedDB source + last image, localStorage ordered manifest.
 - [x] Mobile responsive classes and thumb-reachable actions.
 - [x] Static QA assertions included in project build.
