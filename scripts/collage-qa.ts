@@ -62,6 +62,7 @@ check(page.includes('changeBackground(item.id') && page.includes("background ===
 check(page.includes('move(index, -1)') && page.includes('move(index, 1)') && page.includes('remove(item.id)'), 'Accessible reordering/removal actions missing')
 check(page.includes('saveCollageManifest'), 'Ordered collage manifest persistence missing')
 check(!page.includes('Repetir última') && !page.includes('repeatLast()') && !page.includes('storeLastCollageImage'), 'Unwanted repeat-last action or redundant copy storage remains')
+check(!page.includes('La última imagen añadida se puede recuperar.'), 'Outdated repeat-last help text should be removed')
 check(page.includes("aria-label={'Fondo negro de ' + item.name}") && page.includes("aria-label={'Fondo blanco de ' + item.name}"), 'Color-only swatches must keep accessible black/white descriptions')
 check(!page.includes('className="collage-swatch black" /> Negro') && !page.includes('className="collage-swatch white" /> Blanco'), 'Visible color label text must be removed')
 check(page.includes('renderCollage(items, quality)'), 'PNG export quality disconnected from renderer')

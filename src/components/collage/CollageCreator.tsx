@@ -370,7 +370,7 @@ export function CollageCreator() {
           <p className="collage-muted">{hydrating ? 'Cargando…' : 'Los controles de fondo y orden aparecerán aquí al añadir imágenes.'}</p>}
       </section>
 
-      <div className="collage-info"><Upload size={17} /><span>Se guarda automáticamente en el navegador de este dispositivo mediante IndexedDB y localStorage. Las imágenes no se suben a ningún servidor. La última imagen añadida se puede recuperar.</span></div>
+      <div className="collage-info"><Upload size={17} /><span>Se guarda automáticamente en el navegador de este dispositivo mediante IndexedDB y localStorage. Las imágenes no se suben a ningún servidor. Puedes sustituir cualquiera desde el icono de recarga.</span></div>
       {feedback && <div className={'collage-feedback ' + feedback.kind} role="status">{feedback.text}</div>}
     </div>
     <div className="collage-mobile-actions" aria-label="Acciones del collage"><button type="button" className="collage-btn collage-btn-secondary" disabled={busy} onClick={() => pickerRef.current?.click()}><ImagePlus size={18} /> Añadir</button><button type="button" className="collage-btn collage-btn-primary" disabled={busy || !canExport} onClick={() => void exportPng()}><Download size={18} /> {working === 'exporting' ? 'Exportando…' : 'Exportar PNG'}</button></div>
