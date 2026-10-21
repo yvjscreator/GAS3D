@@ -389,22 +389,25 @@ export function CollageCreator() {
           <button type="button" className="collage-text-button collage-danger" disabled={busy || !items.length} onClick={() => void clearAll()}><Trash2 size={15} /> Vaciar collage</button>
         </div>
         {items.length > 0 ? <div className="collage-items-grid">{items.map((item, index) => <article className={'collage-item' + (draggingId === item.id ? ' is-dragging' : '') + (draggingId && dropTargetId === item.id ? ' is-drop-target' : '')} data-collage-id={item.id} key={item.id}>
-          <button type="button" className="collage-drag-handle" disabled={busy || items.length < 2} aria-label={'Arrastrar ' + item.name + ' para cambiar su posición'} onPointerDown={(event) => dragStart(item.id, event)} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragCancel}><GripVertical size={21} /></button>
-          <button type="button" className="collage-item-thumb" style={{ background: item.background }} disabled={busy} onClick={(event) => activatePhoto(item.id, event.detail)} aria-label={'Doble toque para sustituir ' + item.name + ' desde la galería'} title="Doble toque para cambiar la foto"><img src={item.url} alt="" draggable={false} /><span>{index + 1}</span><RefreshCw className="collage-photo-replace-icon" size={14} aria-hidden="true" /></button>
+          <div className="collage-item-order" role="group" aria-label={'Orden y eliminación de ' + item.name}>
+            <button type="button" disabled={busy || index === 0} onClick={() => move(index, -1)} aria-label={'Mover ' + item.name + ' a la posición anterior'}><ArrowLeft className="collage-order-horizontal" size={18} /><ArrowUp className="collage-order-vertical" size={18} /></button>
+            <button type="button" className="collage-drag-handle collage-mobile-drag" disabled={busy || items.length < 2} aria-label={'Arrastrar ' + item.name + ' para cambiar su posición'} onPointerDown={(event) => dragStart(item.id, event)} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragCancel}><GripVertical size={21} /></button>
+            <button type="button" disabled={busy || index === items.length - 1} onClick={() => move(index, 1)} aria-label={'Mover ' + item.name + ' a la posición siguiente'}><ArrowRight className="collage-order-horizontal" size={18} /><ArrowDown className="collage-order-vertical" size={18} /></button>
+            <button type="button" className="collage-item-remove" disabled={busy} onClick={() => remove(item.id)} aria-label={'Eliminar ' + item.name}><Trash2 size={17} /></button>
+          </div>
+          <button type="button" className="collage-drag-handle collage-desktop-drag" disabled={busy || items.length < 2} aria-label={'Arrastrar ' + item.name + ' para cambiar su posición'} onPointerDown={(event) => dragStart(item.id, event)} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragCancel}><GripVertical size={21} /></button>
+          <div className="collage-item-thumb" style={{ background: item.background }}>
+            <button type="button" className="collage-item-photo" disabled={busy} onClick={(event) => activatePhoto(item.id, event.detail)} aria-label={'Doble toque para sustituir ' + item.name} title="Doble toque para cambiar la foto"><img src={item.url} alt="" draggable={false} /></button>
+            <span>{index + 1}</span>
+            <button type="button" className="collage-photo-replace" disabled={busy} onClick={() => requestReplacement(item.id)} aria-label={'Sustituir ' + item.name + ' desde la galería'} title="Cambiar foto"><RefreshCw size={18} aria-hidden="true" /></button>
+          </div>
           <div className="collage-item-details">
             <strong title={item.name}>{shortName(item.name)}</strong>
-            <span>Dos toques en la foto para sustituirla</span>
-            <button type="button" className="collage-replace-link" disabled={busy} onClick={() => requestReplacement(item.id)}>Cambiar foto</button>
             <span>Fondo del panel</span>
             <div className="collage-background-choice" role="group" aria-label={'Fondo de ' + item.name}>
               <button type="button" className={item.background === 'black' ? 'active' : ''} aria-pressed={item.background === 'black'} onClick={() => changeBackground(item.id, 'black')}><i className="collage-swatch black" /> Negro</button>
               <button type="button" className={item.background === 'white' ? 'active' : ''} aria-pressed={item.background === 'white'} onClick={() => changeBackground(item.id, 'white')}><i className="collage-swatch white" /> Blanco</button>
             </div>
-          </div>
-          <div className="collage-item-order" aria-label="Orden de la imagen">
-            <button type="button" disabled={busy || index === 0} onClick={() => move(index, -1)} aria-label={'Mover ' + item.name + ' a la posición anterior'}><ArrowLeft className="collage-order-horizontal" size={18} /><ArrowUp className="collage-order-vertical" size={18} /></button>
-            <button type="button" disabled={busy || index === items.length - 1} onClick={() => move(index, 1)} aria-label={'Mover ' + item.name + ' a la posición siguiente'}><ArrowRight className="collage-order-horizontal" size={18} /><ArrowDown className="collage-order-vertical" size={18} /></button>
-            <button type="button" className="collage-item-remove" disabled={busy} onClick={() => remove(item.id)} aria-label={'Eliminar ' + item.name}><Trash2 size={17} /></button>
           </div>
         </article>)}</div> :
           <p className="collage-muted">{hydrating ? 'Cargando…' : 'Los controles de fondo y orden aparecerán aquí al añadir imágenes.'}</p>}
