@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run qa:images && npm run qa:roadmap",
+    "build": "tsc -b && vite build && npm run qa:images && npm run qa:roadmap && npm run qa:collage",
     "lint": "eslint .",
     "qa:images": "esbuild scripts/images-print-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-images-print-qa.mjs && node /tmp/gas3d-images-print-qa.mjs",
     "qa:roadmap": "esbuild scripts/roadmap-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-roadmap-qa.mjs && node /tmp/gas3d-roadmap-qa.mjs",
-    "subtitles:api": "python -m uvicorn subtitle_engine.app:app --app-dir services --host 127.0.0.1 --port 8787"
+    "subtitles:api": "python -m uvicorn subtitle_engine.app:app --app-dir services --host 127.0.0.1 --port 8787",
+    "qa:collage": "esbuild scripts/collage-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-collage-qa.mjs && node /tmp/gas3d-collage-qa.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
