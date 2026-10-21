@@ -371,7 +371,7 @@ export function CollageCreator() {
                 }}><img src={item.url} alt="" draggable={false} /></div>
               })}
             </div>
-          </div>
+          </div>}
         <div className="collage-preview-meta"><span>{items.length ? exportGeometry.width + ' × ' + exportGeometry.height + ' px · PNG' : 'Sin imágenes'}</span><span>{items.length > 1 ? 'Collage completo · Reordena las fotos abajo' : 'Los diseños nunca se recortan'}</span></div>
         <div className="collage-quality" role="group" aria-label="Resolución de exportación PNG">
           <strong>Resolución de descarga</strong>
