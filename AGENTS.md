@@ -55,10 +55,10 @@ Before changing `src/components/collage/**`, `src/app/App.tsx`, or shared media 
 
 - Optimize the phone workflow first. Images must be addable via the mobile gallery picker, with touch controls sized for fingers (at least 44px actions where feasible), while desktop uses meaningful columns instead of endless single-column rows.
 - The ONLY composition layout currently supported is a single horizontal row of N images in upload/reordered sequence. The exported image must contain every panel, even if the phone preview scrolls horizontally.
-- Always preserve original source files and full artwork: display/compose with `contain`, never crop. Transparent pixels must reveal that panel's configurable black or white fill; white margins between panels are independent.
+- Always preserve original source files and full artwork: use **one common image height and individual dynamic widths from each source aspect ratio** in both preview and PNG. Never crop, stretch, or use fixed-width contain/letterbox tiles. Transparent pixels reveal the selected black or white fill; it must never form artificial sidebars. White margins between panels are independent.
 - Image Blob bytes belong in IndexedDB; localStorage holds only serializable metadata/order/background selection and last-upload reference. The last uploaded image must remain recoverable even if its panel is removed.
 - Removing or reordering one panel must not erase unrelated uploaded images. Clean revoked object URLs and obsolete IndexedDB records. Avoid network requests for personal artwork.
-- Preserve PNG export and test count-based output geometry, mobile canvas size caps, mobile layout breakpoints and restoration behavior whenever modifying renderer or persistence.
+- Preserve PNG export and test aspect-ratio-based output geometry (portrait/square/landscape), counts, mobile canvas size caps, preview/export parity, mobile layout breakpoints and restoration behavior whenever modifying renderer or persistence.
 - Do not claim iOS/Android visual validation unless it actually ran on a device/browser.
 
 ### General safety for repository edits

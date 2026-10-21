@@ -10,10 +10,10 @@ import {
   storeLastCollageImage,
   type CollageBackground,
 } from './collageStorage'
-import { getCollageGeometry, renderCollage } from './collageRenderer'
+import { getCollageGeometry, getImageDimensions, renderCollage } from './collageRenderer'
 import './collageCreator.css'
 
-type CollageItem = { id: string; name: string; background: CollageBackground; url: string }
+type CollageItem = { id: string; name: string; background: CollageBackground; url: string; width: number; height: number }
 type Feedback = { kind: 'success' | 'error'; text: string } | null
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024
@@ -32,7 +32,7 @@ export function CollageCreator() {
   const [recentAvailable, setRecentAvailable] = useState(false)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const busy = hydrating || working !== null
-  const exportGeometry = getCollageGeometry(items.length)
+  const exportGeometry = getCollageGeometry(items)
 
   useEffect(() => {
     let active = true
@@ -40,20 +40,28 @@ export function CollageCreator() {
     const restore = async () => {
       const manifest = readCollageManifest()
       const restored: CollageItem[] = []
+      let unreadable = 0
       try {
         for (const entry of manifest.items) {
           const file = await loadCollageImage(entry.id)
           if (!file) continue
           const url = URL.createObjectURL(file)
-          if (!active) { URL.revokeObjectURL(url); return }
-          urls.add(url)
-          restored.push({ ...entry, url })
+          try {
+            const dimensions = await getImageDimensions(url)
+            if (!active) { URL.revokeObjectURL(url); return }
+            urls.add(url)
+            restored.push({ ...entry, ...dimensions, url })
+          } catch {
+            URL.revokeObjectURL(url)
+            unreadable++
+          }
         }
         const recent = await loadLastCollageImage()
         if (!active) return
         setItems(restored)
         setRecentName(manifest.lastName)
         setRecentAvailable(Boolean(recent))
+        if (unreadable) setFeedback({ kind: 'error', text: unreadable + ' imagen(es) guardadas no se pudieron leer en este navegador.' })
       } catch {
         if (active) {
           setItems(restored)
@@ -87,16 +95,22 @@ export function CollageCreator() {
       for (const file of files) {
         if (!supported(file) || file.size > MAX_FILE_BYTES) { rejected++; continue }
         const id = makeId()
+        let url: string | null = null
         try {
+          url = URL.createObjectURL(file)
+          const dimensions = await getImageDimensions(url)
           // Keep original source bytes in IndexedDB, never in localStorage.
           await storeCollageImage(id, file)
-          const url = URL.createObjectURL(file)
-          activeUrls.current.add(url)
-          imported.push({ id, name: file.name, background: 'black', url })
           await storeLastCollageImage(file)
+          activeUrls.current.add(url)
+          imported.push({ id, name: file.name, background: 'black', url, ...dimensions })
           setRecentName(file.name)
           setRecentAvailable(true)
-        } catch { rejected++ }
+        } catch {
+          if (url) URL.revokeObjectURL(url)
+          await removeCollageImage(id).catch(() => undefined)
+          rejected++
+        }
       }
       if (imported.length) setItems((current) => [...current, ...imported])
       if (rejected) setFeedback({ kind: 'error', text: rejected + ' archivo(s) no se pudieron añadir. Usa imágenes válidas de hasta 60 MB y revisa el espacio del dispositivo.' })
@@ -120,10 +134,17 @@ export function CollageCreator() {
       const file = await loadLastCollageImage()
       if (!file) throw new Error('La última imagen ya no está disponible en este dispositivo.')
       const id = makeId()
-      await storeCollageImage(id, file)
       const url = URL.createObjectURL(file)
-      activeUrls.current.add(url)
-      setItems((current) => [...current, { id, name: recentName ?? 'Última imagen', background: 'black', url }])
+      try {
+        const dimensions = await getImageDimensions(url)
+        await storeCollageImage(id, file)
+        activeUrls.current.add(url)
+        setItems((current) => [...current, { id, name: recentName ?? 'Última imagen', background: 'black', url, ...dimensions }])
+      } catch (error) {
+        URL.revokeObjectURL(url)
+        await removeCollageImage(id).catch(() => undefined)
+        throw error
+      }
     } catch (error) {
       setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'No se pudo recuperar la última imagen.' })
     } finally { setWorking(null) }
@@ -206,7 +227,7 @@ export function CollageCreator() {
         {hydrating ? <div className="collage-empty"><Images size={30} /><strong>Recuperando imágenes guardadas…</strong></div> :
           items.length === 0 ? <button type="button" className="collage-empty" onClick={() => pickerRef.current?.click()}><ImagePlus size={32} /><strong>Comienza con tus imágenes</strong><span>Puedes elegir varias fotos de tu galería al mismo tiempo.</span></button> :
           <div className="collage-scroll" tabIndex={0} aria-label="Desliza horizontalmente para explorar el collage">
-            <div className="collage-preview-board">{items.map((item, index) => <div className="collage-preview-tile" key={item.id} style={{ backgroundColor: item.background }}><img src={item.url} alt={'Panel ' + (index + 1) + ': ' + item.name} /><span className="collage-preview-number">{index + 1}</span></div>)}</div>
+            <div className="collage-preview-board">{items.map((item, index) => <div className="collage-preview-tile" key={item.id} style={{ backgroundColor: item.background, aspectRatio: `${item.width} / ${item.height}` }}><img src={item.url} alt={'Panel ' + (index + 1) + ': ' + item.name} /><span className="collage-preview-number">{index + 1}</span></div>)}</div>
           </div>}
         <div className="collage-preview-meta"><span>{items.length ? exportGeometry.width + ' × ' + exportGeometry.height + ' px · PNG' : 'Sin imágenes'}</span><span>{items.length > 1 ? 'Desliza para ver el resto →' : 'Los diseños nunca se recortan'}</span></div>
       </section>
