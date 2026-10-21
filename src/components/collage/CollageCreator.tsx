@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, ImagePlus, Images, Layers3, GripVertical, RotateCcw, Trash2, Upload, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, ImagePlus, Images, Layers3, GripVertical, Trash2, Upload, RefreshCw } from 'lucide-react'
 import {
   loadCollageImage,
-  loadLastCollageImage,
   readCollageManifest,
   removeCollageImage,
   saveCollageManifest,
   storeCollageImage,
-  storeLastCollageImage,
   type CollageBackground,
 } from './collageStorage'
 import { getCollageGeometry, getImageDimensions, renderCollage, type CollageQuality } from './collageRenderer'
@@ -33,8 +31,6 @@ export function CollageCreator() {
   const [items, setItems] = useState<CollageItem[]>([])
   const [hydrating, setHydrating] = useState(true)
   const [working, setWorking] = useState<'adding' | 'exporting' | null>(null)
-  const [recentName, setRecentName] = useState<string | null>(null)
-  const [recentAvailable, setRecentAvailable] = useState(false)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const [quality, setQuality] = useState<CollageQuality>('maximum')
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -67,11 +63,8 @@ export function CollageCreator() {
             unreadable++
           }
         }
-        const recent = await loadLastCollageImage()
         if (!active) return
         setItems(restored)
-        setRecentName(manifest.lastName)
-        setRecentAvailable(Boolean(recent))
         if (unreadable) setFeedback({ kind: 'error', text: unreadable + ' imagen(es) guardadas no se pudieron leer en este navegador.' })
       } catch {
         if (active) {
@@ -91,10 +84,10 @@ export function CollageCreator() {
   }, [])
 
   useEffect(() => {
-    if (!hydrating && !saveCollageManifest(items.map(({ id, name, background }) => ({ id, name, background })), recentName)) {
+    if (!hydrating && !saveCollageManifest(items.map(({ id, name, background }) => ({ id, name, background })), null)) {
       setFeedback({ kind: 'error', text: 'No se pudieron guardar las preferencias. Revisa el espacio o permisos del navegador.' })
     }
-  }, [items, hydrating, recentName])
+  }, [items, hydrating])
 
   const acceptFiles = async (files: File[]) => {
     if (busy || files.length === 0) return
@@ -112,11 +105,8 @@ export function CollageCreator() {
           const dimensions = await getImageDimensions(url)
           // Keep original source bytes in IndexedDB, never in localStorage.
           await storeCollageImage(id, file)
-          await storeLastCollageImage(file)
           activeUrls.current.add(url)
           imported.push({ id, name: file.name, background: 'black', url, ...dimensions })
-          setRecentName(file.name)
-          setRecentAvailable(true)
         } catch {
           if (url) URL.revokeObjectURL(url)
           await removeCollageImage(id).catch(() => undefined)
@@ -191,44 +181,13 @@ export function CollageCreator() {
       URL.revokeObjectURL(current.url)
       replacementUrl = null
 
-      try {
-        await storeLastCollageImage(file)
-        setRecentName(file.name)
-        setRecentAvailable(true)
-        setFeedback({ kind: 'success', text: 'Imagen sustituida sin cambiar su posición ni su fondo.' })
-      } catch {
-        setFeedback({ kind: 'error', text: 'Imagen sustituida, pero no se pudo actualizar la opción Repetir última.' })
-      }
+      setFeedback({ kind: 'success', text: 'Imagen sustituida sin cambiar su posición ni su fondo.' })
     } catch {
       if (replacementUrl) URL.revokeObjectURL(replacementUrl)
       setFeedback({ kind: 'error', text: 'No se pudo sustituir la foto. Se conservó la imagen anterior.' })
     } finally {
       setWorking(null)
     }
-  }
-
-  const repeatLast = async () => {
-    if (busy) return
-    setWorking('adding')
-    setFeedback(null)
-    try {
-      const file = await loadLastCollageImage()
-      if (!file) throw new Error('La última imagen ya no está disponible en este dispositivo.')
-      const id = makeId()
-      const url = URL.createObjectURL(file)
-      try {
-        const dimensions = await getImageDimensions(url)
-        await storeCollageImage(id, file)
-        activeUrls.current.add(url)
-        setItems((current) => [...current, { id, name: recentName ?? 'Última imagen', background: 'black', url, ...dimensions }])
-      } catch (error) {
-        URL.revokeObjectURL(url)
-        await removeCollageImage(id).catch(() => undefined)
-        throw error
-      }
-    } catch (error) {
-      setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'No se pudo recuperar la última imagen.' })
-    } finally { setWorking(null) }
   }
 
   const changeBackground = (id: string, background: CollageBackground) => {
@@ -383,10 +342,8 @@ export function CollageCreator() {
       </section>
 
       <section className="collage-manage-section" aria-label="Editar y ordenar imágenes">
-        <div className="collage-section-heading"><div><span className="collage-section-number">02</span><h2>Imágenes y fondos</h2></div><span>Negro o blanco por imagen</span></div>
-        <div className="collage-utility-bar">
-          <button type="button" className="collage-text-button" disabled={busy || !recentAvailable} onClick={() => void repeatLast()}><RotateCcw size={16} /> Repetir última{recentName ? ': ' + shortName(recentName) : ''}</button>
-          <button type="button" className="collage-text-button collage-danger" disabled={busy || !items.length} onClick={() => void clearAll()}><Trash2 size={15} /> Vaciar collage</button>
+        <div className="collage-section-heading"><div><span className="collage-section-number">02</span><h2>Imágenes y fondos</h2></div>
+          <button type="button" className="collage-text-button collage-danger collage-clear-button" disabled={busy || !items.length} onClick={() => void clearAll()}><Trash2 size={15} /> Vaciar collage</button>
         </div>
         {items.length > 0 ? <div className="collage-items-grid">{items.map((item, index) => <article className={'collage-item' + (draggingId === item.id ? ' is-dragging' : '') + (draggingId && dropTargetId === item.id ? ' is-drop-target' : '')} data-collage-id={item.id} key={item.id}>
           <div className="collage-item-order" role="group" aria-label={'Orden y eliminación de ' + item.name}>
@@ -405,8 +362,8 @@ export function CollageCreator() {
             <strong title={item.name}>{shortName(item.name)}</strong>
             <span>Fondo del panel</span>
             <div className="collage-background-choice" role="group" aria-label={'Fondo de ' + item.name}>
-              <button type="button" className={item.background === 'black' ? 'active' : ''} aria-pressed={item.background === 'black'} onClick={() => changeBackground(item.id, 'black')}><i className="collage-swatch black" /> Negro</button>
-              <button type="button" className={item.background === 'white' ? 'active' : ''} aria-pressed={item.background === 'white'} onClick={() => changeBackground(item.id, 'white')}><i className="collage-swatch white" /> Blanco</button>
+              <button type="button" className={item.background === 'black' ? 'active' : ''} aria-label={'Fondo negro de ' + item.name} title="Fondo negro" aria-pressed={item.background === 'black'} onClick={() => changeBackground(item.id, 'black')}><i className="collage-swatch black" aria-hidden="true" /></button>
+              <button type="button" className={item.background === 'white' ? 'active' : ''} aria-label={'Fondo blanco de ' + item.name} title="Fondo blanco" aria-pressed={item.background === 'white'} onClick={() => changeBackground(item.id, 'white')}><i className="collage-swatch white" aria-hidden="true" /></button>
             </div>
           </div>
         </article>)}</div> :

@@ -61,7 +61,6 @@
 .collage-empty strong { color:#e0ebf4; font-size:14px; }
 .collage-empty span { max-width:330px; color:#96aabc; font-size:12px; line-height:1.55; }
 button.collage-empty:hover { background:#172636; border-color:#80bce4; }
-.collage-utility-bar { display:flex; align-items:center; justify-content:space-between; gap:9px; flex-wrap:wrap; }
 .collage-text-button {
   display:inline-flex; align-items:center; gap:7px; padding:8px 10px;
   min-height:39px; max-width:100%; color:#b8d7eb; background:#162533;
@@ -69,6 +68,7 @@ button.collage-empty:hover { background:#172636; border-color:#80bce4; }
 }
 .collage-text-button:hover:not(:disabled) { background:#213a50; }
 .collage-text-button.collage-danger { color:#dea7ac; background:#2b1c24; border-color:#60414c; }
+.collage-clear-button { justify-self:end; flex:0 0 auto; min-height:35px; padding:5px 9px; font-size:10px; }
 .collage-items-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,375px),1fr)); gap:10px; }
 .collage-quality { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 .collage-quality strong { margin-right:5px; color:#c7d9e7; font-size:11px; }
@@ -98,15 +98,15 @@ button.collage-empty:hover { background:#172636; border-color:#80bce4; }
 .collage-item-details { display:grid; align-content:center; gap:8px; min-width:0; }
 .collage-item-details>strong { overflow:hidden; color:#e8f0f8; font-size:11px; white-space:nowrap; text-overflow:ellipsis; }
 .collage-item-details>span { color:#8ba0b4; font-size:10px; }
-.collage-background-choice { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; }
+.collage-background-choice { display:flex; align-items:center; justify-content:flex-start; gap:8px; }
 .collage-background-choice button {
-  display:inline-flex; align-items:center; justify-content:center; gap:5px;
-  min-width:0; min-height:37px; padding:5px;
+  display:grid; place-items:center; flex:0 0 auto;
+  width:43px; height:43px; min-width:0; min-height:0; padding:6px;
   color:#9bb0c4; background:#101923; border:1px solid #334657;
-  border-radius:6px; font-size:10px;
+  border-radius:7px; cursor:pointer;
 }
-.collage-background-choice button.active { color:#e6f5ff; background:#235074; border-color:#64b5e6; }
-.collage-swatch { display:inline-block; flex:0 0 auto; width:13px; height:13px; border:1px solid #8a9aa8; border-radius:3px; }
+.collage-background-choice button.active { color:#e6f5ff; background:#235074; border-color:#64b5e6; box-shadow:inset 0 0 0 1px #64b5e6; }
+.collage-swatch { display:block; width:22px; height:22px; border:1px solid #8a9aa8; border-radius:4px; }
 .collage-swatch.black { background:#000; }
 .collage-swatch.white { background:#fff; }
 .collage-item-order { display:grid; grid-column:4; grid-row:1; align-content:center; gap:5px; }
@@ -158,24 +158,35 @@ button.collage-empty:hover { background:#172636; border-color:#80bce4; }
   .collage-section-heading>span { font-size:9px; }
   .collage-preview-meta { font-size:9px; }
   .collage-empty { min-height:210px; }
-  .collage-utility-bar { align-items:stretch; }
-  .collage-text-button { min-height:44px; }
-  .collage-items-grid { grid-template-columns:minmax(0,1fr); }
-  .collage-item { grid-template-columns:42px 70px minmax(0,1fr); column-gap:8px; row-gap:0; padding:9px; }
+  .collage-manage-section .collage-section-heading { gap:5px; }
+  .collage-manage-section .collage-section-heading>div { gap:6px; }
+  .collage-clear-button { min-height:32px; padding:5px 8px; font-size:10px; gap:5px; }
+  .collage-items-grid { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .collage-item {
+    grid-template-columns:34px minmax(84px, min(34%, 118px)) minmax(0,1fr);
+    column-gap:8px; row-gap:0; padding:8px; align-items:center;
+  }
   .collage-desktop-drag { display:none; }
   .collage-item-order {
     grid-column:1; grid-row:1; grid-template-columns:minmax(0,1fr);
-    align-self:stretch; align-content:center; gap:4px;
+    align-self:center; align-content:center; gap:3px;
   }
-  .collage-item-order button { width:100%; min-width:0; min-height:41px; height:41px; padding:0; }
+  .collage-item-order button {
+    width:34px; min-width:0; min-height:34px; height:34px; padding:0; border-radius:6px;
+  }
+  .collage-item-order button svg { width:16px; height:16px; }
   .collage-item-order .collage-mobile-drag {
-    display:grid !important; width:100%; min-height:41px; height:41px;
+    display:grid !important; width:34px; min-height:34px; height:34px;
   }
-  .collage-item-thumb { grid-column:2; grid-row:1; }
+  .collage-item-thumb { grid-column:2; grid-row:1; width:100%; height:auto; aspect-ratio:4 / 5; }
   .collage-item-details { grid-column:3; grid-row:1; gap:10px; }
+  .collage-item-details>strong { font-size:10px; }
   .collage-order-horizontal { display:none; }
   .collage-order-vertical { display:block; }
-  .collage-background-choice button { min-height:44px; }
+  .collage-background-choice { gap:7px; }
+  .collage-background-choice button { width:38px; height:38px; padding:5px; }
+  .collage-swatch { width:22px; height:22px; }
+  .collage-photo-replace { width:30px; height:30px; }
   .collage-mobile-actions {
     position:fixed; z-index:1100; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);
     gap:10px; left:0; right:0; bottom:0;

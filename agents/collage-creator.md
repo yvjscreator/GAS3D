@@ -16,7 +16,7 @@
 - Export dynamically for N panels. **Máxima** is the default and uses the tallest original pixel height without automatic downscaling, up to 16384px per axis or 80 million pixels. **Compatible** explicitly scales output to 8192px per axis and 16 million pixels. The UI previews resulting dimensions and warns of any reduction. Canvas cannot guarantee pixel-identical color or detail when differing image heights require resampling.
 - Store original Blobs in IndexedDB via the existing `src/utils/mediaStorage.ts` helpers. Never serialize binaries/base64 to localStorage.
 - Store the ordered manifest and selected backgrounds in localStorage under `gas3d.collage.manifest.v1`.
-- Keep a separate `collage:last` original Blob in IndexedDB and saved last filename in the manifest. “Repetir última” works even after removing the last panel.
+- Do not write duplicate `collage:last` media or expose a “Repetir última” action. Existing saved manifests and source Blobs remain readable for backwards compatibility.
 - No server upload, automatic background removal, additional composition modes, or cloud sync.
 
 ## Files
@@ -29,7 +29,7 @@
 
 ## Responsive contract
 
-- Phone: touch-friendly gallery picker and sticky bottom actions; each compact image card places four vertical actions in its left column (up, drag, down, delete), with the photo and background colors on the same row. Refresh icon on the thumbnail opens the image picker with a single tap; double tap on the photo is also supported. Preview fits the entire strip without horizontal scrolling.
+- Phone: touch-friendly gallery picker and sticky bottom actions; each compact image card places four small vertical controls in its left column (up, drag, down, delete). Make the thumbnail significantly larger using space recovered from icon-only black/white background swatches with accessible button labels, keeping the controls adjacent to the image. Refresh icon on the thumbnail opens the picker with a single tap; double tap on the photo is also supported. The only clearing control stays next to the section heading. No “Repetir última” control. Preview fits the entire strip without horizontal scrolling.
 - Medium: two or more control cards per row when practical.
 - Desktop: multi-column management controls, full-width fitted read-only image-strip preview, and drag ordering in management cards.
 - Respect `agents/ui-layout-guidelines.md`, without confusing a one-row **export format** with a one-column **editor layout**.
@@ -46,7 +46,7 @@ Browsers do not guarantee support for every `image/*` encoding. The source must 
 - [x] Multi-image mobile gallery picker, compact four-action vertical mobile toolbar, management-only drag, vertical mobile arrows and double-tap/single-icon photo replacement.
 - [x] Black/white fill only beneath transparent pixels; uncropped art with dynamic panel widths at a common height.
 - [x] One horizontal PNG, native high-resolution/compatible modes, explicit canvas caps and matching preview proportions.
-- [x] IndexedDB source + last image, localStorage ordered manifest.
+- [x] IndexedDB source originals, backwards-compatible localStorage ordered manifest (without duplicate last-image writes).
 - [x] Mobile responsive classes and thumb-reachable actions.
 - [x] Static QA assertions included in project build.
 - [ ] Actual phone Safari/Chrome visual and persistent-storage smoke test.
