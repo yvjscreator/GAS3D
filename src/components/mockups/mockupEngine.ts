@@ -1,5 +1,5 @@
 /** Deterministic, browser-local garment-photo compositor. */
-export type ViewName = 'front' | 'back'
+export type ViewName = 'front' | 'back' | 'left' | 'right' | 'leftSleeve' | 'rightSleeve'
 export type Point = { x: number; y: number }
 export type Quad = [Point, Point, Point, Point]
 export type Placement = {
@@ -97,7 +97,7 @@ function warpedArtwork(layer:CanvasRenderingContext2D, image:MockImage, quad:Qua
 }
 
 /** Same renderer is used for responsive preview and native-resolution export. */
-export function renderGarment(canvas:HTMLCanvasElement,photo:MockImage,art:MockImage|null,placement:Placement,maxEdge:number){
+export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,layers:ReadonlyArray<{art:MockImage;placement:Placement}>,maxEdge:number){
   const ratio=Math.min(1,maxEdge/Math.max(photo.width,photo.height))
   const width=Math.max(1,Math.round(photo.width*ratio))
   const height=Math.max(1,Math.round(photo.height*ratio))
@@ -106,7 +106,7 @@ export function renderGarment(canvas:HTMLCanvasElement,photo:MockImage,art:MockI
   if(!ctx)throw new Error('No se pudo abrir el lienzo de mockups.')
   ctx.clearRect(0,0,width,height)
   ctx.drawImage(photo.bitmap,0,0,width,height)
-  if(!art)return
+  for(const {art,placement} of layers){
   const quad=placementQuad({width,height},art,placement)
   const x=bound(Math.floor(Math.min(...quad.map(p=>p.x))*width)-2,0,width)
   const y=bound(Math.floor(Math.min(...quad.map(p=>p.y))*height)-2,0,height)
@@ -149,6 +149,26 @@ export function renderGarment(canvas:HTMLCanvasElement,photo:MockImage,art:MockI
   }finally{
     overlay.width=0;overlay.height=0
   }
+  }
+}
+
+export function renderGarment(canvas:HTMLCanvasElement,photo:MockImage,art:MockImage|null,placement:Placement,maxEdge:number){
+  renderGarmentLayers(canvas,photo,art?[{art,placement}]:[],maxEdge)
+}
+
+/** Anchors the diagonally opposite corner while scaling artwork proportionally. */
+export function scaleFromCorner(size:{width:number;height:number},art:{width:number;height:number},origin:Placement,corner:number,p:Point):Placement{
+  const quad=placementQuad(size,art,origin)
+  const opposite=quad[(corner+2)%4]
+  const start=quad[corner]
+  const vx=start.x-opposite.x,vy=start.y-opposite.y
+  const denominator=vx*vx+vy*vy
+  if(denominator<1e-10)return origin
+  const factor=bound(((p.x-opposite.x)*vx+(p.y-opposite.y)*vy)/denominator,.1,6)
+  const width=bound(origin.width*factor,.025,1.5)
+  const scale=width/origin.width
+  return {...origin,width,x:opposite.x+(origin.x-opposite.x)*scale,y:opposite.y+(origin.y-opposite.y)*scale,
+    corners:origin.corners.map(offset=>({x:offset.x*scale,y:offset.y*scale})) as Quad}
 }
 
 export async function canvasPng(canvas:HTMLCanvasElement):Promise<Blob>{
