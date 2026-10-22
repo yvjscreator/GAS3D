@@ -1,5 +1,6 @@
 /** Deterministic, browser-local garment-photo compositor. */
-export type ViewName = 'front' | 'back' | 'left' | 'right' | 'leftSleeve' | 'rightSleeve'
+/** Named garment angles are extensible; each product owns its supported views. */
+export type ViewName = string
 export type Point = { x: number; y: number }
 export type Quad = [Point, Point, Point, Point]
 export type Placement = {
