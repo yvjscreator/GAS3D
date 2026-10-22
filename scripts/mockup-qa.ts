@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { initialPlacement, placementQuad, pointInQuad, restorePlacement, ensurePhotoSize } from '../src/components/mockups/mockupEngine'
+import { initialPlacement, placementQuad, pointInQuad, restorePlacement, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
 
 const source=(path:string)=>readFileSync(path,'utf8')
 const front=initialPlacement('front'),back=initialPlacement('back')
@@ -13,6 +13,22 @@ assert.ok(!pointInQuad({x:0,y:0},quad),'Out-of-zone clicks must not start draggi
 assert.deepEqual(restorePlacement({x:Infinity,width:-9},'back').width,.025)
 assert.doesNotThrow(()=>ensurePhotoSize({width:3000,height:4000}))
 assert.throws(()=>ensurePhotoSize({width:9000,height:1000}))
+const larger=scaleFromCorner(photo,art,front,2,{x:quad[0].x+(quad[2].x-quad[0].x)*1.5,y:quad[0].y+(quad[2].y-quad[0].y)*1.5})
+const enlarged=placementQuad(photo,art,larger)
+assert.ok(larger.width>front.width,'Normal corner drag must grow the artwork proportionally')
+assert.ok(Math.abs(enlarged[0].x-quad[0].x)<1e-7&&Math.abs(enlarged[0].y-quad[0].y)<1e-7,'Opposite corner must stay anchored')
+assert.ok(Math.abs((enlarged[1].x-enlarged[0].x)/(enlarged[3].y-enlarged[0].y)-(quad[1].x-quad[0].x)/(quad[3].y-quad[0].y))<1e-6,'Proportional resizing should not warp a print')
+const productPage=source('src/components/mockups/ProductMockupStudio.tsx')
+assert.ok(productPage.includes('mockup-products.v2')&&productPage.includes('Crear producto')&&productPage.includes('Nuevo mockup'),'Missing product-first library')
+assert.ok(productPage.includes('Duplicar')===false || productPage.includes('duplicate'),'Product duplication handler missing')
+assert.ok(productPage.includes('leftSleeve')&&productPage.includes('rightSleeve'),'Sleeve photographs must be supported')
+assert.ok(productPage.includes('Añadir zona')&&productPage.includes('zoneId'),'Independent print zones must be configurable')
+assert.ok(productPage.includes("screen==='setup'")&&productPage.includes("screen==='mockup'"),'Product authoring and artwork application must remain separate')
+assert.ok(productPage.includes('Ctrl + arrastrar')&&productPage.includes('setWarpMode'),'Deformation mode must be explicit on desktop/mobile')
+assert.ok(productPage.includes('renderGarmentLayers')&&productPage.includes('photoKey('),'Multi-zone rendering and reusable garment photos missing')
+assert.ok(productPage.includes('storeMedia(key,file)')&&productPage.includes('readPngSourceSize(blob)'),'Artwork originals must persist without resizing')
+assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-product-grid'),'Responsive product cards missing')
+
 const app=source('src/app/App.tsx'),launcher=source('src/components/navigation/AppLauncher.tsx')
 assert.ok(app.includes("'#/mockups'")&&app.includes('<MockupStudio />'),'Mockup route missing')
 assert.ok(launcher.includes("id: 'mockups'")&&launcher.includes("hash: '/mockups'"),'Mockup missing from global application menu')
@@ -28,4 +44,4 @@ assert.ok(page.includes("exportMockup('combined')")&&page.includes("exportMockup
 assert.ok(engine.includes('renderGarment')&&engine.includes('warpedArtwork')&&engine.includes('placement.lighting'),'Compositing, warp or fabric lights missing')
 assert.ok(page.includes("Sin fotografía")&&page.includes("Sin cargar"),'Empty templates must be understandable')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('@media(max-width:690px)'),'Mobile editor layout missing')
-console.log('Mockup Studio QA: geometry, image integration and app routes passed.')
+console.log('Mockup Studio QA: product library, proportional scaling, multi-zone editor and legacy routes passed.')
