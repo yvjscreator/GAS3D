@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent as Rea
 import { ArrowDownToLine, ImagePlus, Layers2, RotateCcw, Shirt, SlidersHorizontal, Upload, X } from 'lucide-react'
 import { AppLauncher } from '../navigation/AppLauncher'
 import { loadMedia, removeMedia, storeMedia } from '../../utils/mediaStorage'
+import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
 import { bound, canvasPng, ensurePhotoSize, initialPlacement, placementQuad, pointInQuad, renderGarment, restorePlacement, type MockImage, type Placement, type Point, type ViewName } from './mockupEngine'
 import './mockupStudio.css'
 
@@ -20,7 +21,22 @@ const safeFile=(file:File,kind:AssetKind)=>kind==='art'
   ? file.type==='image/png'||(!file.type&&/\.png$/i.test(file.name))
   : /^image\/(png|jpeg|webp)$/.test(file.type)||(!file.type&&/\.(png|jpe?g|webp)$/i.test(file.name))
 
-async function decode(blob:Blob,name:string):Promise<MockImage>{
+async function decode(blob:Blob,name:string,kind:AssetKind):Promise<MockImage>{
+  if(kind==='art'){
+    // Original PNG stays untouched in IndexedDB. Only the editing/photographic
+    // compositing bitmap is sized to what a shirt mockup can actually display.
+    const source=await readPngSourceSize(blob)
+    if(!source)throw new Error('El diseño debe ser un PNG válido.')
+    assertStreamedDimensions(source)
+    const edge=4096
+    const ratio=Math.min(1,edge/Math.max(source.width,source.height))
+    const bitmap=await createImageBitmap(blob,{
+      resizeWidth:Math.max(1,Math.round(source.width*ratio)),
+      resizeHeight:Math.max(1,Math.round(source.height*ratio)),
+      resizeQuality:'high',
+    })
+    return {bitmap,width:bitmap.width,height:bitmap.height,name}
+  }
   const bitmap=await createImageBitmap(blob)
   try{ensurePhotoSize(bitmap)}catch(error){bitmap.close();throw error}
   return {bitmap,width:bitmap.width,height:bitmap.height,name}
@@ -67,7 +83,7 @@ export function MockupStudio(){
           try{
             const saved=await loadMedia(mediaKey(view,kind))
             if(!saved)continue
-            const asset=await decode(saved,storedNames?.[view+':'+kind]|| (kind==='photo'?'Foto guardada':'Diseño guardado'))
+            const asset=await decode(saved,storedNames?.[view+':'+kind]|| (kind==='photo'?'Foto guardada':'Diseño guardado'),kind)
             if(disposed){asset.bitmap.close();return}
             refs.add(asset.bitmap)
             next[view][kind]=asset
@@ -127,7 +143,7 @@ export function MockupStudio(){
     setBusy(true);setError(null);setFeedback(null)
     void (async()=>{
       try{
-        const asset=await decode(file,file.name)
+        const asset=await decode(file,file.name,kind)
         assetRefs.current.add(asset.bitmap)
         setViews(old=>({...old,[view]:{...old[view],[kind]:asset}}))
         try{

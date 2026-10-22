@@ -19,6 +19,7 @@ assert.ok(launcher.includes("id: 'mockups'")&&launcher.includes("hash: '/mockups
 const page=source('src/components/mockups/MockupStudio.tsx'),engine=source('src/components/mockups/mockupEngine.ts')
 assert.ok(page.includes('<AppLauncher active="mockups"'),'Shared header missing')
 assert.ok(page.includes('storeMedia')&&page.includes('loadMedia'),'Local reusable mockup template files missing')
+assert.ok(page.includes('readPngSourceSize(blob)')&&page.includes("const edge=4096")&&page.includes('assertStreamedDimensions(source)'),'High resolution transparent PNG originals must be accepted via limited-size working copies')
 assert.ok(page.includes("'front:photo':views.front.photo?.name"),'Saved template asset names should survive page reload')
 assert.ok(page.includes("inputRef.current.accept=kind==='art'?'image/png'"),'Transparent PNG picker and photo picker need different formats')
 assert.ok(page.includes('setActive(view)')&&page.includes('setPointerCapture'),'Touching either mockup should select its settings')
