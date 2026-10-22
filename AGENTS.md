@@ -61,6 +61,16 @@ Mandatory guidance: `agents/ui-layout-guidelines.md`.
 - For layout work, verify at desktop, medium-width and narrow widths. If visual/browser verification cannot be performed, say so and do not claim the layout was visually validated.
 - Add an appropriate regression check when introducing a new major screen; documentation by itself is not a guarantee.
 
+## Mockup Studio (first release)
+
+Canonical requirements: `agents/mockup-studio-plan.md` and `agents/mockup-studio-mvp.md`.
+
+- Preserve the user's existing photographs and artwork PNGs; reuse front/back locally via IndexedDB. Do not upscale, generate, alter or delete source art during mockup export.
+- Compositing uses photo-relative fabric illumination rather than multiplying colors by black fabric. Keep preview/export renderer shared; support mouse and touch editing, manual quad geometry and full-sized photo export within safe canvas caps.
+- Physical print measurements need explicit template calibration; never label photo-relative percentages as centimeter-accurate.
+- Use the shared AppLauncher compact header; keep mobile/desktop editing reachable without controls covering exports.
+- Test with `npm run qa:mockups`; do not claim actual device validation until browser testing.
+
 ## Collage Creator (mobile-first)
 
 Canonical implementation notes: `agents/collage-creator.md`.

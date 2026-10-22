@@ -1,0 +1,60 @@
+.mockup-studio{min-height:100dvh;padding:14px clamp(12px,3vw,34px) 36px;color:#e4eef8;background:radial-gradient(circle at 60% 0%,#1b2d3c,#101923 55%,#0b111b);}
+.mockup-studio *{box-sizing:border-box}
+.mockup-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.mockup-header{max-width:1500px;margin:0 auto 18px;min-height:57px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #34485a;padding-bottom:12px}
+.mockup-header>div:nth-child(2){flex:1;min-width:0}
+.mockup-header h1{font-size:20px;line-height:1.1;margin:0 0 4px;font-weight:850;letter-spacing:-.04em}
+.mockup-header h1 span{color:#80c8f3}
+.mockup-header p{font-size:11px;color:#90a8bf;margin:0}
+.mockup-layout{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(295px,.77fr);align-items:start;gap:16px}
+.mockup-workspace,.mockup-controls{min-width:0;background:#121c29;border:1px solid #31495e;border-radius:12px;padding:16px}
+.mockup-workspace-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
+.mockup-workspace-heading h2,.mockup-panel-title h2{font-size:14px;margin:0;color:#ecf5ff}
+.mockup-view-tabs{display:flex;gap:5px;padding:3px;background:#0b1520;border-radius:8px}
+.mockup-view-tabs button{border:1px solid transparent;border-radius:6px;background:transparent;color:#a4bacd;padding:7px 12px;font-size:12px}
+.mockup-view-tabs button.active{color:#fff;background:#27618c;border-color:#5f9dc6}
+.mockup-view-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.mockup-view{min-width:0;display:grid;align-content:start;gap:10px;padding:12px;background:#0d1621;border:1px solid #304357;border-radius:10px}
+.mockup-view.is-active{border-color:#5c9cc5}
+.mockup-view-title{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.mockup-view-title strong{font-size:12px}
+.mockup-view-title span{color:#8da7bb;font-size:10px;min-width:0;max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mockup-stage{position:relative;width:100%;max-width:100%;max-height:72vh;margin:0 auto;border-radius:7px;overflow:hidden;border:1px solid #536273;background:#25303c;touch-action:none;cursor:move}
+.mockup-stage canvas{display:block;width:100%;height:100%;object-fit:contain}
+.mockup-guides{position:absolute;inset:0;pointer-events:none;overflow:visible;width:100%;height:100%}
+.mockup-guides polygon{fill:#2196f30d;stroke:#63c5ff;stroke-width:.55;stroke-dasharray:1.4,1}
+.mockup-guides circle{fill:#d8f2ff;stroke:#137fc4;stroke-width:.55}
+.mockup-empty{width:100%;min-height:290px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#a6d9f4;background:#152330;border:1px dashed #4d7191;border-radius:8px;text-align:center;padding:18px}
+.mockup-empty strong{font-size:13px}
+.mockup-empty small{font-size:11px;color:#92a8b8}
+.mockup-view-actions{display:flex;gap:6px;flex-wrap:wrap}
+.mockup-view-actions button,.mockup-upload-actions button,.mockup-controls-row button,.mockup-export-actions button,.mockup-export-header{display:flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:8px 10px;border:1px solid #45637b;border-radius:7px;color:#c8e4f5;background:#1a2d3e;font-size:11px;font-weight:700;cursor:pointer}
+.mockup-view-actions button:not(.mockup-remove){flex:1}
+.mockup-view-actions button.mockup-remove{color:#e2acb7;border-color:#724854;padding-inline:10px}
+.mockup-view-actions button:disabled,.mockup-upload-actions button:disabled,.mockup-export-actions button:disabled,.mockup-controls-row button:disabled,.mockup-export-header:disabled{opacity:.43;cursor:not-allowed}
+.mockup-studio button:hover:not(:disabled){filter:brightness(1.16)}
+.mockup-hint{font-size:11px;line-height:1.6;color:#91abc1;margin:13px 0 0}
+.mockup-panel-title{display:flex;align-items:center;gap:8px;color:#8bc8ef;margin-bottom:15px}
+.mockup-asset-status{display:grid;grid-template-columns:60px minmax(0,1fr);gap:6px 9px;align-items:center;font-size:11px;margin-bottom:13px}
+.mockup-asset-status span{color:#8a9db1}
+.mockup-asset-status strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.mockup-upload-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mockup-divider{height:1px;background:#2a4053;margin:19px 0}
+.mockup-adjustment{display:grid;gap:9px;margin:16px 0}
+.mockup-adjustment label{display:flex;justify-content:space-between;gap:8px;font-size:11px}
+.mockup-adjustment label span{color:#acbfd2}
+.mockup-adjustment label strong{color:#d7efff;font-variant-numeric:tabular-nums}
+.mockup-adjustment input{width:100%;accent-color:#6dbdf1}
+.mockup-adjustment small{color:#89a1b6;font-size:10px;line-height:1.55}
+.mockup-controls-row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.mockup-guides-toggle{display:flex;gap:5px;align-items:center;color:#bad1e1;font-size:11px}
+.mockup-guides-toggle input{accent-color:#5bb7f0}
+.mockup-note{color:#91a9ba;font-size:10px;line-height:1.6;margin:15px 0}
+.mockup-export-actions{display:grid;grid-template-columns:1fr;gap:8px}
+.mockup-primary,.mockup-studio button.mockup-primary{background:#276994;color:#fff;border-color:#77bef0}
+.mockup-feedback,.mockup-error{padding:10px;border-radius:7px;font-size:11px;line-height:1.5}
+.mockup-feedback{color:#bbf2dc;background:#153427}
+.mockup-error{color:#ffced6;background:#4c222c}
+.mockup-studio button:focus-visible,.mockup-studio input:focus-visible{outline:2px solid #8bd4ff;outline-offset:3px}
+@media(max-width:1050px){.mockup-layout{grid-template-columns:minmax(0,1fr)}.mockup-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:25px}.mockup-panel-title,.mockup-asset-status,.mockup-upload-actions,.mockup-divider,.mockup-note,.mockup-export-actions,.mockup-feedback,.mockup-error{grid-column:1/-1}.mockup-controls .mockup-divider{margin:12px 0}}
+@media(max-width:690px){.mockup-studio{padding:10px 10px 90px}.mockup-header{margin-bottom:10px;gap:8px;padding-bottom:8px}.mockup-header h1{font-size:17px}.mockup-header p{display:none}.mockup-export-header{min-height:38px;font-size:11px;padding:5px 8px}.mockup-workspace,.mockup-controls{padding:10px}.mockup-layout{gap:10px}.mockup-view-grid{grid-template-columns:minmax(0,1fr)}.mockup-view{display:none}.mockup-view.is-active{display:grid;padding:8px}.mockup-stage{max-width:490px;max-height:none}.mockup-empty{min-height:265px}.mockup-controls{display:block}.mockup-workspace-heading{margin-bottom:8px}.mockup-view-title{padding:0 3px}}

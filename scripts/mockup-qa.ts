@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { initialPlacement, placementQuad, pointInQuad, restorePlacement, ensurePhotoSize } from '../src/components/mockups/mockupEngine'
+
+const source=(path:string)=>readFileSync(path,'utf8')
+const front=initialPlacement('front'),back=initialPlacement('back')
+assert.ok(front.width<back.width,'Front logo should start smaller than back print')
+const photo={width:1000,height:1200},art={width:600,height:800}
+const quad=placementQuad(photo,art,front)
+assert.ok(quad[0].x<quad[1].x&&quad[0].y<quad[3].y,'Placement orientation wrong')
+assert.ok(pointInQuad({x:front.x,y:front.y},quad),'Image center should be selectable')
+assert.ok(!pointInQuad({x:0,y:0},quad),'Out-of-zone clicks must not start dragging')
+assert.deepEqual(restorePlacement({x:Infinity,width:-9},'back').width,.025)
+assert.doesNotThrow(()=>ensurePhotoSize({width:3000,height:4000}))
+assert.throws(()=>ensurePhotoSize({width:9000,height:1000}))
+const app=source('src/app/App.tsx'),launcher=source('src/components/navigation/AppLauncher.tsx')
+assert.ok(app.includes("'#/mockups'")&&app.includes('<MockupStudio />'),'Mockup route missing')
+assert.ok(launcher.includes("id: 'mockups'")&&launcher.includes("hash: '/mockups'"),'Mockup missing from global application menu')
+const page=source('src/components/mockups/MockupStudio.tsx'),engine=source('src/components/mockups/mockupEngine.ts')
+assert.ok(page.includes('<AppLauncher active="mockups"'),'Shared header missing')
+assert.ok(page.includes('storeMedia')&&page.includes('loadMedia'),'Local reusable mockup template files missing')
+assert.ok(page.includes('onPointerDown')&&page.includes('pointerMove'),'Mouse/touch editing missing')
+assert.ok(page.includes("exportMockup('combined')")&&page.includes("exportMockup('active')"),'Both export modes required')
+assert.ok(engine.includes('renderGarment')&&engine.includes('warpedArtwork')&&engine.includes('placement.lighting'),'Compositing, warp or fabric lights missing')
+assert.ok(page.includes("Sin fotografía")&&page.includes("Sin cargar"),'Empty templates must be understandable')
+assert.ok(source('src/components/mockups/mockupStudio.css').includes('@media(max-width:690px)'),'Mobile editor layout missing')
+console.log('Mockup Studio QA: geometry, image integration and app routes passed.')

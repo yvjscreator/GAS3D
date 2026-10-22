@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Clapperboard, Images, Layers3, LayoutGrid, Mic2, SlidersHorizontal, X } from 'lucide-react'
+import { Clapperboard, Images, Layers3, LayoutGrid, Mic2, SlidersHorizontal, Shirt, X } from 'lucide-react'
 import './appLauncher.css'
 
-export type GasModule = 'garment' | 'images' | 'collage' | 'subtitles' | 'halftone'
+export type GasModule = 'garment' | 'images' | 'collage' | 'subtitles' | 'halftone' | 'mockups'
 
 const MODULES = [
   { id: 'garment', label: 'Video y publicidad', description: '3D Studio', icon: Clapperboard, hash: '/garment' },
@@ -11,6 +11,7 @@ const MODULES = [
   { id: 'collage', label: 'Collage Creator', description: 'Composición horizontal', icon: Layers3, hash: '/collage' },
   { id: 'subtitles', label: 'Subtítulos', description: 'Guion, voz y video', icon: Mic2, hash: '/subtitles' },
   { id: 'halftone', label: 'Halftone Lab', description: 'Tramas para estampados', icon: SlidersHorizontal, hash: '/halftone' },
+  { id: 'mockups', label: 'Mockup Studio', description: 'Remeras y estampados realistas', icon: Shirt, hash: '/mockups' },
 ] as const
 
 export function AppLauncher({ active }: { active: GasModule }) {

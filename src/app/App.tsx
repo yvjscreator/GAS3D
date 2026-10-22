@@ -4,14 +4,16 @@ import { SubtitleStudio } from '../components/subtitles/SubtitleStudio'
 import { ImagesStudio } from '../components/images/ImagesStudio'
 import { CollageCreator } from '../components/collage/CollageCreator'
 import { HalftoneLab } from '../components/halftone/HalftoneLab'
+import { MockupStudio } from '../components/mockups/MockupStudio'
 
-type AppTool = 'garment' | 'subtitles' | 'images' | 'collage' | 'halftone'
+type AppTool = 'garment' | 'subtitles' | 'images' | 'collage' | 'halftone' | 'mockups'
 
 const currentTool = (): AppTool => {
   if (window.location.hash === '#/subtitles') return 'subtitles'
   if (window.location.hash === '#/images') return 'images'
   if (window.location.hash === '#/collage') return 'collage'
   if (window.location.hash === '#/halftone') return 'halftone'
+  if (window.location.hash === '#/mockups') return 'mockups'
   if (!window.location.hash && new URLSearchParams(window.location.search).get('tool') === 'halftone') return 'halftone'
   return 'garment'
 }
@@ -30,6 +32,6 @@ export default function App() {
 
   return <>
     {/* Each studio owns its compact header and the shared AppLauncher. */}
-    {tool === 'subtitles' ? <SubtitleStudio /> : tool === 'images' ? <ImagesStudio /> : tool === 'collage' ? <CollageCreator /> : tool === 'halftone' ? <HalftoneLab /> : <GarmentAdStudio />}
+    {tool === 'subtitles' ? <SubtitleStudio /> : tool === 'images' ? <ImagesStudio /> : tool === 'collage' ? <CollageCreator /> : tool === 'halftone' ? <HalftoneLab /> : tool === 'mockups' ? <MockupStudio /> : <GarmentAdStudio />}
   </>
 }
