@@ -55,15 +55,19 @@ export function MockupStudio(){
     const refs=assetRefs.current
     const restore=async()=>{
       let placements:Record<string,unknown>={}
-      try{placements=JSON.parse(window.localStorage.getItem(STORAGE_KEY)||'{}') as Record<string,unknown>}catch{placements={}}
+      try{
+        const saved=JSON.parse(window.localStorage.getItem(STORAGE_KEY)||'{}') as unknown
+        if(saved&&typeof saved==='object'&&!Array.isArray(saved))placements=saved as Record<string,unknown>
+      }catch{placements={}}
       const next=makeViews()
       for(const view of ['front','back'] as const){
         next[view].placement=restorePlacement(placements[view],view)
+        const storedNames=placements['names'] as Record<string,string>|undefined
         for(const kind of ['photo','art'] as const){
           try{
             const saved=await loadMedia(mediaKey(view,kind))
             if(!saved)continue
-            const asset=await decode(saved,kind==='photo'?'Foto guardada':'Diseño guardado')
+            const asset=await decode(saved,storedNames?.[view+':'+kind]|| (kind==='photo'?'Foto guardada':'Diseño guardado'))
             if(disposed){asset.bitmap.close();return}
             refs.add(asset.bitmap)
             next[view][kind]=asset
@@ -80,6 +84,12 @@ export function MockupStudio(){
     if(!ready)return
     try{window.localStorage.setItem(STORAGE_KEY,JSON.stringify({
       front:views.front.placement,back:views.back.placement,
+      names: {
+        'front:photo':views.front.photo?.name,
+        'front:art':views.front.art?.name,
+        'back:photo':views.back.photo?.name,
+        'back:art':views.back.art?.name,
+      },
     }))}catch{/* Storage permission is optional. */}
   },[views,ready])
 
@@ -102,7 +112,10 @@ export function MockupStudio(){
     setViews(old=>({...old,[view]:{...old[view],placement:edit(old[view].placement)}}))
   const openUpload=(view:ViewName,kind:AssetKind)=>{
     uploadTarget.current={view,kind}
-    inputRef.current?.click()
+    if(inputRef.current){
+      inputRef.current.accept=kind==='art'?'image/png': 'image/png,image/jpeg,image/webp'
+      inputRef.current.click()
+    }
   }
   const onSelect=(event:ChangeEvent<HTMLInputElement>)=>{
     const file=event.currentTarget.files?.[0]
@@ -147,6 +160,7 @@ export function MockupStudio(){
       if(Math.hypot((p.x-q[index].x)*rect.width,(p.y-q[index].y)*rect.height)<22){corner=index;break}
     }
     if(corner<0&&!pointInQuad(p,q))return
+    setActive(view)
     event.currentTarget.setPointerCapture(event.pointerId)
     dragRef.current={view,pointerId:event.pointerId,kind:corner>=0?'corner':'move',corner,start:p,origin:model.placement}
   }

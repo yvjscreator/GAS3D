@@ -1,4 +1,6 @@
-# GAS3D — Mockup Studio plan (proposed, not implemented)
+# GAS3D — Mockup Studio plan
+
+**MVP status:** implemented at `#/mockups`; see `agents/mockup-studio-mvp.md`. The more advanced template masks, physical calibration and named presets below remain planned.
 
 ## Goal
 Reuse the same original garment photo templates with many interchangeable transparent artwork PNGs; export realistic catalog imagery without image-generation drift. First use case: side-by-side black oversized T-shirt front/back, small chest logo and large back print, preserving original PNGs and photo geometry.

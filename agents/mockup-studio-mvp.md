@@ -7,7 +7,7 @@ This is a deterministic, fully client-side **photographic mockup editor**, not i
 ## Interaction
 - Front/back independent template photo and print (tap either view; on mobile views use tabs).
 - Drag the print within the photograph; drag four overlay handles to bend its quadrilateral/perspective. Size, rotation, and fabric lighting sliders.
-- Browser-local asset replacement; native-resolution export for base photos up to 20 MP and 8192 px/edge, with an explicit error for larger sources (no silent shrinking).
+- Browser-local asset replacement, including the original filenames; native-resolution export for base photos up to 20 MP and 8192 px/edge, with an explicit error for larger sources (no silent shrinking).
 - Export single front/back or combined on white background with a narrow gutter; if the combination exceeds safe browser canvas limits, explain and offer individual exports.
 - The print PNG itself is not modified/AI-regenerated, though mesh mapping necessarily resamples pixels. Pixel-wise luminosity modulation preserves bright colors on black cloth by using relative fabric intensity rather than Multiply with cloth RGB.
 - Four moveable corners are manual placement guides, not an automatically generated dress mask. Content placed outside the garment may still appear outside; correct it by moving/warping, or author a template mask in the next phase.
