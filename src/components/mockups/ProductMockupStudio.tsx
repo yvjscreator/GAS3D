@@ -25,7 +25,9 @@ const artKey=(id:string,v:ViewName,z:string)=>'mockup-studio:v2:'+id+':'+v+':zon
 const uid=()=>globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)+Math.random().toString(36).slice(2)
 const blank=():Models=>Object.fromEntries(VIEWS.map(view=>[view,{photo:null,arts:{}}])) as Models
 const newZone=(view:ViewName,name='Estampado principal'):Zone=>({
-  id:uid(),name,aspect:1,placement:initialPlacement(view),
+  id:uid(),name,aspect:1,placement: view.endsWith('Sleeve')
+    ? {...initialPlacement(view),width:.16,y:.40}
+    : (view==='left'||view==='right')?{...initialPlacement(view),width:.26,y:.45}:initialPlacement(view),
 })
 function makeProduct(name:string,type:string):Product{
   return {id:uid(),name,type,views:Object.fromEntries(VIEWS.map(view=>[view,{
@@ -147,7 +149,10 @@ export function ProductMockupStudio(){
     if(!selectedId||!product){setLoadedId(null);return}
     let disposed=false
     const opened:ImageBitmap[]=[]
-    setLoadedId(null);setModels(blank());setDraft({})
+    setLoadedId(null)
+    // Retain the current canvas while the next product's assets decode; the
+    // loadedId gate prevents exporting stale photos under another product.
+    setModels(blank());setDraft({})
     void (async()=>{
       const next=blank()
       let stored:Draft={}
@@ -219,7 +224,7 @@ export function ProductMockupStudio(){
   const onSelect=(event:ChangeEvent<HTMLInputElement>)=>{
     const file=event.currentTarget.files?.[0]
     event.currentTarget.value=''
-    if(!file||busy||!selectedId)return
+    if(!file||busy||!selectedId||loadedId!==selectedId)return
     const {kind,view,zoneId:zid}=targetRef.current
     const valid=kind==='art'?file.type==='image/png'||(!file.type&&/\.png$/i.test(file.name)):
       /^image\/(png|jpeg|webp)$/.test(file.type)||(!file.type&&/\.(png|jpe?g|webp)$/i.test(file.name))
@@ -262,7 +267,7 @@ export function ProductMockupStudio(){
     return {x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height}
   }
   const onPointerDown=(e:ReactPointerEvent<HTMLDivElement>,view:ViewName)=>{
-    if(busy||e.button!==0||!product)return
+    if(busy||loadedId!==selectedId||e.button!==0||!product)return
     const zone=view===active?selectedZone:product.views[view].zones[0]
     const photo=modelsRef.current[view].photo
     if(!zone||!photo)return
@@ -329,7 +334,7 @@ export function ProductMockupStudio(){
     finally{setBusy(false)}
   }
   const exportMockup=async(all:boolean)=>{
-    if(!product||busy)return
+    if(!product||busy||loadedId!==product.id)return
     const chosen=(all?enabled:[active]).filter(view=>models[view].photo)
     if(!chosen.length){setError('Añadí una fotografía al producto antes de exportar.');return}
     setBusy(true);setError('');setFeedback('')
@@ -494,7 +499,7 @@ export function ProductMockupStudio(){
           <p className="mockup-note">Las medidas son relativas a la fotografía. Para trabajar en centímetros reales se necesita calibrar cada foto.</p>
           {screen==='mockup'?<div className="mockup-export-actions">
             <button type="button" disabled={busy||!models[active].photo} onClick={()=>void exportMockup(false)}><ArrowDownToLine size={16}/> Exportar {LABELS[active]}</button>
-            <button type="button" className="mockup-primary" disabled={busy||!enabled.some(v=>models[v].photo)} onClick={()=>void exportMockup(true)}><ArrowDownToLine size={16}/> Exportar todas las vistas</button>
+            <button type="button" className="mockup-primary" disabled={busy||loadedId!==selectedId||!enabled.some(v=>models[v].photo)} onClick={()=>void exportMockup(true)}><ArrowDownToLine size={16}/> Exportar todas las vistas</button>
           </div>:<button type="button" className="mockup-primary mockup-secondary-full" onClick={()=>setScreen('mockup')}>Crear mockup de este producto</button>}
         </aside>
       </div>
