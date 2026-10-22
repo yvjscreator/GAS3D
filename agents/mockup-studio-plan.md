@@ -1,6 +1,6 @@
 # GAS3D — Mockup Studio plan
 
-**MVP status:** implemented at `#/mockups`; see `agents/mockup-studio-mvp.md`. The more advanced template masks, physical calibration and named presets below remain planned.
+**Status (October 2026):** the product-first local catalogue, named products, configurable front/back/side/sleeve views, multiple named print zones, proportion-preserving corner scaling, explicit warp mode and multi-zone PNG exports are implemented at `#/mockups`. See `agents/mockup-studio-mvp.md`. Physical calibration, silhouette masks, displacement maps and cloud sync remain planned.
 
 ## Goal
 Reuse the same original garment photo templates with many interchangeable transparent artwork PNGs; export realistic catalog imagery without image-generation drift. First use case: side-by-side black oversized T-shirt front/back, small chest logo and large back print, preserving original PNGs and photo geometry.
@@ -24,7 +24,7 @@ Reuse the same original garment photo templates with many interchangeable transp
 
 ## Iterations
 1. MVP: flat front/back photographs, rectangle/perspective zone editor, PNG art transform, garment mask, adjustable grayscale light-map, manual shadows, native PNG export and two-panel composition.
-2. Template authoring: calibration in cm, reusable templates library, seam-aware boundaries, reusable displacement and lighting maps.
+2. Template authoring: reusable product templates, named angles and multiple zones are implemented locally; calibration in cm, seam-aware boundaries, reusable displacement maps and garment masks remain planned.
 3. Advanced: contour mesh/warp controls, optional AI-assisted zone/mask detection with manual overrides, bulk apply N designs to one template, ZIP/export presets.
 
 ## Acceptance
