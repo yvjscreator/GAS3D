@@ -414,6 +414,7 @@ export function ProductMockupStudio(){
         </article>)}
         {!products.length&&<div className="mockup-library-empty"><Shirt size={32}/><strong>Aún no hay productos.</strong><p>Creá el primero para configurar sus fotos, vistas y zonas de estampado.</p></div>}
       </div>
+      <p className="mockup-note">Tus productos, fotografías y estampados se guardan solamente en este navegador. No se sincronizan entre dispositivos.</p>
     </section>:<div className="mockup-editor-shell">
       <nav className="mockup-editor-breadcrumb"><strong>{product.name}</strong><div role="group" aria-label="Modo del editor">
         <button type="button" className={screen==='setup'?'active':''} disabled={busy} onClick={()=>setScreen('setup')}>Configurar producto</button>
