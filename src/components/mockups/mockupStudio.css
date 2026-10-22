@@ -58,3 +58,56 @@
 .mockup-studio button:focus-visible,.mockup-studio input:focus-visible{outline:2px solid #8bd4ff;outline-offset:3px}
 @media(max-width:1050px){.mockup-layout{grid-template-columns:minmax(0,1fr)}.mockup-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:25px}.mockup-panel-title,.mockup-asset-status,.mockup-upload-actions,.mockup-divider,.mockup-note,.mockup-export-actions,.mockup-feedback,.mockup-error{grid-column:1/-1}.mockup-controls .mockup-divider{margin:12px 0}}
 @media(max-width:690px){.mockup-studio{padding:10px 10px 90px}.mockup-header{margin-bottom:10px;gap:8px;padding-bottom:8px}.mockup-header h1{font-size:17px}.mockup-header p{display:none}.mockup-export-header{min-height:38px;font-size:11px;padding:5px 8px}.mockup-workspace,.mockup-controls{padding:10px}.mockup-layout{gap:10px}.mockup-view-grid{grid-template-columns:minmax(0,1fr)}.mockup-view{display:none}.mockup-view.is-active{display:grid;padding:8px}.mockup-stage{max-width:490px;max-height:none}.mockup-empty{min-height:265px}.mockup-controls{display:block}.mockup-workspace-heading{margin-bottom:8px}.mockup-view-title{padding:0 3px}}
+
+
+/* Product-first workflow: catalogue, reusable garment configurations, mockup composer. */
+.mockup-library,.mockup-editor-shell{max-width:1500px;margin:0 auto;min-width:0}
+.mockup-library-intro{display:flex;justify-content:space-between;gap:14px;align-items:center;margin:4px 0 16px}
+.mockup-library-intro h2{font-size:20px;margin:0 0 6px}
+.mockup-library-intro p{font-size:12px;color:#a1b8ca;line-height:1.6;margin:0;max-width:650px}
+.mockup-library-intro>span{font-size:11px;color:#bddcf3;white-space:nowrap}
+.mockup-new-product{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto;align-items:end;gap:12px;padding:16px;border:1px solid #31495e;border-radius:12px;background:#121c29;margin-bottom:19px}
+.mockup-new-product label,.mockup-field{display:grid;gap:7px;color:#bed4e6;font-weight:650;font-size:12px;min-width:0}
+.mockup-new-product input,.mockup-new-product select,.mockup-field input,.mockup-field select{width:100%;min-height:41px;border:1px solid #45637b;border-radius:7px;background:#0b1621;color:#f2f8ff;padding:9px 11px;font:inherit;min-width:0}
+.mockup-new-product button,.mockup-secondary-full,.mockup-nav-button{min-height:41px;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #527b99;border-radius:7px;padding:9px 14px;color:#edf6ff;background:#1c3c54;cursor:pointer;font-size:12px;font-weight:750}
+.mockup-product-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch}
+.mockup-product-card{min-width:0;background:#121c29;border:1px solid #31495e;border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.mockup-product-image{height:200px;display:flex;align-items:center;justify-content:center;color:#6bb3df;background:#172633}
+.mockup-product-image img{display:block;width:100%;height:100%;object-fit:contain}
+.mockup-product-info{flex:1;padding:14px}
+.mockup-product-info small{font-size:11px;color:#90b0c7}
+.mockup-product-info h3{font-size:14px;line-height:1.4;margin:5px 0 0;overflow-wrap:anywhere}
+.mockup-product-actions{display:grid;grid-template-columns:1fr auto auto auto;gap:6px;padding:0 12px 12px}
+.mockup-product-actions button{min-width:0;min-height:40px;border:1px solid #45637b;border-radius:7px;padding:7px 9px;color:#d1eafc;background:#203649;cursor:pointer;font-size:11px;font-weight:700}
+.mockup-product-actions button:first-child{background:#23638c;color:#fff}
+.mockup-product-actions button:disabled{opacity:.5}
+.mockup-library-empty{grid-column:1/-1;display:grid;justify-items:center;text-align:center;gap:8px;padding:45px 18px;color:#b3d2e5;border:1px dashed #45647a;border-radius:12px}
+.mockup-library-empty p{font-size:12px;margin:0}
+.mockup-editor-breadcrumb{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.mockup-editor-breadcrumb strong{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mockup-editor-breadcrumb>div,.mockup-mode-toggle{display:flex;gap:4px;padding:3px;border-radius:8px;background:#0e1b28}
+.mockup-editor-breadcrumb button,.mockup-mode-toggle button{border:1px solid transparent;border-radius:6px;background:transparent;color:#a5bbcf;padding:9px 11px;cursor:pointer;font-size:11px;font-weight:700}
+.mockup-editor-breadcrumb button.active,.mockup-mode-toggle button.active{background:#27618c;border-color:#598daf;color:#fff}
+.mockup-editor-shell .mockup-view-tabs{max-width:min(100%,680px);overflow-x:auto;scrollbar-width:thin}
+.mockup-editor-shell .mockup-view-tabs button{white-space:nowrap}
+.mockup-controls h2{font-size:15px;margin:0 0 13px}
+.mockup-controls h3{font-size:12px;margin:12px 0}
+.mockup-controls>.mockup-field{margin:12px 0}
+.mockup-views-picker{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mockup-views-picker label{display:flex;align-items:center;gap:7px;border:1px solid #324a5f;border-radius:7px;padding:10px 8px;min-width:0;font-size:11px;color:#c5d9e8;cursor:pointer}
+.mockup-views-picker input{accent-color:#69b9e8}
+.mockup-zone-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.mockup-zone-tabs button{min-height:36px;border:1px solid #395970;border-radius:7px;background:#142838;color:#c0d5e4;font-size:11px;padding:7px 10px;cursor:pointer}
+.mockup-zone-tabs button.active{background:#27618c;color:#fff;border-color:#75bbe5}
+.mockup-zone-controls{display:grid;gap:12px;margin-top:13px}
+.mockup-zone-controls .mockup-adjustment{margin:4px 0}
+.mockup-zone-controls .mockup-adjustment>span{font-size:11px;color:#b7cede}
+.mockup-danger-action{display:flex;align-items:center;gap:7px;width:max-content;padding:9px 11px;border:1px solid #744b58;border-radius:7px;background:#38212b;color:#ffd9de;cursor:pointer;font-size:11px}
+.mockup-mode-toggle{margin-bottom:8px}
+.mockup-mode-toggle button{flex:1}
+.mockup-status{max-width:1500px;margin:12px auto;padding:10px 12px;border-radius:8px;font-size:12px;color:#b8dcf1}
+.mockup-status.mockup-feedback{background:#153427;color:#bbf2dc}
+.mockup-status.mockup-error{background:#4c222c;color:#ffced6}
+.mockup-studio button:focus-visible,.mockup-studio select:focus-visible{outline:2px solid #8bd4ff;outline-offset:3px}
+@media(max-width:1050px){.mockup-product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mockup-editor-shell .mockup-controls{display:block}}
+@media(max-width:690px){.mockup-new-product{grid-template-columns:minmax(0,1fr)}.mockup-library-intro{align-items:flex-start}.mockup-product-grid{grid-template-columns:minmax(0,1fr)}.mockup-product-image{height:170px}.mockup-editor-breadcrumb{align-items:flex-start;flex-direction:column}.mockup-editor-breadcrumb>div{width:100%}.mockup-editor-breadcrumb button{flex:1}.mockup-editor-shell .mockup-workspace-heading{align-items:stretch;flex-direction:column}.mockup-editor-shell .mockup-view-tabs{width:100%}.mockup-nav-button{font-size:10px;padding:7px 9px;white-space:nowrap}.mockup-product-actions button{min-height:44px}}
