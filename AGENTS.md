@@ -61,9 +61,13 @@ Mandatory guidance: `agents/ui-layout-guidelines.md`.
 - For layout work, verify at desktop, medium-width and narrow widths. If visual/browser verification cannot be performed, say so and do not claim the layout was visually validated.
 - Add an appropriate regression check when introducing a new major screen; documentation by itself is not a guarantee.
 
-## Mockup Studio (first release)
+## Mockup Studio (product-first catalogue)
 
 Canonical requirements: `agents/mockup-studio-plan.md` and `agents/mockup-studio-mvp.md`.
+
+- Keep the product library as the primary workflow: named reusable products with independent photo views and print zones. Editing a mockup must not overwrite its reusable product photo or default zone geometry.
+- Unmodified corner dragging scales the print proportionally; Ctrl/Command + drag or the mobile Deformar switch explicitly adjusts an individual corner.
+- Keep legacy front/back photos and placements recoverable through non-destructive migration. Store source Blobs in IndexedDB and only serializable settings in localStorage.
 
 - Preserve the user's existing photographs and artwork PNGs; reuse front/back locally via IndexedDB. High-resolution art can have more pixels than the photo: keep the full original Blob and make a capped working bitmap only for photocompositing. Do not upscale, generate, alter or delete source artwork stored in IndexedDB.
 - Compositing uses photo-relative fabric illumination rather than multiplying colors by black fabric. Keep preview/export renderer shared; support mouse and touch editing, manual quad geometry and full-sized photo export within safe canvas caps.
