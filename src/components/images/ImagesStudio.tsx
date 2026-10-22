@@ -9,6 +9,7 @@ import {
   type ImagePreviewMode,
 } from './imageProcessor'
 import { assertImageDimensions, assertImageFile, downloadBlob, renderTransparentPng } from './imageExport'
+import { assertStreamedDimensions, isLargeImage, readPngSourceSize, renderLargeTransparentPng } from './largeImageExport'
 import { createZipArchive } from './zipExport'
 import { paintNativeDetail } from './detailPreview'
 import { ImagesBatchSidebar } from './ImagesBatchSidebar'
@@ -19,7 +20,6 @@ import { analyzeDtfPrintability, buildDtfPromptBlock, DTF_PRINT_SIZES, resolveDt
 import './imagesStudio.css'
 import { AppLauncher } from '../navigation/AppLauncher'
 
-const MAX_IMAGE_PIXELS = 30_000_000
 const MAX_IMAGE_BYTES = 60 * 1024 * 1024
 const PREVIEW_MAX_EDGE = 1300
 const ZEN_KEY = 'gas3d.images.zen.v1'
@@ -505,22 +505,52 @@ export function ImagesStudio() {
 
     setBusy('loading')
     try {
+      const pngDimensions = await readPngSourceSize(incoming)
+      const highResolution = pngDimensions && isLargeImage(pngDimensions)
+      if (highResolution) assertStreamedDimensions(pngDimensions)
+      const previewEdge = window.matchMedia('(max-width: 720px)').matches ? 850 : PREVIEW_MAX_EDGE
+
+      if (highResolution) {
+        // Decode only a small preview bitmap. Keep the original Blob unscaled
+        // for full native-resolution streaming when the user exports.
+        const ratio = Math.min(1, previewEdge / Math.max(pngDimensions.width, pngDimensions.height))
+        const width = Math.max(1, Math.round(pngDimensions.width * ratio))
+        const height = Math.max(1, Math.round(pngDimensions.height * ratio))
+        const previewBitmap = await createImageBitmap(incoming, { resizeWidth: width, resizeHeight: height, resizeQuality: 'high' })
+        try {
+          if (id !== uploadIdRef.current) return
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const context = canvas.getContext('2d', { willReadFrequently: true })
+          if (!context) throw new Error('No se pudo preparar la vista previa del PNG.')
+          context.drawImage(previewBitmap, 0, 0, width, height)
+          const pixels = context.getImageData(0, 0, width, height)
+          bitmapRef.current?.close()
+          bitmapRef.current = null
+          setSourcePreview(pixels)
+          setAlphaStats(null)
+          resetZoom()
+          setDimensions(pngDimensions)
+          setShowOriginal(false)
+          setFile(incoming)
+        } finally {
+          previewBitmap.close()
+        }
+        return
+      }
+
       const bitmap = await createImageBitmap(incoming)
       if (id !== uploadIdRef.current) {
         bitmap.close()
         return
       }
-      const deviceLimit = window.matchMedia('(max-width: 720px)').matches ? 18_000_000 : MAX_IMAGE_PIXELS
-      if (bitmap.width * bitmap.height > deviceLimit) {
-        bitmap.close()
-        throw new Error('La imagen supera el límite de resolución seguro para este dispositivo (' + Math.round(deviceLimit / 1_000_000) + ' megapíxeles).')
-      }
+      assertImageDimensions(bitmap)
       if (!bitmap.width || !bitmap.height) {
         bitmap.close()
         throw new Error('No se pudo determinar la resolución de la imagen.')
       }
 
-      const previewEdge = window.matchMedia('(max-width: 720px)').matches ? 850 : PREVIEW_MAX_EDGE
       const ratio = Math.min(1, previewEdge / Math.max(bitmap.width, bitmap.height))
       const width = Math.max(1, Math.round(bitmap.width * ratio))
       const height = Math.max(1, Math.round(bitmap.height * ratio))
@@ -736,23 +766,33 @@ export function ImagesStudio() {
       let bitmap: ImageBitmap | null = null
       try {
         assertImageFile(item.file)
-        bitmap = await createImageBitmap(item.file)
-        assertImageDimensions(bitmap)
-        const png = await renderTransparentPng(bitmap, settings, inkMode, (value) => {
+        const pngSize = await readPngSourceSize(item.file)
+        const highResolution = pngSize && isLargeImage(pngSize)
+        if (highResolution) assertStreamedDimensions(pngSize)
+        if (!highResolution) {
+          bitmap = await createImageBitmap(item.file)
+          assertImageDimensions(bitmap)
+        }
+        const dimensions = pngSize ?? bitmap!
+        const updateProgress = (value: number) => {
           setProgress(Math.round((i + value / 100) / snapshot.length * 95))
           setBatchItems((items) => items.map((entry) =>
             entry.id === item.id ? { ...entry, progress: value } : entry,
           ))
-        }, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, (result: CompressionResult) => {
+        }
+        const onCompression = (result: CompressionResult) => {
           if (result.status === 'optimized') {
             savedBytes += result.originalBytes - result.finalBytes
             compressedCount++
           } else if (result.status === 'skipped' || result.status === 'failed') {
             skippedCount++
           }
-        })
+        }
+        const png = highResolution
+          ? await renderLargeTransparentPng(item.file, dimensions, settings, inkMode, updateProgress, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
+          : await renderTransparentPng(bitmap!, settings, inkMode, updateProgress, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
 
-        const base = downloadName(item.file.name, inkMode, outputPreset, bitmap.width, bitmap.height)
+        const base = downloadName(item.file.name, inkMode, outputPreset, dimensions.width, dimensions.height)
         let uniqueName = base
         let count = 2
         while (usedNames.has(uniqueName.toLowerCase())) {
@@ -807,17 +847,21 @@ export function ImagesStudio() {
   const exportPng = async () => {
     const bitmap = bitmapRef.current
     const currentFile = file
-    if (!bitmap || !currentFile || busy) return
+    const sourceDimensions = dimensions
+    if (!currentFile || !sourceDimensions || busy) return
     setError(null)
     setBusy('exporting')
     setProgress(0)
     setCompressionReport(null)
 
     try {
-      const png = await renderTransparentPng(bitmap, settings, inkMode, setProgress, outputPreset, allowUpscale,
-        alphaSettings, embedProfile, optimizePng,
-        (result) => setCompressionReport(describeCompression(result)))
-      downloadBlob(png, downloadName(currentFile.name, inkMode, outputPreset, bitmap.width, bitmap.height))
+      const onCompression = (result: CompressionResult) => setCompressionReport(describeCompression(result))
+      const png = bitmap
+        ? await renderTransparentPng(bitmap, settings, inkMode, setProgress, outputPreset, allowUpscale,
+          alphaSettings, embedProfile, optimizePng, onCompression)
+        : await renderLargeTransparentPng(currentFile, sourceDimensions, settings, inkMode, setProgress,
+          outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
+      downloadBlob(png, downloadName(currentFile.name, inkMode, outputPreset, sourceDimensions.width, sourceDimensions.height))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falló la exportación PNG.')
     } finally {
@@ -949,7 +993,7 @@ export function ImagesStudio() {
           {file && <div className="images-preview-footer">
             <div className="images-file-info">
               <strong title={file.name}>{file.name}</strong>
-              <small>{(file.size / (1024 * 1024)).toFixed(1)} MB · {removedPercent}% de píxeles totalmente transparentes en preview</small>
+              <small>{(file.size / (1024 * 1024)).toFixed(1)} MB · {removedPercent}% de píxeles totalmente transparentes en preview{dimensions && !bitmapRef.current ? ' · PNG grande: exportación por franjas a resolución original' : ''}</small>
             </div>
             <button className={originalVisible ? 'images-before active' : 'images-before'} onClick={() => setShowOriginal((value) => !value)} aria-pressed={showOriginal}
               title="Ver antes/después. Pulsa dos veces Ctrl y mantén la segunda pulsación para ver el original temporalmente.">

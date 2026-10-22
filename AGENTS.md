@@ -34,6 +34,13 @@ For work belonging to roadmap phases 1–8:
 
 The GitHub workflow `.github/workflows/video-studio-roadmap.yml` enforces item 2 for phase-marked commits.
 
+## Images Studio: preserve native-resolution artwork
+
+- The standard bitmap pipeline uses 18 MP mobile / 30 MP desktop memory protection. Large PNG sources use `src/components/images/largeImageExport.ts`: small resized preview, original source retained, native-resolution strip processing, streamed RGBA8 PNG with transparent margin trim, ICC/pHYs metadata preserved.
+- Do not simply remove memory protection or silently downscale exported print artwork. The large-image mode must explicitly fail if the browser refuses a source, and preserve original pixel dimensions except alpha-transparent trimming.
+- Keep batch export and individual export in parity; validate the PNG dimension-header path and source-over-limit thresholds in `scripts/images-print-qa.ts`.
+- Do not claim that mobile browsers can universally decode 100 MP: support depends on decoder and available memory.
+
 ## Shared GAS3D application navigation
 
 - All modules use the compact four-squares launcher from `src/components/navigation/AppLauncher.tsx` in their own existing header. Never place a second floating tab bar over native module controls.

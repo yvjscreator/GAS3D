@@ -3,6 +3,7 @@ import { deflateSync, inflateSync } from 'node:zlib'
 import { getExportGeometry } from '../src/components/images/printExport'
 import { DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, analyzeAlpha, type AlphaOptimizationSettings, type DtfPattern } from '../src/components/images/alphaOptimization'
 import { embedSrgbIcc, inspectPng, verifyPrintPng } from '../src/components/images/colorManagement'
+import { assertStreamedDimensions, isLargeImage, readPngSourceSize } from '../src/components/images/largeImageExport'
 
 const profile: AlphaOptimizationSettings = { method: 'dtf', dtfMode: 'halftone', cleanupPercent: 10, cellPixels: 8 }
 assert.equal(DEFAULT_ALPHA_SETTINGS.pattern, 'stochastic')
@@ -116,6 +117,16 @@ const png = Buffer.concat([
   chunk('IDAT', deflateSync(Buffer.from([0,220,40,30,180]))),
   chunk('IEND', Buffer.alloc(0)),
 ])
+const pngHeader = await readPngSourceSize(new Blob([new Uint8Array(png)]))
+assert.deepEqual(pngHeader, { width: 1, height: 1 }, 'PNG dimensions should be readable without decoding a full bitmap')
+assert.equal(await readPngSourceSize(new Blob([new Uint8Array([0, 1, 2, 3])])), null)
+assert.doesNotThrow(() => assertStreamedDimensions({ width: 13_535, height: 4_725 }), 'A 64MP collage PNG must be accepted for streaming')
+assert.throws(() => assertStreamedDimensions({ width: 18_000, height: 4_000 }), 'Canvas/browser axis bounds still apply')
+assert.throws(() => assertStreamedDimensions({ width: 15_000, height: 8_000 }), 'Protect browsers from pathological huge inputs')
+const browserSource = (await import('node:fs')).readFileSync('src/components/images/ImagesStudio.tsx','utf8')
+const streamSource = (await import('node:fs')).readFileSync('src/components/images/largeImageExport.ts','utf8')
+assert.ok(browserSource.includes('await renderLargeTransparentPng(currentFile, sourceDimensions') && browserSource.includes('await renderLargeTransparentPng(item.file, dimensions'))
+assert.ok(streamSource.includes('createImageBitmap(input, 0, sourceTop') && streamSource.includes("new CompressionStream('deflate')"))
 const withProfile = await embedSrgbIcc(new Blob([new Uint8Array(png)], {type:'image/png'}))
 const details = await verifyPrintPng(withProfile, { width:1, height:1, dpi:300, icc:true })
 assert.deepEqual(details, {width:1,height:1,bitDepth:8,colorType:6,icc:true,dpi:300})
