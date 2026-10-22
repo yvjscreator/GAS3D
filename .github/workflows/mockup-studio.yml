@@ -1,0 +1,23 @@
+name: Mockup Studio build
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/components/mockups/**'
+      - 'scripts/mockup-qa.ts'
+      - 'src/utils/mediaStorage.ts'
+      - 'package.json'
+      - '.github/workflows/mockup-studio.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
