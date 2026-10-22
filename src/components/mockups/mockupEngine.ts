@@ -113,7 +113,7 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
   const right=bound(Math.ceil(Math.max(...quad.map(p=>p.x))*width)+2,0,width)
   const bottom=bound(Math.ceil(Math.max(...quad.map(p=>p.y))*height)+2,0,height)
   const w=right-x,h=bottom-y
-  if(w<=0||h<=0)return
+  if(w<=0||h<=0)continue
 
   const overlay=document.createElement('canvas');overlay.width=width;overlay.height=height
   try{
