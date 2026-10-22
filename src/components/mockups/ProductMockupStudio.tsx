@@ -111,8 +111,7 @@ export function ProductMockupStudio(){
   const canvasRefs=useRef<Partial<Record<ViewName,HTMLCanvasElement|null>>>({})
   const dragRef=useRef<Drag|null>(null)
   const modelsRef=useRef(models)
-  const draftRef=useRef(draft)
-  modelsRef.current=models;draftRef.current=draft
+  useEffect(()=>{modelsRef.current=models},[models])
   const product=products.find(p=>p.id===selectedId)
   const enabled=product?VIEWS.filter(v=>product.views[v].enabled):[]
   const current=product?.views[active]
@@ -194,7 +193,7 @@ export function ProductMockupStudio(){
   useEffect(()=>{
     if(!product||loadedId!==product.id)return
     const frame=requestAnimationFrame(()=>{
-      for(const view of enabled){
+      for(const view of VIEWS.filter(v=>product.views[v].enabled)){
         const photo=models[view].photo,canvas=canvasRefs.current[view]
         if(!photo||!canvas)continue
         const layers=screen==='mockup'?product.views[view].zones.flatMap(zone=>{
@@ -208,7 +207,7 @@ export function ProductMockupStudio(){
       }
     })
     return ()=>cancelAnimationFrame(frame)
-  },[models,draft,product,screen,loadedId,enabled.join(',')])
+  },[models,draft,product,screen,loadedId])
 
   const updateProduct=(edit:(p:Product)=>Product)=>{
     setProducts(all=>all.map(p=>p.id===selectedId?edit(p):p))
@@ -393,7 +392,7 @@ export function ProductMockupStudio(){
     <header className="mockup-header">
       <AppLauncher active="mockups"/>
       <div><h1>Mockup <span>Studio</span></h1><p>Biblioteca de productos y estampados reutilizables</p></div>
-      {screen!=='library'&&<button type="button" className="mockup-nav-button" onClick={()=>{setScreen('library');setSelectedId(null)}}><ArrowLeft size={16}/> Productos</button>}
+      {screen!=='library'&&<button type="button" className="mockup-nav-button" disabled={busy} onClick={()=>{setScreen('library');setSelectedId(null)}}><ArrowLeft size={16}/> Productos</button>}
     </header>
     {screen==='library'||!product?<section className="mockup-library">
       <div className="mockup-library-intro"><div><h2>Productos</h2><p>Guardá cada prenda una sola vez. Después creá todos los mockups que necesites, sin volver a cargar las fotos.</p></div><span>{products.length} productos</span></div>
@@ -417,8 +416,8 @@ export function ProductMockupStudio(){
       </div>
     </section>:<div className="mockup-editor-shell">
       <nav className="mockup-editor-breadcrumb"><strong>{product.name}</strong><div role="group" aria-label="Modo del editor">
-        <button type="button" className={screen==='setup'?'active':''} onClick={()=>setScreen('setup')}>Configurar producto</button>
-        <button type="button" className={screen==='mockup'?'active':''} onClick={()=>setScreen('mockup')}>Nuevo mockup</button>
+        <button type="button" className={screen==='setup'?'active':''} disabled={busy} onClick={()=>setScreen('setup')}>Configurar producto</button>
+        <button type="button" className={screen==='mockup'?'active':''} disabled={busy} onClick={()=>setScreen('mockup')}>Nuevo mockup</button>
       </div></nav>
       <div className="mockup-layout">
         <section className="mockup-workspace">
