@@ -49,7 +49,7 @@ function download(blob:Blob,name:string){
 }
 
 type DragSession={view:ViewName;pointerId:number;kind:'move'|'corner';corner:number;start:Point;origin:Placement}
-export function MockupStudio(){
+export function LegacyMockupStudio(){
   const [views,setViews]=useState<Views>(makeViews)
   const viewsRef=useRef<Views>(views)
   const assetRefs=useRef(new Set<ImageBitmap>())
@@ -309,3 +309,5 @@ export function MockupStudio(){
     </div>
   </main>
 }
+
+export { ProductMockupStudio as MockupStudio } from './ProductMockupStudio'
