@@ -131,16 +131,28 @@ export function ProductMockupStudio(){
       const oldBack=await loadMedia('mockup-studio:v1:back:photo').catch(()=>null)
       if((!oldFront&&!oldBack)||disposed)return
       const legacy=makeProduct('Remera importada','Remera')
+      const legacyDraft:Draft={}
+      let previous:Record<string,unknown>={}
+      try{previous=JSON.parse(localStorage.getItem('gas3d.mockup-studio.v1')||'{}') as Record<string,unknown>}catch{/* Invalid legacy settings */}
+      const oldNames=(previous.names||{}) as Record<string,string>
       for(const view of ['front','back'] as const){
         const photo=view==='front'?oldFront:oldBack
         if(photo){
           await storeMedia(photoKey(legacy.id,view),photo).catch(()=>{})
-          legacy.views[view].photoName='Foto importada'
+          legacy.views[view].photoName=oldNames[view+':photo']||'Foto importada'
         }
         const art=await loadMedia('mockup-studio:v1:'+view+':art').catch(()=>null)
-        if(art)await storeMedia(artKey(legacy.id,view,legacy.views[view].zones[0].id),art).catch(()=>{})
+        if(art){
+          const zone=legacy.views[view].zones[0]
+          await storeMedia(artKey(legacy.id,view,zone.id),art).catch(()=>{})
+          legacyDraft[view]={[zone.id]:{
+            placement:restorePlacement(previous[view],view),
+            name:oldNames[view+':art']||'Diseño importado',
+          }}
+        }
       }
-      if(!disposed)setProducts(previous=>previous.length?previous:[legacy])
+      try{localStorage.setItem(draftKey(legacy.id),JSON.stringify(legacyDraft))}catch{/* Storage optional */}
+      if(!disposed)setProducts(previousProducts=>previousProducts.length?previousProducts:[legacy])
     })()
     return ()=>{disposed=true}
   },[])
