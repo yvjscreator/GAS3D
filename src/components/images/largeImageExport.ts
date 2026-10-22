@@ -47,16 +47,19 @@ for (let i = 0; i < crcTable.length; i++) {
   crcTable[i] = crc >>> 0
 }
 
-function pngChunk(type: string, bytes: Uint8Array): Uint8Array {
-  const chunk = new Uint8Array(bytes.length + 12)
-  const view = new DataView(chunk.buffer)
+function pngChunk(type: string, bytes: Uint8Array): ArrayBuffer {
+  // BlobPart in modern DOM typings requires ArrayBuffer, not a Uint8Array
+  // whose backing store could be SharedArrayBuffer. Allocate an owned buffer.
+  const buffer = new ArrayBuffer(bytes.length + 12)
+  const chunk = new Uint8Array(buffer)
+  const view = new DataView(buffer)
   view.setUint32(0, bytes.length, false)
   for (let i = 0; i < 4; i++) chunk[4 + i] = type.charCodeAt(i)
   chunk.set(bytes, 8)
   let crc = 0xffffffff
   for (let i = 4; i < chunk.length - 4; i++) crc = crcTable[(crc ^ chunk[i]) & 255] ^ (crc >>> 8)
   view.setUint32(chunk.length - 4, (crc ^ 0xffffffff) >>> 0, false)
-  return chunk
+  return buffer
 }
 
 async function forEachNativeStrip(
@@ -159,7 +162,7 @@ export async function renderLargeTransparentPng(
   view.setUint32(4, outputHeight, false)
   ihdr[8] = 8 // 8 bits per channel
   ihdr[9] = 6 // RGBA
-  const parts: BlobPart[] = [new Uint8Array(PNG_SIGNATURE), pngChunk('IHDR', ihdr)]
+  const parts: BlobPart[] = [new Uint8Array(PNG_SIGNATURE).buffer, pngChunk('IHDR', ihdr)]
 
   const compressor = new CompressionStream('deflate') // PNG IDAT requires zlib-wrapped DEFLATE
   const writer = compressor.writable.getWriter()
