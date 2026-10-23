@@ -1,17 +1,21 @@
 import { useId } from 'react'
 import { Check, X } from 'lucide-react'
 import { IconButton, InlineField } from '../ui/primitives'
-import { calibrationLineToSave, type CalibrationAxis, type CalibrationDraft, type PhotoCalibration } from './mockupCalibration'
+import { calibrationLineToSave, calibrationScaleAxis, photoReferenceScales, type CalibrationAxis, type CalibrationDraft, type PhotoCalibration, type PhotoSize } from './mockupCalibration'
 
-export function PhotoCalibrationControls({ calibration, values, pending, disabled, onValue, onMark, onSave, onCancel }: {
+export function PhotoCalibrationControls({ calibration, photo, values, pending, disabled, onValue, onMark, onSave, onCancel, onScaleAxis }: {
   calibration: PhotoCalibration; values: Partial<Record<CalibrationAxis, string>>; pending: CalibrationDraft | null; disabled: boolean
+  photo: PhotoSize | null; onScaleAxis: (axis: CalibrationAxis) => void
   onValue: (axis: CalibrationAxis, value: string) => void; onMark: (axis: CalibrationAxis) => void
   onSave: (axis: CalibrationAxis) => void; onCancel: (axis: CalibrationAxis) => void
 }) {
   const id = useId()
+  const scaleAxis = calibrationScaleAxis(calibration)
+  const scales = photo ? photoReferenceScales(photo, calibration) : null
+  const difference = scales?.horizontal && scales.vertical ? Math.max(scales.horizontal, scales.vertical) / Math.min(scales.horizontal, scales.vertical) - 1 : 0
   return <section className="mockup-calibration" aria-label="Calibración de fotografía">
     <h3>Referencias en centímetros</h3>
-    <details className="mockup-control-help"><summary>Cómo calibrar</summary><p>Marcá dos puntos sobre la prenda y asignale su medida real o estimada. ✓ aplica; × descarta los cambios de esa fila. Una referencia estima ambos ejes; la segunda permite afinarlos. Las medidas sugeridas por ChatGPT son aproximadas.</p></details>
+    <details className="mockup-control-help"><summary>Cómo calibrar</summary><p>Marcá dos puntos sobre la prenda y asignale su medida real o estimada. ✓ aplica; × descarta los cambios de esa fila. La referencia elegida define una única escala para reglas, zonas y estampados. Ambas referencias se conservan; si dan escalas distintas, elegí cuál usar. El PNG mantiene su proporción. Las medidas sugeridas por ChatGPT son aproximadas.</p></details>
     <div className="mockup-calibration-grid">
       {(['horizontal', 'vertical'] as const).map(axis => {
         const line = calibration[axis], marking = pending?.axis === axis
@@ -37,6 +41,14 @@ export function PhotoCalibrationControls({ calibration, values, pending, disable
         </div>
       })}
     </div>
-    <p className="mockup-note">{calibration.horizontal || calibration.vertical ? 'Reglas en cm estimados · ✓ para aplicar cambios.' : 'Sin referencia: las reglas muestran píxeles.'}</p>
+    {scaleAxis && <label className="mockup-field mockup-field-inline mockup-calibration-scale">Escala uniforme
+      <select aria-label="Referencia para escala uniforme" value={scaleAxis} disabled={disabled} onChange={event => onScaleAxis(event.target.value as CalibrationAxis)}>
+        {calibration.vertical && <option value="vertical">Alto ({calibration.vertical.cm} cm)</option>}
+        {calibration.horizontal && <option value="horizontal">Ancho ({calibration.horizontal.cm} cm)</option>}
+      </select>
+    </label>}
+    <p className="mockup-note">{!scaleAxis ? 'Sin referencia: las reglas muestran píxeles.' : difference > .05
+      ? `Medidas estimadas. Las escalas difieren ${Math.round(difference * 100)}%; se usa ${scaleAxis === 'vertical' ? 'el alto' : 'el ancho'} en ambos ejes.`
+      : 'Reglas en cm estimados.'}</p>
   </section>
 }

@@ -6,8 +6,14 @@ import { deleteCloudProduct, fetchCloudCatalogue, mergeCloudCatalogue, normalize
 const local:Product={id:'test-product',name:'Remera',type:'Remera',views:Object.fromEntries(VIEWS.map(view=>[view,{
   enabled:view==='front',zones:[{id:'print-zone',name:'Zona',aspect:1,placement:initialPlacement(view)}],
 }])) as Product['views']}
+local.views.front.calibration={
+  horizontal:{from:{x:.2,y:.4},to:{x:.8,y:.4},cm:54},
+  vertical:{from:{x:.5,y:.2},to:{x:.5,y:.9},cm:70},scaleAxis:'horizontal',
+}
 const record:CloudRecord={product:structuredClone(local),revision:'first',cloudName:'test-cloud',photos:{},deleted:false,cleanupPending:false}
 const remote=restoredCloudProduct(record)
+assert.equal(remote.views.front.calibration?.scaleAxis,'horizontal','Cloud restoration must retain the selected uniform scale reference')
+assert.equal(remote.views.front.calibration?.vertical?.cm,70,'Choosing one scale must preserve the other saved reference')
 const secondZone={...local.views.front.zones[0],id:'suggested-zone',name:'Zona sugerida'}
 const configuredView={...local.views.front,defaultZoneId:secondZone.id,zones:[...local.views.front.zones,secondZone]}
 assert.equal(preferredZone(configuredView)?.id,secondZone.id,'Opening a new mockup must use the configured zone rather than always the first zone')

@@ -4,7 +4,7 @@ import { penFabricOutline } from '../src/components/mockups/mockupPen'
 import { initialViewModes } from '../src/components/mockups/mockupWorkspace'
 import { requestConfirmation, confirmationSnapshot, settleConfirmation, subscribeConfirmation } from '../src/components/ui/confirmation'
 import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
-import { artworkFitsZone, calibrationLineToSave, fitPrintToZone, photoPixelsPerCm, projectPrintPlacement, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
+import { artworkFitsZone, calibrationLineToSave, calibrationScaleAxis, fitPrintToZone, photoPixelsPerCm, photoReferenceScales, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
 import { detectGarment } from '../src/components/mockups/garmentDetection'
 import { configuredZoneOutline, resizeZoneFromEdge, zoneEdgeHandles } from '../src/components/mockups/mockupZoneGeometry'
@@ -68,7 +68,7 @@ assert.equal(JSON.stringify(penZone),penBefore,'Pen zone resizing must preserve 
 const widerPen=resizeZoneFromEdge(photo,penZone,1,{x:10,y:0})
 assert.ok(widerPen.polygon!.every(p=>p.x>=0&&p.x<=1),'Extreme resize must stop at the photograph boundary')
 const line={horizontal:{from:{x:.2,y:.3},to:{x:.8,y:.3},cm:60},vertical:{from:{x:.3,y:.1},to:{x:.3,y:.9},cm:80}}
-const calibration=restoreCalibration(line)
+const calibration={...restoreCalibration(line),scaleAxis:'horizontal' as const}
 // Compact reference rows explicitly apply a draft; neither incomplete marking nor another axis may overwrite saved points.
 const savedReferences=structuredClone(calibration)
 assert.deepEqual(calibrationLineToSave(calibration.horizontal,null,'horizontal','54'),{...calibration.horizontal,cm:54})
@@ -81,7 +81,13 @@ for(const value of ['', '0', '-1', 'Infinity', '501'])assert.equal(calibrationLi
 assert.deepEqual(calibration,savedReferences,'Preparing or cancelling input must not mutate saved calibration')
 assert.equal(calibrationLineToSave(undefined,null,'horizontal','54'),null,'A new measurement needs points')
 const scale=photoPixelsPerCm(photo,calibration)
-assert.ok(scale&&Math.abs(scale.x-10)<1e-8&&Math.abs(scale.y-12)<1e-8,'Calibration references must resolve photo pixels per cm')
+const estimates=photoReferenceScales(photo,calibration)
+assert.ok(Math.abs(estimates.horizontal!-10)<1e-8&&Math.abs(estimates.vertical!-12)<1e-8,'Retain independent measured estimates for comparison')
+assert.ok(scale&&Math.abs(scale.x-10)<1e-8&&scale.x===scale.y,'The selected width reference must give a single uniform scale')
+assert.deepEqual(photoPixelsPerCm(photo,restoreCalibration(line)),{x:12,y:12},'Old two-reference products default to the height reference without stretching artwork')
+assert.equal(calibrationScaleAxis({}),null)
+assert.equal(calibrationScaleAxis({vertical:line.vertical,scaleAxis:'horizontal'}),'vertical','Unavailable selected references fall back to a saved reference')
+assert.deepEqual(restoreCalibration({...line,scaleAxis:'horizontal'}).scaleAxis,'horizontal','The chosen scale reference must persist')
 const p={...initialPlacement('back'),x:.5,y:.5,width:.3}
 const cm=printDimensionsCm(photo,art,p,calibration)
 assert.ok(cm&&Math.abs(cm.width-30)<1e-8&&Math.abs(cm.height-40)<1e-8,'Flat print dimensions must preserve PNG aspect even with different X/Y photo scales')
@@ -89,34 +95,42 @@ assert.ok(Math.abs((placementWidthForCm(photo,art,calibration,'horizontal',35)??
 assert.ok(Math.abs((placementWidthForCm(photo,art,calibration,'vertical',40)??NaN)-.3)<1e-9,'Height-driven sizing must preserve physical bitmap aspect')
 assert.ok(Math.abs((printDimensionsCm(photo,art,{...p,width:.35},calibration)?.width??NaN)-35)<1e-8,'Converting a scaled print back to cm must tolerate floating-point precision')
 // Regression: a 40:53 PNG at 53 cm high must be 40 cm wide, regardless of photo-axis calibration.
-for(const sourceArt of [{width:4000,height:5300},{width:4217,height:5689},{width:400,height:400},{width:800,height:400}]){
-  const width=placementWidthForCm(photo,sourceArt,calibration,'vertical',53)!
-  const print=projectPrintPlacement(photo,{...p,width},calibration)
-  const dimensions=printDimensionsCm(photo,sourceArt,print,calibration)!
+for(const reference of [calibration,{...calibration,scaleAxis:'vertical' as const},{vertical:line.vertical}]){
+ const scale=photoPixelsPerCm(photo,reference)!
+ for(const sourceArt of [{width:4000,height:5300},{width:4217,height:5689},{width:400,height:400},{width:800,height:400}]){
+  const width=placementWidthForCm(photo,sourceArt,reference,'vertical',53)!
+  const print={...p,width}
+  const dimensions=printDimensionsCm(photo,sourceArt,print,reference)!
   assert.ok(Math.abs(dimensions.height-53)<1e-8,'Entering height must round-trip without applying a second photo scale')
   assert.ok(Math.abs(dimensions.width/dimensions.height-sourceArt.width/sourceArt.height)<1e-8,'Physical print aspect must equal the actual PNG, not its filename or photo scale')
   for(const rotation of [0,37,90,-25]){
     const q=placementQuad(photo,sourceArt,{...print,rotation})
+    const pixelEdge=(a:typeof q[0],b:typeof q[0])=>Math.hypot((b.x-a.x)*photo.width,(b.y-a.y)*photo.height)
+    assert.ok(Math.abs(pixelEdge(q[0],q[1])/pixelEdge(q[0],q[3])-sourceArt.width/sourceArt.height)<1e-8,'The rendered PNG itself must retain its pixel aspect, not just the cm labels')
     const physicalEdge=(a:typeof q[0],b:typeof q[0])=>Math.hypot((b.x-a.x)*photo.width/scale!.x,(b.y-a.y)*photo.height/scale!.y)
-    assert.ok(Math.abs(physicalEdge(q[0],q[1])-dimensions.width)<1e-8,'Rendered width must agree with the physical input after photo projection and rotation')
-    assert.ok(Math.abs(physicalEdge(q[0],q[3])-dimensions.height)<1e-8,'Rendered height must agree with the physical input after photo projection and rotation')
+    assert.ok(Math.abs(physicalEdge(q[0],q[1])-dimensions.width)<1e-8,'Rendered width must agree with the physical input after proportional sizing and rotation')
+    assert.ok(Math.abs(physicalEdge(q[0],q[3])-dimensions.height)<1e-8,'Rendered height must agree with the physical input after proportional sizing and rotation')
   }
-  const restored=projectPrintPlacement(photo,restorePlacement(JSON.parse(JSON.stringify(print)),'front'),calibration)
-  assert.deepEqual(placementQuad(photo,sourceArt,restored),placementQuad(photo,sourceArt,print),'Reload must preserve the calibrated projection')
+  const restored=restorePlacement(JSON.parse(JSON.stringify(print)),'front')
+  assert.deepEqual(placementQuad(photo,sourceArt,restored),placementQuad(photo,sourceArt,print),'Reload must preserve the proportional print shape')
+ }
 }
-const projected=projectPrintPlacement(photo,p,calibration),projectedQuad=placementQuad(photo,art,projected)
-const projectedLarger=scaleFromCorner(photo,art,projected,2,{x:projectedQuad[0].x+(projectedQuad[2].x-projectedQuad[0].x)*1.5,y:projectedQuad[0].y+(projectedQuad[2].y-projectedQuad[0].y)*1.5})
-assert.ok(samePoint(placementQuad(photo,art,projectedLarger)[0],projectedQuad[0]),'Proportional dragging must keep its opposite corner anchored under unequal photo scales')
-const fitted=fitPrintToZone(photo,art,{placement:{...p,width:.5},aspect:1},calibration)
-assert.ok(artworkFitsZone(photo,art,fitted,{...p,width:.5},1),'Initial fit must account for the print projection, not overflow a calibrated zone')
-assert.deepEqual(placementQuad(photo,art,projectPrintPlacement(photo,p,{})),placementQuad(photo,art,p),'Uncalibrated legacy geometry must remain unchanged')
-assert.deepEqual(projectPrintPlacement(photo,projected,{vertical:calibration.vertical}).projectionY,1,'Changing references must recompute projection instead of accumulating it')
+const resizeOrigin=p,resizeQuad=placementQuad(photo,art,p)
+const resizedPrint=scaleFromCorner(photo,art,resizeOrigin,2,{x:resizeQuad[0].x+(resizeQuad[2].x-resizeQuad[0].x)*1.5,y:resizeQuad[0].y+(resizeQuad[2].y-resizeQuad[0].y)*1.5})
+assert.ok(samePoint(placementQuad(photo,art,resizedPrint)[0],resizeQuad[0]),'Proportional dragging must keep its opposite corner anchored with unequal reference estimates')
+const fitted=fitPrintToZone(photo,art,{placement:{...p,width:.5},aspect:1})
+assert.ok(artworkFitsZone(photo,art,fitted,{...p,width:.5},1),'Initial proportional fit must stay inside its zone')
+const oldStretchedDraft={...p,projectionY:1.22}
+assert.deepEqual(placementQuad(photo,art,oldStretchedDraft),placementQuad(photo,art,p),'Ignore automatic stretching stored by the previous release without clearing the draft')
+assert.equal('projectionY' in restorePlacement(oldStretchedDraft,'front'),false,'Restoration must discard the obsolete automatic stretch factor')
+const legacyManualCorners=[{x:.04,y:.01},{x:0,y:0},{x:0,y:0},{x:0,y:0}]
+assert.deepEqual(restorePlacement({...oldStretchedDraft,corners:legacyManualCorners},'front').corners,legacyManualCorners,'Removing automatic stretch must preserve explicit manual corner edits')
 const warped={...p,corners:[{x:.04,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}] as typeof p.corners}
 const resized=resizePrintPreservingWarp(warped,.6)
 assert.equal(resized.width,.6)
 assert.ok(Math.abs(resized.corners[0].x-.08)<1e-8,'Resize must preserve existing manual warp proportions')
 const area=zoneDimensionsCm(photo,{...p,width:.5},1,calibration)
-assert.ok(area&&Math.abs(area.width-50)<1e-8&&Math.abs(area.height-500/12)<1e-8,'Zone bounds need centimeter dimensions')
+assert.ok(area&&Math.abs(area.width-50)<1e-8&&Math.abs(area.height-50)<1e-8,'Zone bounds need centimeter dimensions')
 assert.ok(artworkFitsZone(photo,art,p,{...p,width:.5},1),'Normal artwork must fit inside its zone')
 assert.ok(!artworkFitsZone(photo,art,{...p,x:.92},{...p,width:.5},1),'Moving outside a zone must warn')
 assert.deepEqual(restoreCalibration({horizontal:{from:{x:0,y:0},to:{x:0,y:0},cm:0}}),{},'Reject invalid or stale reference geometry')
@@ -216,7 +230,7 @@ const seamBoundary=safeZonePolygon(photo,seamZone,1,calibration,2)
 const seamFull=safeZonePolygon(photo,seamZone,1,calibration,0)
 assert.equal(seamBoundary.length,4,'Real margin should produce a four-corner safe printable area')
 assert.ok(Math.abs(seamBoundary[0].x-(seamFull[0].x+.02))<1e-8,'2 cm seam should inset horizontal photo pixels correctly')
-assert.ok(Math.abs(seamBoundary[0].y-(seamFull[0].y+.02))<1e-8,'2 cm seam should inset vertical photo pixels correctly')
+assert.ok(Math.abs(seamBoundary[0].y-(seamFull[0].y+20/photo.height))<1e-8,'2 cm seam should inset vertical photo pixels correctly')
 assert.ok(printInsideSafeAreas(photo,art,p,[seamBoundary]),'Inside artwork must fit the safety margin')
 assert.ok(!printInsideSafeAreas(photo,art,{...p,width:.47},[seamBoundary]),'Large artwork must warn before crossing the seam')
 assert.equal(safeZonePolygon(photo,seamZone,1,{},2).length,4,'Uncalibrated legacy zones should retain photo-relative boundaries')

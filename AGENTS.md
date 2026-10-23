@@ -80,7 +80,7 @@ Canonical requirements: `agents/mockup-studio-plan.md` and `agents/mockup-studio
 
 - Preserve the user's existing photographs and artwork PNGs; reuse front/back locally via IndexedDB. High-resolution art can have more pixels than the photo: keep the full original Blob and make a capped working bitmap only for photocompositing. Do not upscale, generate, alter or delete source artwork stored in IndexedDB.
 - Compositing uses photo-relative fabric illumination rather than multiplying colors by black fabric. Keep preview/export renderer shared; support mouse and touch editing, manual quad geometry and full-sized photo export within safe canvas caps.
-- Physical print measurements need explicit template calibration; never label photo-relative percentages as centimeter-accurate.
+- Physical print measurements need explicit template calibration; never label photo-relative percentages as centimeter-accurate. Calibration must use one selectable uniform scale for rulers, prints, zones and margins, and must never stretch the rendered PNG to reconcile width/height estimates. Preserve both saved references; deformation is an explicit user action. Regression checks must verify the actual rendered pixel aspect as well as numeric centimeter ratios, including unequal reference estimates and old saved drafts.
 - Use the shared AppLauncher compact header; keep mobile/desktop editing reachable without controls covering exports.
 - Test with `npm run qa:mockups`; do not claim actual device validation until browser testing.
 

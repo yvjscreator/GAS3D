@@ -5,7 +5,7 @@ import { loadMedia, removeMedia, storeMedia, storeMediaMetadata } from '../../ut
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
 import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type RenderLayer, type ViewName } from './mockupEngine'
 import { pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from './mockupMasks'
-import { artworkFitsZone, calibrationLineToSave, fitPrintToZone, photoPixelsPerCm, projectPrintPlacement, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, zoneDimensionsCm, type CalibrationAxis } from './mockupCalibration'
+import { artworkFitsZone, calibrationLineToSave, fitPrintToZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, zoneDimensionsCm, type CalibrationAxis } from './mockupCalibration'
 import { detectGarment, type GarmentDetection } from './garmentDetection'
 import { PhotoRulers } from './PhotoRulers'
 import { configuredZoneOutline, resizeZoneFromEdge, zoneEdgeHandles, ZONE_EDGE_NAMES, type ZoneGeometry } from './mockupZoneGeometry'
@@ -78,7 +78,7 @@ function viewLayers(config:ProductView,photo:MockImage,arts:Record<string,MockIm
   return config.zones.flatMap(zone=>{
     const art=arts[zone.id]
     if(!art)return []
-    const placement=projectPrintPlacement(photo,draft?.[zone.id]?.placement??fitPrintToZone(photo,art,zone,config.calibration??{}),config.calibration??{})
+    const placement=draft?.[zone.id]?.placement??fitPrintToZone(photo,art,zone)
     const clipPolygons:Point[][]=[]
     if(config.silhouette?.length)clipPolygons.push(config.silhouette)
     if(zone.clipToZone)clipPolygons.push(safeZonePolygon(photo,zone.placement,zone.aspect,config.calibration??{},zone.seamMarginCm??0,zone.polygon))
@@ -159,7 +159,7 @@ export function ProductMockupStudio(){
   const photoScale=photo?photoPixelsPerCm(photo,calibration):null
   const zoneCm=photo&&selectedZone?zoneDimensionsCm(photo,selectedZone.placement,selectedZone.aspect,calibration):null
   const currentPrint=photo&&selectedZone&&selectedArt
-    ?projectPrintPlacement(photo,draft[active]?.[selectedZone.id]?.placement??fitPrintToZone(photo,selectedArt,selectedZone,calibration),calibration):null
+    ?draft[active]?.[selectedZone.id]?.placement??fitPrintToZone(photo,selectedArt,selectedZone):null
   const printCm=photo&&selectedArt&&currentPrint
     ?printDimensionsCm(photo,selectedArt,currentPrint,calibration):null
   const safeBoundary=photo&&selectedZone
@@ -304,7 +304,7 @@ export function ProductMockupStudio(){
   }
   const placementFor=(view:ViewName,zone:Zone)=>{
     const photo=models[view].photo,art=models[view].arts[zone.id]
-    return photo&&art?projectPrintPlacement(photo,draft[view]?.[zone.id]?.placement??fitPrintToZone(photo,art,zone,product?.views[view].calibration??{}),product?.views[view].calibration??{}):zone.placement
+    return photo&&art?draft[view]?.[zone.id]?.placement??fitPrintToZone(photo,art,zone):zone.placement
   }
   const editPlacement=(view:ViewName,zone:Zone,edit:(p:Placement)=>Placement)=>{
     if(screen==='setup')updateZone(view,zone.id,z=>{
@@ -424,7 +424,7 @@ export function ProductMockupStudio(){
         else if(zid){
           setDraft(old=>({...old,[view]:{...old[view],[zid]:{
             placement:old[view]?.[zid]?.placement??{
-              ...fitPrintToZone(modelsRef.current[view].photo!,image,product!.views[view].zones.find(z=>z.id===zid)!,product!.views[view].calibration??{}),
+              ...fitPrintToZone(modelsRef.current[view].photo!,image,product!.views[view].zones.find(z=>z.id===zid)!),
               ...(view.endsWith('Sleeve')?{sleeveCurve:defaultSleeveCurve()}:{})
             },
             name:file.name,
@@ -882,12 +882,13 @@ export function ProductMockupStudio(){
             }}/>{LABELS[v]}</label>)}</div>
             </div>
             <div className="mockup-divider"/>
-            <PhotoCalibrationControls calibration={calibration}
+            <PhotoCalibrationControls calibration={calibration} photo={photo}
               values={{horizontal:measureDraft[active+':horizontal'],vertical:measureDraft[active+':vertical']}}
               pending={calibrationMode?.view===active?calibrationMode:null} disabled={!photo||busy||cloud.working}
               onValue={(axis,value)=>setMeasureDraft(old=>({...old,[active+':'+axis]:value}))}
               onMark={axis=>{setZenTool('zone');setInspector('calibration');setCalibrationMode({view:active,axis,first:null});openZen(active,true)}}
-              onSave={saveCalibration} onCancel={cancelCalibration}/>
+              onSave={saveCalibration} onCancel={cancelCalibration}
+              onScaleAxis={axis=>updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],calibration:{...p.views[active].calibration,scaleAxis:axis}}}}))}/>
             <div className="mockup-divider"/>
             <section className="mockup-mask-editor" aria-label="Pluma de silueta o zona">
               <h3>{maskEditing===active&&penTarget==='zone'?'Contorno de zona':'Silueta de la prenda'} · {LABELS[active]}</h3>
@@ -988,7 +989,7 @@ export function ProductMockupStudio(){
               }}><Trash2 size={15}/> Eliminar zona</button>
             </>:<>
               <div className="mockup-asset-status"><span>Diseño</span><strong>{selectedArt?.name||'Sin cargar'}</strong></div>
-              <details className="mockup-control-help"><summary>Encaje y borradores</summary><p>Las medidas corresponden al PNG plano, antes de perspectiva, deformación o curvatura. Las escalas de la foto se aplican a su proyección y no cambian la proporción física del diseño. Se restaura su borrador local si existe. «Encajar en zona del producto» vuelve a la referencia configurada.</p></details>
+              <details className="mockup-control-help"><summary>Encaje y borradores</summary><p>Las medidas corresponden al PNG plano, antes de deformación manual o curvatura. La referencia elegida en Calibrar define una escala uniforme para reglas y estampados; la calibración conserva la forma original del PNG. Se restaura su borrador local si existe. «Encajar en zona del producto» vuelve a la referencia configurada.</p></details>
               <div className="mockup-upload-actions">
                 <button type="button" disabled={busy||!models[active].photo} onClick={()=>openUpload('art',active,selectedZone.id)}><Upload size={15}/> PNG del arte</button>
                 <button type="button" disabled={busy||!selectedArt} onClick={()=>removeAsset('art',active,selectedZone.id)}><Trash2 size={15}/> Quitar arte</button>
@@ -1069,7 +1070,7 @@ export function ProductMockupStudio(){
                 if(screen==='setup')editPlacement(active,selectedZone,()=>initialPlacement(active))
                 else{
                   const photo=models[active].photo,art=models[active].arts[selectedZone.id]
-                  if(photo&&art)editPlacement(active,selectedZone,()=>fitPrintToZone(photo,art,selectedZone,calibration))
+                  if(photo&&art)editPlacement(active,selectedZone,()=>fitPrintToZone(photo,art,selectedZone))
                 }
               }}><RotateCcw size={15}/> {screen==='setup'?'Restablecer':'Encajar en zona del producto'}</button>
               <label className="mockup-guides-toggle"><input type="checkbox" checked={guides} onChange={e=>setGuides(e.target.checked)}/> Guías</label>

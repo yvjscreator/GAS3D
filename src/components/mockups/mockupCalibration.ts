@@ -1,9 +1,9 @@
 import { artworkOutline, bound, placementQuad, type Placement, type Point } from './mockupEngine'
 
-/** Two independently measured photo-space axes. Coordinates are fractions of the photo. */
+/** Saved photo-space references. One supplies a uniform scale; neither deforms artwork. */
 export type CalibrationAxis = 'horizontal' | 'vertical'
 export type CalibrationLine = { from: Point; to: Point; cm: number }
-export type PhotoCalibration = { horizontal?: CalibrationLine; vertical?: CalibrationLine }
+export type PhotoCalibration = { horizontal?: CalibrationLine; vertical?: CalibrationLine; scaleAxis?: CalibrationAxis }
 export type PhotoSize = { width: number; height: number }
 export type CalibrationDraft = { axis: CalibrationAxis; first: Point | null; second?: Point }
 
@@ -51,41 +51,41 @@ export function restoreCalibration(raw: unknown): PhotoCalibration {
     if (Math.abs(axis === 'horizontal' ? line.to.x - line.from.x : line.to.y - line.from.y) < .005) continue
     result[axis] = { from: { ...line.from }, to: { ...line.to }, cm: line.cm }
   }
+  if ((source.scaleAxis === 'horizontal' || source.scaleAxis === 'vertical') && result[source.scaleAxis]) result.scaleAxis = source.scaleAxis
   return result
 }
 
-/** Approximate photo pixels per physical centimeter at the marked references. */
-export function photoPixelsPerCm(photo: PhotoSize, calibration: PhotoCalibration): { x: number; y: number } | null {
+export function calibrationScaleAxis(calibration: PhotoCalibration): CalibrationAxis | null {
+  if (calibration.scaleAxis && calibration[calibration.scaleAxis]) return calibration.scaleAxis
+  return calibration.vertical ? 'vertical' : calibration.horizontal ? 'horizontal' : null
+}
+
+/** Separate estimates are for comparison only, never for nonuniform artwork scaling. */
+export function photoReferenceScales(photo: PhotoSize, calibration: PhotoCalibration): { horizontal: number | null; vertical: number | null } {
   const horizontal = calibration.horizontal, vertical = calibration.vertical
-  if ((!horizontal && !vertical) || photo.width <= 0 || photo.height <= 0) return null
-  // A single known length estimates a uniform photo scale. A second axis can refine it.
-  const horizontalScale = horizontal ? Math.abs(horizontal.to.x - horizontal.from.x) * photo.width / horizontal.cm : null
-  const verticalScale = vertical ? Math.abs(vertical.to.y - vertical.from.y) * photo.height / vertical.cm : null
-  const x = horizontalScale ?? verticalScale!
-  const y = verticalScale ?? horizontalScale!
-  if (!Number.isFinite(x) || !Number.isFinite(y) || x <= 0 || y <= 0) return null
-  return { x, y }
+  return {
+    horizontal: horizontal ? Math.abs(horizontal.to.x - horizontal.from.x) * photo.width / horizontal.cm : null,
+    vertical: vertical ? Math.abs(vertical.to.y - vertical.from.y) * photo.height / vertical.cm : null,
+  }
 }
 
-/** Project a proportional flat print into the independently calibrated photo axes.
- * Product zones are already photo-space geometry and must not use this projection.
- */
-export function projectPrintPlacement(photo: PhotoSize, placement: Placement, calibration: PhotoCalibration): Placement {
-  const scale = photoPixelsPerCm(photo, calibration)
-  return { ...placement, projectionY: scale ? scale.y / scale.x : 1 }
+/** One reference, one pixels/cm scale for rulers, print dimensions, zones and margins. */
+export function photoPixelsPerCm(photo: PhotoSize, calibration: PhotoCalibration): { x: number; y: number } | null {
+  const axis = calibrationScaleAxis(calibration)
+  if (!axis || photo.width <= 0 || photo.height <= 0) return null
+  const scale = photoReferenceScales(photo, calibration)[axis]
+  if (scale === null || !Number.isFinite(scale) || scale <= 0) return null
+  return { x: scale, y: scale }
 }
 
-/** Fit the physical print's projected rectangle inside a product zone. */
-export function fitPrintToZone(photo: PhotoSize, art: PhotoSize, zone: { placement: Placement; aspect: number }, calibration: PhotoCalibration): Placement {
-  const projected = projectPrintPlacement(photo, zone.placement, calibration)
+/** Fit without changing the source aspect, regardless of photo calibration. */
+export function fitPrintToZone(photo: PhotoSize, art: PhotoSize, zone: { placement: Placement; aspect: number }): Placement {
   const availableH = zone.placement.width * photo.width / zone.aspect
-  const width = Math.min(zone.placement.width, availableH * art.width / art.height / (projected.projectionY ?? 1) / photo.width)
-  return { ...projected, width: Math.max(.025, width), corners: zone.placement.corners.map(p => ({ ...p })) as Placement['corners'] }
+  const width = Math.min(zone.placement.width, availableH * art.width / art.height / photo.width)
+  return { ...zone.placement, width: Math.max(.025, width), corners: zone.placement.corners.map(p => ({ ...p })) as Placement['corners'] }
 }
 
-/** Flat artwork dimensions, before photo projection, rotation, corner warp or sleeve curvature.
- * Independent photo axes change its projection, never its physical aspect ratio.
- */
+/** Flat artwork dimensions before rotation, explicit corner warp or sleeve curvature. */
 export function printDimensionsCm(
   photo: PhotoSize, art: PhotoSize, placement: Placement, calibration: PhotoCalibration,
 ): { width: number; height: number } | null {

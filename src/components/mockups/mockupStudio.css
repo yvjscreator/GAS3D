@@ -347,6 +347,7 @@
 .mockup-properties .mockup-field{gap:4px;font-size:11px}
 .mockup-properties .mockup-field input,.mockup-properties .mockup-field select{min-height:36px;padding:6px 8px}
 .mockup-properties .mockup-field-inline{grid-template-columns:minmax(0,1fr) minmax(64px,.7fr);align-items:center;gap:8px}
+.mockup-properties .mockup-calibration-scale{grid-template-columns:auto minmax(0,1fr)}
 .mockup-zone-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .mockup-add-zone{display:grid;place-items:center;width:34px;height:34px;border:1px solid #527b99;border-radius:6px;background:#1c3c54;color:#e4f2ff;cursor:pointer}
 .mockup-properties .mockup-zone-tabs{margin:8px 0;gap:5px}
