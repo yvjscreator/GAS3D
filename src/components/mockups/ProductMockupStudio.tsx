@@ -4,10 +4,11 @@ import { AppLauncher } from '../navigation/AppLauncher'
 import { loadMedia, removeMedia, storeMedia } from '../../utils/mediaStorage'
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
 import { bound, canvasPng, ensurePhotoSize, initialPlacement, placementQuad, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type ViewName } from './mockupEngine'
+import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, restoreCalibration, zoneDimensionsCm, type CalibrationAxis, type PhotoCalibration } from './mockupCalibration'
 import './mockupStudio.css'
 
 type Zone = { id:string; name:string; aspect:number; placement:Placement }
-type ProductView = { enabled:boolean; photoName?:string; zones:Zone[] }
+type ProductView = { enabled:boolean; photoName?:string; calibration?:PhotoCalibration; zones:Zone[] }
 type Product = { id:string; name:string; type:string; views:Record<ViewName,ProductView> }
 type Models = Record<ViewName,{photo:MockImage|null;arts:Record<string,MockImage>}>
 type DraftValue = {placement:Placement;name:string}
@@ -42,6 +43,7 @@ function readProducts():Product[]{
       .map(p=>({...p,views:Object.fromEntries(VIEWS.map(v=>[v,{
         enabled:Boolean(p.views[v]?.enabled),
         photoName:p.views[v]?.photoName,
+        calibration:restoreCalibration(p.views[v]?.calibration),
         zones:Array.isArray(p.views[v]?.zones)?p.views[v].zones.filter(z=>z&&typeof z.id==='string').map(z=>({
           id:z.id,name:typeof z.name==='string'?z.name:'Zona',aspect:bound(Number(z.aspect)||1,.15,6),placement:restorePlacement(z.placement,v),
         })):[],
@@ -104,6 +106,8 @@ export function ProductMockupStudio(){
   const [busy,setBusy]=useState(false)
   const [warpMode,setWarpMode]=useState(false)
   const [guides,setGuides]=useState(true)
+  const [calibrationMode,setCalibrationMode]=useState<{view:ViewName;axis:CalibrationAxis;first:Point|null}|null>(null)
+  const [measureDraft,setMeasureDraft]=useState<Record<string,string>>({})
   const [feedback,setFeedback]=useState('')
   const [error,setError]=useState('')
   const inputRef=useRef<HTMLInputElement>(null)
@@ -117,6 +121,14 @@ export function ProductMockupStudio(){
   const current=product?.views[active]
   const selectedZone=current?.zones.find(z=>z.id===zoneId)??current?.zones[0]
   const selectedArt=selectedZone?models[active].arts[selectedZone.id]:null
+  const photo=models[active].photo
+  const calibration=current?.calibration??{}
+  const photoScale=photo?photoPixelsPerCm(photo,calibration):null
+  const zoneCm=photo&&selectedZone?zoneDimensionsCm(photo,selectedZone.placement,selectedZone.aspect,calibration):null
+  const printCm=photo&&selectedZone&&selectedArt
+    ?printDimensionsCm(photo,selectedArt,draft[active]?.[selectedZone.id]?.placement??fitArt(selectedZone,photo,selectedArt),calibration):null
+  const printFits=photo&&selectedZone&&selectedArt
+    ?artworkFitsZone(photo,selectedArt,draft[active]?.[selectedZone.id]?.placement??fitArt(selectedZone,photo,selectedArt),selectedZone.placement,selectedZone.aspect):true
 
   useEffect(()=>{
     try{localStorage.setItem(LIBRARY_KEY,JSON.stringify(products))}catch{/* Storage optional */}
@@ -251,7 +263,12 @@ export function ProductMockupStudio(){
           ...old[view],photo:kind==='photo'?image:old[view].photo,
           arts:kind==='art'?{...old[view].arts,[zid||'']:image}:old[view].arts,
         }}))
-        if(kind==='photo')updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:file.name}}}))
+        if(kind==='photo'){
+          // A replacement photo invalidates previously marked references.
+          updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:file.name,calibration:{}}}}))
+          setMeasureDraft(old=>Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(view+':'))))
+          setCalibrationMode(null)
+        }
         else if(zid){
           setDraft(old=>({...old,[view]:{...old[view],[zid]:{
             placement:old[view]?.[zid]?.placement??fitArt(product!.views[view].zones.find(z=>z.id===zid)!,modelsRef.current[view].photo!,image),
@@ -279,6 +296,24 @@ export function ProductMockupStudio(){
   }
   const onPointerDown=(e:ReactPointerEvent<HTMLDivElement>,view:ViewName)=>{
     if(busy||loadedId!==selectedId||e.button!==0||!product)return
+    if(screen==='setup'&&calibrationMode?.view===view){
+      const pointOnPhoto=position(e)
+      if(!calibrationMode.first){setCalibrationMode({...calibrationMode,first:pointOnPhoto});return}
+      const axis=calibrationMode.axis,first=calibrationMode.first
+      const value=measureDraft[view+':'+axis]??product.views[view].calibration?.[axis]?.cm?.toString()??''
+      const cm=Number(value)
+      if(!value.trim()||!Number.isFinite(cm)||cm<.1||cm>500){
+        setError('Introducí primero una medida válida en centímetros.');setCalibrationMode(null);return
+      }
+      const delta=Math.abs(axis==='horizontal'?pointOnPhoto.x-first.x:pointOnPhoto.y-first.y)
+      if(delta<.005){setError('Los puntos están demasiado cerca. Volvé a marcar la referencia.');setCalibrationMode(null);return}
+      updateProduct(p=>({...p,views:{...p.views,[view]:{
+        ...p.views[view],
+        calibration:{...p.views[view].calibration,[axis]:{from:first,to:pointOnPhoto,cm}},
+      }}}))
+      setCalibrationMode(null);setError('');setFeedback('Referencia guardada para '+LABELS[view]+'.')
+      return
+    }
     const zone=view===active?selectedZone:product.views[view].zones[0]
     const photo=modelsRef.current[view].photo
     if(!zone||!photo)return
@@ -432,12 +467,24 @@ export function ProductMockupStudio(){
               const quad=photo&&art&&placement?placementQuad(photo,art,placement):null
               return <div className={'mockup-view'+(active===view?' is-active':'')} key={view}>
                 <div className="mockup-view-title"><strong>{LABELS[view]}</strong><span>{photo?.name||'Sin fotografía'}</span></div>
-                {photo?<div className="mockup-stage" style={{aspectRatio:photo.width+'/'+photo.height}}
+                {photo?<div className="mockup-stage" style={{aspectRatio:photo.width+'/'+photo.height,cursor:calibrationMode?.view===view?'crosshair':undefined}}
                   onPointerDown={e=>onPointerDown(e,view)} onPointerMove={e=>onPointerMove(e,view)} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}>
                   <canvas ref={node=>{canvasRefs.current[view]=node}} aria-label={'Vista '+LABELS[view]}/>
                   {guides&&quad&&<svg className="mockup-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                     <polygon points={quad.map(p=>p.x*100+','+p.y*100).join(' ')}/>
                     {quad.map((p,i)=><circle key={i} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
+                  </svg>}
+                  {screen==='setup'&&guides&&<svg className="mockup-calibration-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    {(['horizontal','vertical'] as const).map(axis=>{
+                      const line=product.views[view].calibration?.[axis]
+                      return line?<g key={axis} className={axis}>
+                        <line x1={line.from.x*100} y1={line.from.y*100} x2={line.to.x*100} y2={line.to.y*100}/>
+                        <circle cx={line.from.x*100} cy={line.from.y*100} r="1.1"/>
+                        <circle cx={line.to.x*100} cy={line.to.y*100} r="1.1"/>
+                      </g>:null
+                    })}
+                    {calibrationMode?.view===view&&calibrationMode.first&&
+                      <circle className="pending" cx={calibrationMode.first.x*100} cy={calibrationMode.first.y*100} r="1.45"/>}
                   </svg>}
                 </div>:<button type="button" className="mockup-empty" disabled={screen!=='setup'} onClick={()=>openUpload('photo',view)}><Shirt size={32}/><strong>{screen==='setup'?'Añadir fotografía':'Falta configurar la fotografía'}</strong><small>{LABELS[view]}</small></button>}
                 <div className="mockup-view-actions">
