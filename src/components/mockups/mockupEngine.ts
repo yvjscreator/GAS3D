@@ -24,6 +24,8 @@ export type Placement = {
   lighting: number
   corners: Quad
   sleeveCurve?: SleeveCurve
+  /** Photo Y pixels per X pixel for an equal physical distance; derived from calibration. */
+  projectionY?: number
 }
 export type MockImage = { width: number; height: number; bitmap: ImageBitmap; name: string }
 
@@ -54,6 +56,7 @@ export function restorePlacement(value: unknown, view: ViewName): Placement {
     lighting:number(state.lighting,def.lighting,0,1),
     corners:offsets,
     sleeveCurve:restoreSleeveCurve(state.sleeveCurve),
+    projectionY:typeof state.projectionY==='number'&&Number.isFinite(state.projectionY)&&state.projectionY>0?state.projectionY:undefined,
   }
 }
 
@@ -62,10 +65,11 @@ export function placementQuad(size: {width:number;height:number}, art: {width:nu
   const height = width * art.height / art.width
   const rotate = p.rotation * Math.PI / 180
   const c = Math.cos(rotate), s = Math.sin(rotate)
+  const projectionY = p.projectionY ?? 1
   const points: [number,number][] = [[-.5,-.5],[.5,-.5],[.5,.5],[-.5,.5]]
   return points.map(([x,y],i) => ({
     x:p.x + (x*width*c - y*height*s)/size.width + p.corners[i].x,
-    y:p.y + (x*width*s + y*height*c)/size.height + p.corners[i].y,
+    y:p.y + (x*width*s + y*height*c)*projectionY/size.height + p.corners[i].y,
   })) as Quad
 }
 

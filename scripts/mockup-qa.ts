@@ -4,7 +4,7 @@ import { penFabricOutline } from '../src/components/mockups/mockupPen'
 import { initialViewModes } from '../src/components/mockups/mockupWorkspace'
 import { requestConfirmation, confirmationSnapshot, settleConfirmation, subscribeConfirmation } from '../src/components/ui/confirmation'
 import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
-import { artworkFitsZone, calibrationLineToSave, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
+import { artworkFitsZone, calibrationLineToSave, fitPrintToZone, photoPixelsPerCm, projectPrintPlacement, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
 import { detectGarment } from '../src/components/mockups/garmentDetection'
 import { configuredZoneOutline, resizeZoneFromEdge, zoneEdgeHandles } from '../src/components/mockups/mockupZoneGeometry'
@@ -84,10 +84,33 @@ const scale=photoPixelsPerCm(photo,calibration)
 assert.ok(scale&&Math.abs(scale.x-10)<1e-8&&Math.abs(scale.y-12)<1e-8,'Calibration references must resolve photo pixels per cm')
 const p={...initialPlacement('back'),x:.5,y:.5,width:.3}
 const cm=printDimensionsCm(photo,art,p,calibration)
-assert.ok(cm&&Math.abs(cm.width-30)<1e-8&&Math.abs(cm.height-100/3)<1e-8,'Print dimensions should preserve PNG aspect ratio')
+assert.ok(cm&&Math.abs(cm.width-30)<1e-8&&Math.abs(cm.height-40)<1e-8,'Flat print dimensions must preserve PNG aspect even with different X/Y photo scales')
 assert.ok(Math.abs((placementWidthForCm(photo,art,calibration,'horizontal',35)??NaN)-.35)<1e-9,'Changing print width must preserve bitmap aspect')
-assert.ok(Math.abs((placementWidthForCm(photo,art,calibration,'vertical',40)??NaN)-.36)<1e-9,'Height-driven sizing must preserve bitmap aspect')
+assert.ok(Math.abs((placementWidthForCm(photo,art,calibration,'vertical',40)??NaN)-.3)<1e-9,'Height-driven sizing must preserve physical bitmap aspect')
 assert.ok(Math.abs((printDimensionsCm(photo,art,{...p,width:.35},calibration)?.width??NaN)-35)<1e-8,'Converting a scaled print back to cm must tolerate floating-point precision')
+// Regression: a 40:53 PNG at 53 cm high must be 40 cm wide, regardless of photo-axis calibration.
+for(const sourceArt of [{width:4000,height:5300},{width:4217,height:5689},{width:400,height:400},{width:800,height:400}]){
+  const width=placementWidthForCm(photo,sourceArt,calibration,'vertical',53)!
+  const print=projectPrintPlacement(photo,{...p,width},calibration)
+  const dimensions=printDimensionsCm(photo,sourceArt,print,calibration)!
+  assert.ok(Math.abs(dimensions.height-53)<1e-8,'Entering height must round-trip without applying a second photo scale')
+  assert.ok(Math.abs(dimensions.width/dimensions.height-sourceArt.width/sourceArt.height)<1e-8,'Physical print aspect must equal the actual PNG, not its filename or photo scale')
+  for(const rotation of [0,37,90,-25]){
+    const q=placementQuad(photo,sourceArt,{...print,rotation})
+    const physicalEdge=(a:typeof q[0],b:typeof q[0])=>Math.hypot((b.x-a.x)*photo.width/scale!.x,(b.y-a.y)*photo.height/scale!.y)
+    assert.ok(Math.abs(physicalEdge(q[0],q[1])-dimensions.width)<1e-8,'Rendered width must agree with the physical input after photo projection and rotation')
+    assert.ok(Math.abs(physicalEdge(q[0],q[3])-dimensions.height)<1e-8,'Rendered height must agree with the physical input after photo projection and rotation')
+  }
+  const restored=projectPrintPlacement(photo,restorePlacement(JSON.parse(JSON.stringify(print)),'front'),calibration)
+  assert.deepEqual(placementQuad(photo,sourceArt,restored),placementQuad(photo,sourceArt,print),'Reload must preserve the calibrated projection')
+}
+const projected=projectPrintPlacement(photo,p,calibration),projectedQuad=placementQuad(photo,art,projected)
+const projectedLarger=scaleFromCorner(photo,art,projected,2,{x:projectedQuad[0].x+(projectedQuad[2].x-projectedQuad[0].x)*1.5,y:projectedQuad[0].y+(projectedQuad[2].y-projectedQuad[0].y)*1.5})
+assert.ok(samePoint(placementQuad(photo,art,projectedLarger)[0],projectedQuad[0]),'Proportional dragging must keep its opposite corner anchored under unequal photo scales')
+const fitted=fitPrintToZone(photo,art,{placement:{...p,width:.5},aspect:1},calibration)
+assert.ok(artworkFitsZone(photo,art,fitted,{...p,width:.5},1),'Initial fit must account for the print projection, not overflow a calibrated zone')
+assert.deepEqual(placementQuad(photo,art,projectPrintPlacement(photo,p,{})),placementQuad(photo,art,p),'Uncalibrated legacy geometry must remain unchanged')
+assert.deepEqual(projectPrintPlacement(photo,projected,{vertical:calibration.vertical}).projectionY,1,'Changing references must recompute projection instead of accumulating it')
 const warped={...p,corners:[{x:.04,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}] as typeof p.corners}
 const resized=resizePrintPreservingWarp(warped,.6)
 assert.equal(resized.width,.6)

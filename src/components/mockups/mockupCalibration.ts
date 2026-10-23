@@ -67,14 +67,32 @@ export function photoPixelsPerCm(photo: PhotoSize, calibration: PhotoCalibration
   return { x, y }
 }
 
-/** The print bitmap is NEVER stretched: width controls preserve its original pixel aspect ratio. */
+/** Project a proportional flat print into the independently calibrated photo axes.
+ * Product zones are already photo-space geometry and must not use this projection.
+ */
+export function projectPrintPlacement(photo: PhotoSize, placement: Placement, calibration: PhotoCalibration): Placement {
+  const scale = photoPixelsPerCm(photo, calibration)
+  return { ...placement, projectionY: scale ? scale.y / scale.x : 1 }
+}
+
+/** Fit the physical print's projected rectangle inside a product zone. */
+export function fitPrintToZone(photo: PhotoSize, art: PhotoSize, zone: { placement: Placement; aspect: number }, calibration: PhotoCalibration): Placement {
+  const projected = projectPrintPlacement(photo, zone.placement, calibration)
+  const availableH = zone.placement.width * photo.width / zone.aspect
+  const width = Math.min(zone.placement.width, availableH * art.width / art.height / (projected.projectionY ?? 1) / photo.width)
+  return { ...projected, width: Math.max(.025, width), corners: zone.placement.corners.map(p => ({ ...p })) as Placement['corners'] }
+}
+
+/** Flat artwork dimensions, before photo projection, rotation, corner warp or sleeve curvature.
+ * Independent photo axes change its projection, never its physical aspect ratio.
+ */
 export function printDimensionsCm(
   photo: PhotoSize, art: PhotoSize, placement: Placement, calibration: PhotoCalibration,
 ): { width: number; height: number } | null {
   const scale = photoPixelsPerCm(photo, calibration)
   if (!scale || art.width <= 0 || art.height <= 0) return null
-  const pixelsWide = placement.width * photo.width
-  return { width: pixelsWide / scale.x, height: pixelsWide * art.height / art.width / scale.y }
+  const width = placement.width * photo.width / scale.x
+  return { width, height: width * art.height / art.width }
 }
 
 /** Numeric resizing keeps any previously explicit corner warp proportional. */
@@ -95,7 +113,7 @@ export function placementWidthForCm(
   if (!scale || !validLength(centimeters) || art.width <= 0 || art.height <= 0) return null
   const pixelsWide = axis === 'horizontal'
     ? centimeters * scale.x
-    : centimeters * scale.y * art.width / art.height
+    : centimeters * scale.x * art.width / art.height
   return bound(pixelsWide / photo.width, .025, 1.5)
 }
 
