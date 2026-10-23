@@ -116,6 +116,7 @@ export function ProductMockupStudio(){
   const dragRef=useRef<Drag|null>(null)
   const modelsRef=useRef(models)
   useEffect(()=>{modelsRef.current=models},[models])
+  useEffect(()=>{setMeasureDraft({});setCalibrationMode(null)},[selectedId])
   const product=products.find(p=>p.id===selectedId)
   const enabled=product?VIEWS.filter(v=>product.views[v].enabled):[]
   const current=product?.views[active]
@@ -296,6 +297,7 @@ export function ProductMockupStudio(){
   }
   const onPointerDown=(e:ReactPointerEvent<HTMLDivElement>,view:ViewName)=>{
     if(busy||loadedId!==selectedId||e.button!==0||!product)return
+    if(screen==='setup'&&calibrationMode&&calibrationMode.view!==view)return
     if(screen==='setup'&&calibrationMode?.view===view){
       const pointOnPhoto=position(e)
       if(!calibrationMode.first){setCalibrationMode({...calibrationMode,first:pointOnPhoto});return}
