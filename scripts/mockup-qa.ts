@@ -117,6 +117,8 @@ assert.ok(productPage.includes('Adaptación a mangas')&&productPage.includes('de
 assert.ok(productPage.includes('pointInArtwork')&&productPage.includes('artworkOutline'),'Curved hit testing and outline guides missing')
 assert.ok(productPage.includes('saveSilhouette')&&productPage.includes('restoreGarmentMask'),'Editable fabric silhouette panel missing')
 assert.ok(productPage.includes('clipToZone')&&productPage.includes('seamMarginCm'),'Independent seam margins and zone clipping missing')
+assert.ok(productPage.includes('photoName:file.name,calibration:{},silhouette:[]'),'Replacing a photo must invalidate its stale silhouette')
+assert.ok(productPage.includes('if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}'),'Old contours must not be saved onto replacement photos')
 assert.ok(productPage.includes('viewLayers(product.views[view],photo,models[view].arts,draft[view])'),'Preview and export must use identical mask layer builder')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-calibration-grid'),'Responsive calibration panel missing')
 assert.ok(productPage.includes('Añadir zona')&&productPage.includes('zoneId'),'Independent print zones must be configurable')
