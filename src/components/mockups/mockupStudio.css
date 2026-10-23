@@ -113,7 +113,7 @@
 @media(max-width:690px){.mockup-new-product{grid-template-columns:minmax(0,1fr)}.mockup-library-intro{align-items:flex-start}.mockup-product-grid{grid-template-columns:minmax(0,1fr)}.mockup-product-image{height:170px}.mockup-editor-breadcrumb{align-items:flex-start;flex-direction:column}.mockup-editor-breadcrumb>div{width:100%}.mockup-editor-breadcrumb button{flex:1}.mockup-editor-shell .mockup-workspace-heading{align-items:stretch;flex-direction:column}.mockup-editor-shell .mockup-view-tabs{width:100%}.mockup-nav-button{font-size:10px;padding:7px 9px;white-space:nowrap}.mockup-product-actions button{min-height:44px}}
 
 /* Physical calibration: two reference lines per garment photo; no asset pixels are modified. */
-.mockup-calibration{display:grid;gap:9px;min-width:0}
+.mockup-calibration{display:grid;gap:9px;min-width:0;container-type:inline-size}
 .mockup-calibration h3{margin:0}
 .mockup-calibration .mockup-note{margin:0}
 .mockup-calibration-grid,.mockup-cm-inputs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -138,3 +138,4 @@
 .mockup-print-centimeters .mockup-note{margin:0}
 .mockup-print-warning{margin:0;padding:10px;border:1px solid #a47b38;background:#3b3022;color:#ffe2ac;border-radius:7px;font-size:11px;line-height:1.5}
 @media(max-width:460px){.mockup-calibration-grid{grid-template-columns:minmax(0,1fr)}}
+@container (max-width:360px){.mockup-calibration-grid{grid-template-columns:minmax(0,1fr)}}
