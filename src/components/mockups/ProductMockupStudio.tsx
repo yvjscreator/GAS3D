@@ -8,6 +8,7 @@ import { pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolyg
 import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, zoneDimensionsCm, type CalibrationAxis, type PhotoCalibration } from './mockupCalibration'
 import { detectGarment, type GarmentDetection } from './garmentDetection'
 import { PhotoRulers } from './PhotoRulers'
+import { resizeZoneFromEdge, zoneEdgeHandles, ZONE_EDGE_NAMES, type ZoneGeometry } from './mockupZoneGeometry'
 import './mockupStudio.css'
 
 type Zone = { id:string; name:string; aspect:number; placement:Placement; polygon?:Point[]; seamMarginCm?:number; clipToZone?:boolean }
@@ -18,7 +19,7 @@ type DraftValue = {placement:Placement;name:string}
 type Draft = Partial<Record<ViewName,Record<string,DraftValue>>>
 type Screen = 'library'|'setup'|'mockup'
 type UploadTarget = {kind:'photo'|'art';view:ViewName;zoneId?:string}
-type Drag = {view:ViewName;zoneId:string;pointerId:number;corner:number;kind:'move'|'scale'|'warp';start:Point;origin:Placement;artSize:{width:number;height:number}}
+type Drag = {view:ViewName;zoneId:string;pointerId:number;corner:number;edge?:number;originZone?:ZoneGeometry;kind:'move'|'scale'|'warp'|'edge';start:Point;origin:Placement;artSize:{width:number;height:number}}
 const VIEWS:ViewName[]=['front','back','left','right','leftSleeve','rightSleeve']
 const LABELS:Record<ViewName,string>={front:'Frente',back:'Espalda',left:'Lateral izquierdo',right:'Lateral derecho',leftSleeve:'Manga izquierda',rightSleeve:'Manga derecha'}
 const TYPES=['Remera','Remera oversize','Hoodie','Campera','Gorra','Otro']
@@ -507,15 +508,21 @@ export function ProductMockupStudio(){
     if(!art)return
     const placement=screen==='setup'?zone.placement:placementFor(view,zone)
     const p=position(e),quad=placementQuad(photo,art,placement),r=e.currentTarget.getBoundingClientRect()
-    let corner=-1
+    let corner=-1,edge=-1,closest=24
     for(let i=0;i<4&&!(screen==='setup'&&zone.polygon?.length);i++){
-      if(Math.hypot((quad[i].x-p.x)*r.width,(quad[i].y-p.y)*r.height)<24){corner=i;break}
+      const distance=Math.hypot((quad[i].x-p.x)*r.width,(quad[i].y-p.y)*r.height)
+      if(distance<closest){corner=i;closest=distance}
     }
-    if(corner<0&&!(screen==='mockup'?pointInArtwork(p,artworkOutline(photo,art,placement)):
+    if(screen==='setup'&&guides)zoneEdgeHandles(photo,zone).forEach((point,i)=>{
+      const distance=Math.hypot((point.x-p.x)*r.width,(point.y-p.y)*r.height)
+      if(distance<Math.min(22,closest)){edge=i;corner=-1;closest=distance}
+    })
+    if(edge<0&&corner<0&&!(screen==='mockup'?pointInArtwork(p,artworkOutline(photo,art,placement)):
       zone.polygon?.length?pointInPolygon(p,zone.polygon):pointInQuad(p,quad)))return
     e.currentTarget.setPointerCapture(e.pointerId)
     setActive(view);setZoneId(zone.id)
-    dragRef.current={view,zoneId:zone.id,pointerId:e.pointerId,corner,kind:corner<0?'move':(warpMode||e.ctrlKey||e.metaKey?'warp':'scale'),start:p,origin:placement,artSize:art}
+    dragRef.current={view,zoneId:zone.id,pointerId:e.pointerId,corner,edge,originZone:zone,
+      kind:edge>=0?'edge':corner<0?'move':(warpMode||e.ctrlKey||e.metaKey?'warp':'scale'),start:p,origin:placement,artSize:art}
   }
   const onPointerMove=(e:ReactPointerEvent<HTMLDivElement>,view:ViewName)=>{
     const panDrag=panDragRef.current
@@ -532,6 +539,10 @@ export function ProductMockupStudio(){
     const photo=modelsRef.current[view].photo,zone=product.views[view].zones.find(z=>z.id===drag.zoneId)
     if(!photo||!zone)return
     const p=position(e),dx=p.x-drag.start.x,dy=p.y-drag.start.y
+    if(drag.kind==='edge'&&drag.originZone&&drag.edge!==undefined){
+      const geometry=resizeZoneFromEdge(photo,drag.originZone,drag.edge,{x:dx,y:dy})
+      updateZone(view,zone.id,z=>({...z,...geometry}));return
+    }
     const next=drag.kind==='move'?{...drag.origin,x:bound(drag.origin.x+dx,-.4,1.4),y:bound(drag.origin.y+dy,-.4,1.4)}:
       drag.kind==='scale'?scaleFromCorner(photo,drag.artSize,drag.origin,drag.corner,p):
       {...drag.origin,corners:drag.origin.corners.map((v,i)=>i===drag.corner?{x:bound(v.x+dx,-.5,.5),y:bound(v.y+dy,-.5,.5)}:v) as Placement['corners']}
@@ -730,6 +741,21 @@ export function ProductMockupStudio(){
                     <polygon points={(screen==='setup'&&z?.polygon?.length?z.polygon:outline??quad).map(p=>p.x*100+','+p.y*100).join(' ')}/>
                     {!(screen==='setup'&&z?.polygon?.length)&&quad.map((p,i)=><circle key={i} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
                   </svg>}
+                  {screen==='setup'&&guides&&z&&!calibrationMode&&(!maskEditing||(zen&&zenTool==='zone'))&&
+                    zoneEdgeHandles(photo,z).map((point,edge)=><button key={edge} type="button"
+                      className={'mockup-zone-edge-handle '+(edge%2===0?'is-horizontal':'is-vertical')}
+                      aria-label={'Redimensionar zona desde el lado '+ZONE_EDGE_NAMES[edge]}
+                      title={'Arrastrá el centro del lado '+ZONE_EDGE_NAMES[edge]+' para ajustar '+(edge%2===0?'el alto':'el ancho')}
+                      data-zone-edge={edge}
+                      style={{left:point.x*100+'%',top:point.y*100+'%',transform:`translate(-50%, -50%) scale(${zen?1/zoom:1})`}}
+                      onKeyDown={e=>{
+                        if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))return
+                        e.preventDefault();e.stopPropagation()
+                        const rect=e.currentTarget.closest('.mockup-stage')!.getBoundingClientRect(),step=e.shiftKey?10:1
+                        const delta={x:(e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0)/rect.width,
+                          y:(e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0)/rect.height}
+                        updateZone(view,z.id,current=>({...current,...resizeZoneFromEdge(photo,current,edge,delta)}))
+                      }}/>) }
                   {screen==='setup'&&guides&&safeGuide&&safeGuide.length>2&&
                     <svg className="mockup-seam-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                       <polygon points={safeGuide.map(p=>p.x*100+','+p.y*100).join(' ')}/>
@@ -774,7 +800,7 @@ export function ProductMockupStudio(){
               </div>
             })}
           </div>
-          <p className="mockup-hint">{zen?'Pluma: clic para crear nodos; clic en el primero para cerrar; clic en un borde para añadir. Arrastrá nodos para ajustar. Mano o Espacio + arrastrar para desplazar. ':''}Arrastrá el estampado para moverlo. Las esquinas escalan proporcionalmente. Para deformar: Ctrl + arrastrar en computadora, o activá «Deformar» en móvil. Las guías no se exportan.</p>
+          <p className="mockup-hint">{zen?'Pluma: clic para crear nodos; clic en el primero para cerrar; clic en un borde para añadir. Arrastrá nodos para ajustar. Mano o Espacio + arrastrar para desplazar. ':''}{screen==='setup'?'Los cuadrados del centro de cada lado ajustan solo el alto o el ancho, dejando fijo el lado opuesto. ':''}Arrastrá el estampado para moverlo. Las esquinas escalan proporcionalmente. Para deformar: Ctrl + arrastrar en computadora, o activá «Deformar» en móvil. Las guías no se exportan.</p>
         </section>
         <aside className={'mockup-controls'+(zen?' tool-'+zenTool+' inspector-'+inspector+(screen==='setup'?' is-setup':''):'')}>
           {screen==='setup'?<>

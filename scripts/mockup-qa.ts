@@ -4,6 +4,7 @@ import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacemen
 import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
 import { detectGarment } from '../src/components/mockups/garmentDetection'
+import { resizeZoneFromEdge, zoneEdgeHandles } from '../src/components/mockups/mockupZoneGeometry'
 
 const source=(path:string)=>readFileSync(path,'utf8')
 const front=initialPlacement('front'),back=initialPlacement('back')
@@ -21,6 +22,44 @@ const enlarged=placementQuad(photo,art,larger)
 assert.ok(larger.width>front.width,'Normal corner drag must grow the artwork proportionally')
 assert.ok(Math.abs(enlarged[0].x-quad[0].x)<1e-7&&Math.abs(enlarged[0].y-quad[0].y)<1e-7,'Opposite corner must stay anchored')
 assert.ok(Math.abs((enlarged[1].x-enlarged[0].x)/(enlarged[3].y-enlarged[0].y)-(quad[1].x-quad[0].x)/(quad[3].y-quad[0].y))<1e-6,'Proportional resizing should not warp a print')
+
+// Each zone side stretches only its own axis, anchoring the opposite side.
+const edgeZone={placement:{...initialPlacement('back'),x:.5,y:.5,width:.3},aspect:1.25}
+const edgeQuad=placementQuad(photo,{width:1000,height:1000/edgeZone.aspect},edgeZone.placement)
+const oppositeVertices=[[2,3],[0,3],[0,1],[1,2]]
+const samePoint=(a:{x:number;y:number},b:{x:number;y:number})=>Math.abs(a.x-b.x)<1e-8&&Math.abs(a.y-b.y)<1e-8
+const geometryQuad=(zone:typeof edgeZone)=>placementQuad(photo,{width:1000,height:1000/zone.aspect},zone.placement)
+const originalZone=JSON.stringify(edgeZone)
+for(const [edge,delta] of [[0,{x:.1,y:-.08}],[1,{x:.08,y:.1}],[2,{x:.1,y:.08}],[3,{x:-.08,y:.1}]] as const){
+  const resized=resizeZoneFromEdge(photo,edgeZone,edge,delta),result=geometryQuad(resized)
+  for(const vertex of oppositeVertices[edge])assert.ok(samePoint(result[vertex],edgeQuad[vertex]),'The opposite side must remain anchored')
+  if(edge%2===0){
+    assert.ok(Math.abs(resized.placement.width-edgeZone.placement.width)<1e-8,'Vertical side drag must not change width')
+    assert.ok(result.every((p,i)=>Math.abs(p.x-edgeQuad[i].x)<1e-8),'Tangential movement must not move a vertical resize sideways')
+  }else{
+    assert.ok(result.every((p,i)=>Math.abs(p.y-edgeQuad[i].y)<1e-8),'Horizontal side drag must preserve height')
+  }
+  const handles=zoneEdgeHandles(photo,resized)
+  assert.ok(samePoint(handles[edge],{x:(result[edge].x+result[(edge+1)%4].x)/2,y:(result[edge].y+result[(edge+1)%4].y)/2}),'Edge handle must follow the resized side')
+  const restored=geometryQuad({...resized,placement:restorePlacement(resized.placement,'back')})
+  assert.ok(restored.every((p,i)=>samePoint(p,result[i])),'Edge-resized zones must retain geometry after restoration')
+}
+assert.equal(JSON.stringify(edgeZone),originalZone,'Resizing must not mutate saved source geometry')
+const limited=resizeZoneFromEdge(photo,edgeZone,0,{x:0,y:100})
+assert.ok(geometryQuad(limited)[0].y<geometryQuad(limited)[3].y,'Dragging through the opposite edge must stop instead of flipping')
+assert.ok(geometryQuad(limited)[0].y>edgeQuad[0].y,'Minimum-size clamping should stop near the limit rather than jump back')
+const angled={...edgeZone,placement:{...edgeZone.placement,rotation:20,corners:[{x:-.02,y:0},{x:.01,y:.01},{x:0,y:.02},{x:0,y:0}] as typeof front.corners}}
+const angledBefore=geometryQuad(angled),angledAfter=geometryQuad(resizeZoneFromEdge(photo,angled,0,{x:.01,y:-.03}))
+assert.ok([2,3].every(i=>samePoint(angledBefore[i],angledAfter[i])),'Perspective-zone resizing must also anchor the opposite edge')
+const penZone={...edgeZone,polygon:[{x:.3,y:.3},{x:.7,y:.3},{x:.7,y:.7},{x:.5,y:.6},{x:.3,y:.7}]}
+const penBefore=JSON.stringify(penZone)
+const tallerPen=resizeZoneFromEdge(photo,penZone,0,{x:.2,y:-.05})
+assert.ok(tallerPen.polygon&&Math.abs(Math.min(...tallerPen.polygon.map(p=>p.y))-.25)<1e-8,'Pen zone should stretch from its top bounding handle')
+assert.ok(tallerPen.polygon!.every((p,i)=>Math.abs(p.x-penZone.polygon[i].x)<1e-8),'Stretching a pen zone vertically must preserve its width')
+assert.ok(Math.abs(Math.max(...tallerPen.polygon!.map(p=>p.y))-.7)<1e-8,'Pen zone opposite boundary must remain anchored')
+assert.equal(JSON.stringify(penZone),penBefore,'Pen zone resizing must preserve the source outline')
+const widerPen=resizeZoneFromEdge(photo,penZone,1,{x:10,y:0})
+assert.ok(widerPen.polygon!.every(p=>p.x>=0&&p.x<=1),'Extreme resize must stop at the photograph boundary')
 const line={horizontal:{from:{x:.2,y:.3},to:{x:.8,y:.3},cm:60},vertical:{from:{x:.3,y:.1},to:{x:.3,y:.9},cm:80}}
 const calibration=restoreCalibration(line)
 const scale=photoPixelsPerCm(photo,calibration)
@@ -163,6 +202,8 @@ assert.ok(productPage.includes("zen?enabled.filter(v=>v===active):enabled")&&pro
 assert.ok(productPage.includes('setMaskClosed(true)')&&productPage.includes('Eliminar nodo')&&productPage.includes('setPointerCapture'),'Pen tool must support closure, node editing and captured touch drags')
 assert.ok(productPage.includes('panDragRef')&&productPage.includes('setZoom')&&productPage.includes('saveCalibration'),'Zoom, panning and point-first calibration must be wired')
 assert.ok(productPage.includes('Editar zona con Pluma')&&productPage.includes('polygon:restoreGarmentMask(z.polygon)'),'Pen-drawn zones must persist and restore alongside old rectangle zones')
+assert.ok(productPage.includes('data-zone-edge={edge}')&&productPage.includes("if(screen==='setup'&&guides)zoneEdgeHandles"),'Side controls must be confined to product-zone setup')
+assert.ok(productPage.includes('resizeZoneFromEdge')&&productPage.includes("e.shiftKey?10:1"),'Zone side handles must support pointer and keyboard resizing')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('grid-template-rows:minmax(260px,1fr) minmax(150px,.6fr)'),'Narrow focused editor must reserve space for photo and controls')
 assert.ok(productPage.includes('clipToZone')&&productPage.includes('seamMarginCm'),'Independent seam margins and zone clipping missing')
 assert.ok(productPage.includes('photoName:file.name,calibration:{},silhouette:[]'),'Replacing a photo must invalidate its stale silhouette')
