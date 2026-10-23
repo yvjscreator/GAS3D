@@ -322,6 +322,19 @@ export function ProductMockupStudio(){
   }
   const onPointerDown=(e:ReactPointerEvent<HTMLDivElement>,view:ViewName)=>{
     if(busy||loadedId!==selectedId||e.button!==0||!product)return
+    if(screen==='setup'&&maskEditing){
+      if(maskEditing!==view)return
+      const p=position(e),r=e.currentTarget.getBoundingClientRect()
+      const index=maskDraft.findIndex(vertex=>
+        Math.hypot((vertex.x-p.x)*r.width,(vertex.y-p.y)*r.height)<22)
+      if(index>=0){
+        maskDragRef.current={view,index,pointerId:e.pointerId}
+        e.currentTarget.setPointerCapture(e.pointerId)
+      }else if(maskDraft.length<32){
+        setMaskDraft(points=>[...points,{x:bound(p.x,0,1),y:bound(p.y,0,1)}])
+      }
+      return
+    }
     if(screen==='setup'&&calibrationMode&&calibrationMode.view!==view)return
     if(screen==='setup'&&calibrationMode?.view===view){
       const pointOnPhoto=position(e)
@@ -358,6 +371,13 @@ export function ProductMockupStudio(){
     dragRef.current={view,zoneId:zone.id,pointerId:e.pointerId,corner,kind:corner<0?'move':(warpMode||e.ctrlKey||e.metaKey?'warp':'scale'),start:p,origin:placement,artSize:art}
   }
   const onPointerMove=(e:ReactPointerEvent<HTMLDivElement>,view:ViewName)=>{
+    const marker=maskDragRef.current
+    if(marker&&marker.view===view&&marker.pointerId===e.pointerId&&maskEditing===view){
+      const p=position(e)
+      setMaskDraft(points=>points.map((point,i)=>
+        i===marker.index?{x:bound(p.x,0,1),y:bound(p.y,0,1)}:point))
+      return
+    }
     const drag=dragRef.current
     if(!drag||drag.pointerId!==e.pointerId||drag.view!==view||!product)return
     const photo=modelsRef.current[view].photo,zone=product.views[view].zones.find(z=>z.id===drag.zoneId)
@@ -369,8 +389,18 @@ export function ProductMockupStudio(){
     editPlacement(view,zone,()=>next)
   }
   const onPointerEnd=(e:ReactPointerEvent<HTMLDivElement>)=>{
+    if(maskDragRef.current?.pointerId===e.pointerId)maskDragRef.current=null
     if(dragRef.current?.pointerId===e.pointerId)dragRef.current=null
     if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)
+  }
+  const saveSilhouette=()=>{
+    if(!product||!maskEditing)return
+    const outline=restoreGarmentMask(maskDraft)
+    if(outline.length<3){setError('El contorno necesita al menos tres puntos sin cruces.');return}
+    const view=maskEditing
+    updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],silhouette:outline}}}))
+    setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null
+    setError('');setFeedback('Contorno de la prenda guardado en '+LABELS[view]+'.')
   }
   const addProduct=()=>{
     if(!newName.trim())return
@@ -476,12 +506,12 @@ export function ProductMockupStudio(){
       <p className="mockup-note">Tus productos, fotografías y estampados se guardan solamente en este navegador. No se sincronizan entre dispositivos.</p>
     </section>:<div className="mockup-editor-shell">
       <nav className="mockup-editor-breadcrumb"><strong>{product.name}</strong><div role="group" aria-label="Modo del editor">
-        <button type="button" className={screen==='setup'?'active':''} disabled={busy} onClick={()=>setScreen('setup')}>Configurar producto</button>
-        <button type="button" className={screen==='mockup'?'active':''} disabled={busy} onClick={()=>{setScreen('mockup');setCalibrationMode(null)}}>Nuevo mockup</button>
+        <button type="button" className={screen==='setup'?'active':''} disabled={busy} onClick={()=>{setScreen('setup');setMaskEditing(null);setMaskDraft([])}}>Configurar producto</button>
+        <button type="button" className={screen==='mockup'?'active':''} disabled={busy} onClick={()=>{setScreen('mockup');setCalibrationMode(null);setMaskEditing(null);setMaskDraft([])}}>Nuevo mockup</button>
       </div></nav>
       <div className="mockup-layout">
         <section className="mockup-workspace">
-          <div className="mockup-workspace-heading"><h2>{screen==='setup'?'Fotografías y zonas':'Vista previa del mockup'}</h2><div className="mockup-view-tabs" role="group" aria-label="Vistas">{enabled.map(v=><button type="button" key={v} className={v===active?'active':''} onClick={()=>{setActive(v);setZoneId('');setCalibrationMode(null)}}>{LABELS[v]}</button>)}</div></div>
+          <div className="mockup-workspace-heading"><h2>{screen==='setup'?'Fotografías y zonas':'Vista previa del mockup'}</h2><div className="mockup-view-tabs" role="group" aria-label="Vistas">{enabled.map(v=><button type="button" key={v} className={v===active?'active':''} onClick={()=>{setActive(v);setZoneId('');setCalibrationMode(null);setMaskEditing(null);setMaskDraft([])}}>{LABELS[v]}</button>)}</div></div>
           <div className="mockup-view-grid">
             {enabled.map(view=>{
               const photo=models[view].photo,viewZones=product.views[view].zones
@@ -490,15 +520,27 @@ export function ProductMockupStudio(){
               const placement=z?(screen==='setup'?z.placement:placementFor(view,z)):null
               const quad=photo&&art&&placement?placementQuad(photo,art,placement):null
               const outline=photo&&art&&placement&&screen==='mockup'?artworkOutline(photo,art,placement):quad
+              const silhouette=maskEditing===view?maskDraft:product.views[view].silhouette??[]
               return <div className={'mockup-view'+(active===view?' is-active':'')} key={view}>
                 <div className="mockup-view-title"><strong>{LABELS[view]}</strong><span>{photo?.name||'Sin fotografía'}</span></div>
-                {photo?<div className="mockup-stage" style={{aspectRatio:photo.width+'/'+photo.height,cursor:calibrationMode?.view===view?'crosshair':undefined}}
+                {photo?<div className="mockup-stage" style={{aspectRatio:photo.width+'/'+photo.height,cursor:calibrationMode?.view===view||maskEditing===view?'crosshair':undefined}}
                   onPointerDown={e=>onPointerDown(e,view)} onPointerMove={e=>onPointerMove(e,view)} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}>
                   <canvas ref={node=>{canvasRefs.current[view]=node}} aria-label={'Vista '+LABELS[view]}/>
                   {guides&&quad&&<svg className="mockup-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                     <polygon points={(outline??quad).map(p=>p.x*100+','+p.y*100).join(' ')}/>
                     {quad.map((p,i)=><circle key={i} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
                   </svg>}
+                  {screen==='setup'&&(guides||maskEditing===view)&&silhouette.length>0&&
+                    <svg className={'mockup-mask-guides'+(maskEditing===view?' is-editing':'')}
+                      viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                      {silhouette.length>=3&&<path fillRule="evenodd"
+                        d={'M0 0H100V100H0Z M'+silhouette.map(p=>(p.x*100)+','+(p.y*100)).join(' L')+' Z'}/>}
+                      {silhouette.length>=3&&<polygon points={silhouette.map(p=>p.x*100+','+p.y*100).join(' ')}/>}
+                      {maskEditing===view&&<>
+                        {silhouette.length>1&&<polyline points={silhouette.map(p=>p.x*100+','+p.y*100).join(' ')}/>}
+                        {silhouette.map((p,i)=><circle key={i} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
+                      </>}
+                    </svg>}
                   {screen==='setup'&&guides&&<svg className="mockup-calibration-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                     {(['horizontal','vertical'] as const).map(axis=>{
                       const line=product.views[view].calibration?.[axis]
