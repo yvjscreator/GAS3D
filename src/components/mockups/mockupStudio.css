@@ -111,3 +111,30 @@
 .mockup-studio button:focus-visible,.mockup-studio select:focus-visible{outline:2px solid #8bd4ff;outline-offset:3px}
 @media(max-width:1050px){.mockup-product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mockup-editor-shell .mockup-controls{display:block}}
 @media(max-width:690px){.mockup-new-product{grid-template-columns:minmax(0,1fr)}.mockup-library-intro{align-items:flex-start}.mockup-product-grid{grid-template-columns:minmax(0,1fr)}.mockup-product-image{height:170px}.mockup-editor-breadcrumb{align-items:flex-start;flex-direction:column}.mockup-editor-breadcrumb>div{width:100%}.mockup-editor-breadcrumb button{flex:1}.mockup-editor-shell .mockup-workspace-heading{align-items:stretch;flex-direction:column}.mockup-editor-shell .mockup-view-tabs{width:100%}.mockup-nav-button{font-size:10px;padding:7px 9px;white-space:nowrap}.mockup-product-actions button{min-height:44px}}
+
+/* Physical calibration: two reference lines per garment photo; no asset pixels are modified. */
+.mockup-calibration{display:grid;gap:9px;min-width:0}
+.mockup-calibration h3{margin:0}
+.mockup-calibration .mockup-note{margin:0}
+.mockup-calibration-grid,.mockup-cm-inputs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.mockup-calibration-axis{min-width:0;display:grid;gap:8px;align-content:start}
+.mockup-calibration-axis>button,.mockup-calibration-prompt button{min-height:40px;padding:8px;border:1px solid #497a9b;border-radius:7px;background:#16364c;color:#e2f4ff;cursor:pointer;font-size:11px;font-weight:700}
+.mockup-calibration-axis>button.is-marking{outline:2px solid #f4c574;outline-offset:1px}
+.mockup-calibration-axis>button:disabled{opacity:.48;cursor:not-allowed}
+.mockup-calibration-axis>small{color:#91adc1;font-size:10px}
+.mockup-calibration-prompt{display:flex;justify-content:space-between;align-items:center;gap:8px;color:#ffe0a3;background:#3c3124;border-radius:7px;padding:9px;font-size:11px}
+.mockup-calibration-prompt button{min-height:34px;flex-shrink:0}
+.mockup-calibration-guides{position:absolute;inset:0;pointer-events:none;width:100%;height:100%;overflow:visible}
+.mockup-calibration-guides line{stroke-width:.7;stroke-dasharray:2 1}
+.mockup-calibration-guides circle{stroke-width:.45}
+.mockup-calibration-guides .horizontal line,.mockup-calibration-guides .horizontal circle{stroke:#ffd278}
+.mockup-calibration-guides .vertical line,.mockup-calibration-guides .vertical circle{stroke:#77edcb}
+.mockup-calibration-guides .horizontal circle{fill:#ffd278}
+.mockup-calibration-guides .vertical circle{fill:#77edcb}
+.mockup-calibration-guides .pending{fill:#fff;stroke:#ffb546;stroke-width:.8}
+.mockup-physical-summary{font-size:12px;line-height:1.5;color:#c5e0f3;margin:1px 0;padding:10px;border:1px solid #365c75;border-radius:7px;background:#122a3a}
+.mockup-print-centimeters{min-width:0;display:grid;gap:8px;padding:12px;border:1px solid #37607d;border-radius:9px;background:#112638}
+.mockup-print-centimeters h3{margin:0}
+.mockup-print-centimeters .mockup-note{margin:0}
+.mockup-print-warning{margin:0;padding:10px;border:1px solid #a47b38;background:#3b3022;color:#ffe2ac;border-radius:7px;font-size:11px;line-height:1.5}
+@media(max-width:460px){.mockup-calibration-grid{grid-template-columns:minmax(0,1fr)}}
