@@ -8,6 +8,12 @@ on:
       - 'src/utils/mediaStorage.ts'
       - 'package.json'
       - '.github/workflows/mockup-studio.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/components/mockups/**'
+      - 'scripts/mockup-qa.ts'
+      - '.github/workflows/mockup-studio.yml'
   workflow_dispatch:
 
 jobs:
