@@ -5,8 +5,8 @@ Route: `#/mockups`; integrated into the shared AppLauncher. The October 2026 rel
 ## Workflow
 
 1. **Productos**: create a named product and select a garment type. Product cards offer **Nuevo mockup**, **Editar**, **duplicar** (copies original garment photos and zone configuration) and **eliminar**. Photos, artworks and product settings are saved only in this browser.
-2. **Configurar producto**: enable relevant front, back, left/right and sleeve views; upload a base photo for each view, then add and name one or more independently editable print zones. Drag zones and scale them from handles; adjust relative width and zone aspect ratio. Product photography and zone definitions remain reusable.
-3. **Nuevo mockup**: select a configured print zone, upload a transparent PNG for it and move, proportionally resize, rotate or tune fabric lighting. Each zone can hold its own print; existing prints in other zones are retained. Print placements are saved per product as an editable browser-local draft.
+2. **Configurar producto**: enable relevant front, back, left/right and sleeve views; upload a base photo for each view, draw an optional garment silhouette, then add and name one or more independently editable print zones. Drag zones and scale them from handles; adjust relative width and zone aspect ratio. Product photography and zone definitions remain reusable.
+3. **Nuevo mockup**: select a configured print zone, upload a transparent PNG for it and move, proportionally resize, rotate or tune fabric lighting. Optional silhouette clipping and explicit zone-safe clipping limit rendered artwork without changing its PNG. Each zone can hold its own print; existing prints in other zones are retained. Print placements are saved per product as an editable browser-local draft.
 4. **Exportar**: an individual view exports at the photo's native resolution up to the safety limits (20 MP, 8192 px/edge). All views can be composed into a two-column PNG where total canvas size permits (24 MP total). A meaningful error is shown instead of silently shrinking oversized photographs.
 
 ## Editing behavior
@@ -29,7 +29,7 @@ Route: `#/mockups`; integrated into the shared AppLauncher. The October 2026 rel
 ## Outstanding improvements
 
 - Higher-accuracy scale modeling for angled camera views and variable depth. Photo reference calibration and approximate centimeter display are now available.
-- Garment silhouette masks, seam-aware boundaries and photographed-fold displacement maps. The per-print cylindrical sleeve deformation now has a strength slider, axis/direction controls and automatic soft presets for newly loaded sleeve artwork.
+- Manual garment silhouette masks and seam-safe boundaries are implemented per product photo and print zone; photographed-fold displacement maps and automatic seam/silhouette detection remain outstanding. Sleeve curvature has strength, axis and direction controls.
 - True 3D fabric geometry, bulk artwork sets, ZIP exports, undo/redo and cloud-backed product synchronization.
 
 ## Validation
