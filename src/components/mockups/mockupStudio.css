@@ -152,3 +152,25 @@
 .mockup-sleeve-options .mockup-adjustment{margin:4px 0}
 .mockup-sleeve-options .mockup-field{min-width:0}
 .mockup-sleeve-options .mockup-field select{width:100%}
+
+/* Garment silhouette polygon editor and per-zone seam safety markers. */
+.mockup-mask-editor,.mockup-seam-settings{min-width:0;display:grid;gap:10px;padding:12px;border:1px solid #355b74;border-radius:9px;background:#102432}
+.mockup-mask-editor h3{margin:0}
+.mockup-mask-editor .mockup-note,.mockup-seam-settings .mockup-note{margin:0}
+.mockup-mask-actions{display:grid;gap:9px;min-width:0}
+.mockup-mask-actions>p{margin:0;color:#abc6d8;font-size:11px;line-height:1.5}
+.mockup-mask-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:7px}
+.mockup-mask-buttons button{min-width:0;min-height:42px;padding:8px 10px;border:1px solid #4a6d85;border-radius:7px;background:#1b374c;color:#d6eaf8;font-size:11px;font-weight:700;cursor:pointer}
+.mockup-mask-buttons button.mockup-remove{color:#ffc6ce;border-color:#804953;background:#3b2531}
+.mockup-mask-buttons button:disabled{opacity:.45;cursor:not-allowed}
+.mockup-option-toggle{display:flex;align-items:flex-start;gap:9px;line-height:1.4;font-size:11px;color:#cbddec;cursor:pointer}
+.mockup-option-toggle input{flex-shrink:0;accent-color:#6dbdf1;width:18px;height:18px;margin:0}
+.mockup-mask-guides,.mockup-seam-guides{position:absolute;inset:0;pointer-events:none;width:100%;height:100%;overflow:visible}
+.mockup-mask-guides path{fill:rgba(5,15,24,.44)}
+.mockup-mask-guides polygon{fill:rgba(72,197,176,.06);stroke:#59ead2;stroke-width:.55;stroke-dasharray:1.4 .7}
+.mockup-mask-guides polyline{fill:none;stroke:#ffe19a;stroke-width:.7;stroke-dasharray:1.3 .6}
+.mockup-mask-guides circle{fill:#ffe3a1;stroke:#163d4b;stroke-width:.5}
+.mockup-mask-guides.is-editing circle{r:1.3}
+.mockup-seam-guides polygon{fill:rgba(255,209,114,.05);stroke:#ffd17b;stroke-width:.55;stroke-dasharray:1.5 1}
+.mockup-seam-settings .mockup-field{min-width:0}
+@media(max-width:460px){.mockup-mask-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}}
