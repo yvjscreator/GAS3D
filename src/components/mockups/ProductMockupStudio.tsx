@@ -3,7 +3,7 @@ import { ArrowDownToLine, ArrowLeft, Copy, ImagePlus, Layers2, Plus, RotateCcw, 
 import { AppLauncher } from '../navigation/AppLauncher'
 import { loadMedia, removeMedia, storeMedia } from '../../utils/mediaStorage'
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
-import { bound, canvasPng, ensurePhotoSize, initialPlacement, placementQuad, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type ViewName } from './mockupEngine'
+import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type ViewName } from './mockupEngine'
 import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, zoneDimensionsCm, type CalibrationAxis, type PhotoCalibration } from './mockupCalibration'
 import './mockupStudio.css'
 
@@ -272,7 +272,10 @@ export function ProductMockupStudio(){
         }
         else if(zid){
           setDraft(old=>({...old,[view]:{...old[view],[zid]:{
-            placement:old[view]?.[zid]?.placement??fitArt(product!.views[view].zones.find(z=>z.id===zid)!,modelsRef.current[view].photo!,image),
+            placement:old[view]?.[zid]?.placement??{
+              ...fitArt(product!.views[view].zones.find(z=>z.id===zid)!,modelsRef.current[view].photo!,image),
+              ...(view.endsWith('Sleeve')?{sleeveCurve:defaultSleeveCurve()}:{})
+            },
             name:file.name,
           }}}))
         }
@@ -327,7 +330,7 @@ export function ProductMockupStudio(){
     for(let i=0;i<4;i++){
       if(Math.hypot((quad[i].x-p.x)*r.width,(quad[i].y-p.y)*r.height)<24){corner=i;break}
     }
-    if(corner<0&&!pointInQuad(p,quad))return
+    if(corner<0&&!(screen==='mockup'?pointInArtwork(p,artworkOutline(photo,art,placement)):pointInQuad(p,quad)))return
     e.currentTarget.setPointerCapture(e.pointerId)
     setActive(view);setZoneId(zone.id)
     dragRef.current={view,zoneId:zone.id,pointerId:e.pointerId,corner,kind:corner<0?'move':(warpMode||e.ctrlKey||e.metaKey?'warp':'scale'),start:p,origin:placement,artSize:art}
@@ -467,13 +470,14 @@ export function ProductMockupStudio(){
               const art=z?(screen==='setup'?zoneSize(z):models[view].arts[z.id]):null
               const placement=z?(screen==='setup'?z.placement:placementFor(view,z)):null
               const quad=photo&&art&&placement?placementQuad(photo,art,placement):null
+              const outline=photo&&art&&placement&&screen==='mockup'?artworkOutline(photo,art,placement):quad
               return <div className={'mockup-view'+(active===view?' is-active':'')} key={view}>
                 <div className="mockup-view-title"><strong>{LABELS[view]}</strong><span>{photo?.name||'Sin fotografía'}</span></div>
                 {photo?<div className="mockup-stage" style={{aspectRatio:photo.width+'/'+photo.height,cursor:calibrationMode?.view===view?'crosshair':undefined}}
                   onPointerDown={e=>onPointerDown(e,view)} onPointerMove={e=>onPointerMove(e,view)} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}>
                   <canvas ref={node=>{canvasRefs.current[view]=node}} aria-label={'Vista '+LABELS[view]}/>
                   {guides&&quad&&<svg className="mockup-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                    <polygon points={quad.map(p=>p.x*100+','+p.y*100).join(' ')}/>
+                    <polygon points={(outline??quad).map(p=>p.x*100+','+p.y*100).join(' ')}/>
                     {quad.map((p,i)=><circle key={i} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
                   </svg>}
                   {screen==='setup'&&guides&&<svg className="mockup-calibration-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -601,6 +605,50 @@ export function ProductMockupStudio(){
                 <p className="mockup-note">Escribí una medida y pulsá Enter. La otra se calcula automáticamente, sin deformar el PNG.</p>
               </div>}
               {!printFits&&selectedArt&&<p className="mockup-print-warning" role="status">El estampado sobresale de su zona. Reducilo o movelo antes de exportar.</p>}
+              {selectedArt&&<section className="mockup-sleeve-controls" aria-label="Adaptación curva para mangas">
+                <h3>Adaptación a mangas</h3>
+                <p className="mockup-note">El estampado sigue el volumen de la tela. También podés activar este modo en una fotografía lateral.</p>
+                <div className="mockup-sleeve-toggle" role="group" aria-label="Superficie de impresión">
+                  <button type="button" className={!placementFor(active,selectedZone).sleeveCurve?.strength?'active':''}
+                    aria-pressed={!placementFor(active,selectedZone).sleeveCurve?.strength}
+                    onClick={()=>editPlacement(active,selectedZone,p=>({...p,sleeveCurve:undefined}))}>Plano</button>
+                  <button type="button" className={placementFor(active,selectedZone).sleeveCurve?.strength?'active':''}
+                    aria-pressed={Boolean(placementFor(active,selectedZone).sleeveCurve?.strength)}
+                    onClick={()=>editPlacement(active,selectedZone,p=>({...p,sleeveCurve:p.sleeveCurve?.strength?p.sleeveCurve:defaultSleeveCurve()}))}>Manga curva</button>
+                </div>
+                {placementFor(active,selectedZone).sleeveCurve&&<div className="mockup-sleeve-options">
+                  <label className="mockup-adjustment">
+                    <span>Intensidad de curvatura: {Math.round(placementFor(active,selectedZone).sleeveCurve?.strength??0)}%</span>
+                    <input type="range" min="0" max="100" step="1" value={placementFor(active,selectedZone).sleeveCurve?.strength??0}
+                      onChange={e=>editPlacement(active,selectedZone,p=>({...p,sleeveCurve:{...(p.sleeveCurve??defaultSleeveCurve()),strength:Number(e.target.value)}}))}/>
+                  </label>
+                  <div className="mockup-sleeve-presets" role="group" aria-label="Curvatura predeterminada">
+                    {([{label:'Suave',value:25},{label:'Media',value:50},{label:'Fuerte',value:75}] as const).map(preset=>
+                      <button type="button" key={preset.value} onClick={()=>editPlacement(active,selectedZone,p=>({...p,sleeveCurve:{...(p.sleeveCurve??defaultSleeveCurve()),strength:preset.value}}))}>
+                        {preset.label}
+                      </button>)}
+                  </div>
+                  <label className="mockup-field">Orientación de la envoltura
+                    <select value={placementFor(active,selectedZone).sleeveCurve?.axis??'vertical'}
+                      onChange={e=>editPlacement(active,selectedZone,p=>({...p,sleeveCurve:{...(p.sleeveCurve??defaultSleeveCurve()),axis:e.target.value==='horizontal'?'horizontal':'vertical'}}))}>
+                      <option value="vertical">Vertical</option>
+                      <option value="horizontal">Horizontal</option>
+                    </select>
+                  </label>
+                  <div className="mockup-sleeve-direction" role="group" aria-label="Dirección de curvatura">
+                    {([-1,1] as const).map(direction=>
+                      <button type="button" key={direction}
+                        className={(placementFor(active,selectedZone).sleeveCurve?.direction??1)===direction?'active':''}
+                        aria-pressed={(placementFor(active,selectedZone).sleeveCurve?.direction??1)===direction}
+                        onClick={()=>editPlacement(active,selectedZone,p=>({...p,sleeveCurve:{...(p.sleeveCurve??defaultSleeveCurve()),direction}}))}>
+                        {(placementFor(active,selectedZone).sleeveCurve?.axis??'vertical')==='vertical'
+                          ?(direction===-1?'Curvar a izquierda':'Curvar a derecha')
+                          :(direction===-1?'Curvar arriba':'Curvar abajo')}
+                      </button>)}
+                  </div>
+                  <p className="mockup-note">La curvatura es visual: los centímetros se calculan antes de proyectar el estampado en la manga.</p>
+                </div>}
+              </section>}
               <label className="mockup-adjustment"><span>Rotación: {placementFor(active,selectedZone).rotation}°</span><input type="range" min="-45" max="45" value={placementFor(active,selectedZone).rotation} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,rotation:Number(e.target.value)}))}/></label>
               <label className="mockup-adjustment"><span>Luces y sombras: {Math.round(placementFor(active,selectedZone).lighting*100)}%</span><input type="range" min="0" max="100" value={Math.round(placementFor(active,selectedZone).lighting*100)} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,lighting:Number(e.target.value)/100}))}/></label>
             </>}
