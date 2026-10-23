@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
 import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
+import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
 
 const source=(path:string)=>readFileSync(path,'utf8')
 const front=initialPlacement('front'),back=initialPlacement('back')
@@ -71,6 +72,40 @@ assert.deepEqual(restorePlacement({...p,sleeveCurve:softCurve},'leftSleeve').sle
 assert.equal(restoreSleeveCurve({strength:999,axis:'bad',direction:99})?.strength,100,'Invalid sleeve values must be clamped')
 assert.ok(Math.abs(curvedArtworkPoint(sleeveQuad,.2,.35,{...softCurve,strength:0}).x-curvedArtworkPoint(sleeveQuad,.2,.35).x)<1e-9,'Zero curvature must be strictly equivalent to flat projection')
 
+// Fabric clipping is opt-in per photo and seam clipping opt-in per print zone.
+const rectangularMask=restoreGarmentMask([
+  {x:.05,y:.05},{x:.95,y:.05},{x:.95,y:.95},{x:.05,y:.95},
+])
+assert.equal(rectangularMask.length,4,'Valid four-point fabric silhouette should be retained')
+assert.deepEqual(restoreGarmentMask(undefined),[],'Existing products without masks must be unchanged')
+assert.deepEqual(restoreGarmentMask([{x:0,y:0},{x:1,y:1},{x:0,y:1},{x:1,y:0}]),[],'Self crossing masks must be rejected')
+assert.deepEqual(restoreGarmentMask([{x:0,y:0},{x:0,y:0},{x:1,y:1}]),[],'Repeated vertices should be invalid')
+assert.equal(pointInPolygon({x:.05,y:.3},rectangularMask),true,'Mask edges are included')
+assert.equal(pointInPolygon({x:.99,y:.3},rectangularMask),false,'Pixels outside garment mask must be excluded')
+const cutout=restoreGarmentMask([
+  {x:.05,y:.05},{x:.95,y:.05},{x:.95,y:.95},{x:.65,y:.95},
+  {x:.65,y:.35},{x:.35,y:.35},{x:.35,y:.95},{x:.05,y:.95},
+])
+assert.equal(cutout.length,8,'Concave garment silhouettes must be supported')
+assert.equal(pointInPolygon({x:.5,y:.6},cutout),false,'Concave empty space is not printable')
+assert.equal(pointInPolygon({x:.2,y:.6},cutout),true,'Fabric beside concavity must remain')
+const crossingPrint=[{x:.2,y:.5},{x:.8,y:.5},{x:.8,y:.6},{x:.2,y:.6}]
+assert.equal(outlineInsidePolygon(crossingPrint,cutout),false,'Print bridges must not cross concave silhouette cutouts')
+assert.ok(printInsideSafeAreas(photo,art,p,[rectangularMask]),'Centered print should fit the fabric silhouette')
+assert.ok(!printInsideSafeAreas(photo,art,{...p,x:.92},[rectangularMask]),'Outside prints must be flagged')
+assert.ok(printInsideSafeAreas(photo,art,p,[]),'Old products must not require any clipping polygon')
+const seamZone={...p,width:.5}
+const seamBoundary=safeZonePolygon(photo,seamZone,1,calibration,2)
+const seamFull=safeZonePolygon(photo,seamZone,1,calibration,0)
+assert.equal(seamBoundary.length,4,'Real margin should produce a four-corner safe printable area')
+assert.ok(Math.abs(seamBoundary[0].x-(seamFull[0].x+.02))<1e-8,'2 cm seam should inset horizontal photo pixels correctly')
+assert.ok(Math.abs(seamBoundary[0].y-(seamFull[0].y+.02))<1e-8,'2 cm seam should inset vertical photo pixels correctly')
+assert.ok(printInsideSafeAreas(photo,art,p,[seamBoundary]),'Inside artwork must fit the safety margin')
+assert.ok(!printInsideSafeAreas(photo,art,{...p,width:.47},[seamBoundary]),'Large artwork must warn before crossing the seam')
+assert.equal(safeZonePolygon(photo,seamZone,1,{},2).length,4,'Uncalibrated legacy zones should retain photo-relative boundaries')
+assert.deepEqual(safeZonePolygon(photo,seamZone,1,calibration,8).length,4,'Valid 8 cm safety margins should remain geometrically valid')
+assert.ok(printInsideSafeAreas(photo,art,{...p,width:.2,sleeveCurve:defaultSleeveCurve()},[seamBoundary]),'Sleeve curves are checked against the safe boundary')
+
 const productPage=source('src/components/mockups/ProductMockupStudio.tsx')
 assert.ok(productPage.includes('mockup-products.v2')&&productPage.includes('Crear producto')&&productPage.includes('Nuevo mockup'),'Missing product-first library')
 assert.ok(productPage.includes('Duplicar')===false || productPage.includes('duplicate'),'Product duplication handler missing')
@@ -80,6 +115,9 @@ assert.ok(productPage.includes('placementWidthForCm')&&productPage.includes('pri
 assert.ok(productPage.includes('zoneDimensionsCm')&&productPage.includes('artworkFitsZone'),'Cm zone sizing and overflow warnings missing')
 assert.ok(productPage.includes('Adaptación a mangas')&&productPage.includes('defaultSleeveCurve'),'Curvature controls or automatic sleeve presets missing')
 assert.ok(productPage.includes('pointInArtwork')&&productPage.includes('artworkOutline'),'Curved hit testing and outline guides missing')
+assert.ok(productPage.includes('saveSilhouette')&&productPage.includes('restoreGarmentMask'),'Editable fabric silhouette panel missing')
+assert.ok(productPage.includes('clipToZone')&&productPage.includes('seamMarginCm'),'Independent seam margins and zone clipping missing')
+assert.ok(productPage.includes('viewLayers(product.views[view],photo,models[view].arts,draft[view])'),'Preview and export must use identical mask layer builder')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-calibration-grid'),'Responsive calibration panel missing')
 assert.ok(productPage.includes('Añadir zona')&&productPage.includes('zoneId'),'Independent print zones must be configurable')
 assert.ok(productPage.includes("screen==='setup'")&&productPage.includes("screen==='mockup'"),'Product authoring and artwork application must remain separate')
@@ -103,7 +141,10 @@ assert.ok(page.includes("exportMockup('combined')")&&page.includes("exportMockup
 assert.ok(engine.includes('renderGarment')&&engine.includes('warpedArtwork')&&engine.includes('placement.lighting'),'Compositing, warp or fabric lights missing')
 assert.ok(engine.includes('warpedArtwork(layer,art,quad,width,height,placement.sleeveCurve)'),'Both preview and export must use sleeve warping in the common renderer')
 assert.ok(engine.includes('const outline=artworkOutline'),'Curve must be included in lighting bounds')
+assert.ok(engine.includes("globalCompositeOperation='destination-in'")&&engine.includes('applyLayerClip(layer,clipPolygons'),'Fabric clipping must happen in the compositor, without changing source PNGs')
+assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-mask-editor'),'Responsive garment silhouette editor missing')
+assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-seam-guides'),'Seam safety guide styling missing')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-sleeve-controls'),'Responsive sleeve controls are missing')
 assert.ok(page.includes("Sin fotografía")&&page.includes("Sin cargar"),'Empty templates must be understandable')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('@media(max-width:690px)'),'Mobile editor layout missing')
-console.log('Mockup Studio QA: calibration, cylindrical sleeve mesh, print bounds, product catalogue and legacy routes passed.')
+console.log('Mockup Studio QA: fabric clipping, concave silhouettes, seam margins, sleeve mesh, calibration and legacy products passed.')
