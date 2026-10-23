@@ -139,3 +139,16 @@
 .mockup-print-warning{margin:0;padding:10px;border:1px solid #a47b38;background:#3b3022;color:#ffe2ac;border-radius:7px;font-size:11px;line-height:1.5}
 @media(max-width:460px){.mockup-calibration-grid{grid-template-columns:minmax(0,1fr)}}
 @container (max-width:360px){.mockup-calibration-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Sleeve surface controls: scoped to individual artwork, not the product template. */
+.mockup-sleeve-controls{display:grid;gap:9px;min-width:0;padding:12px;border:1px solid #37607d;border-radius:9px;background:#102635}
+.mockup-sleeve-controls h3{margin:0}
+.mockup-sleeve-controls .mockup-note{margin:0}
+.mockup-sleeve-toggle,.mockup-sleeve-direction,.mockup-sleeve-presets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.mockup-sleeve-presets{grid-template-columns:repeat(3,minmax(0,1fr))}
+.mockup-sleeve-controls button{min-width:0;min-height:40px;padding:8px;border:1px solid #46647c;border-radius:7px;color:#bdd8ea;background:#1a3041;font-size:11px;font-weight:700;cursor:pointer}
+.mockup-sleeve-controls button.active{color:#fff;border-color:#78c5ef;background:#27618c}
+.mockup-sleeve-options{display:grid;gap:10px;min-width:0}
+.mockup-sleeve-options .mockup-adjustment{margin:4px 0}
+.mockup-sleeve-options .mockup-field{min-width:0}
+.mockup-sleeve-options .mockup-field select{width:100%}
