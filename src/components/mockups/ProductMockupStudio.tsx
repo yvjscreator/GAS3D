@@ -291,6 +291,7 @@ export function ProductMockupStudio(){
           updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:file.name,calibration:{},silhouette:[]}}}))
           setMeasureDraft(old=>Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(view+':'))))
           setCalibrationMode(null)
+          if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}
         }
         else if(zid){
           setDraft(old=>({...old,[view]:{...old[view],[zid]:{
@@ -313,7 +314,10 @@ export function ProductMockupStudio(){
       photo:kind==='photo'?null:old[view].photo,
       arts:kind==='art'?Object.fromEntries(Object.entries(old[view].arts).filter(([id])=>id!==zid)):old[view].arts,
     }}))
-    if(kind==='photo')updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:undefined,calibration:{},silhouette:[]}}}}))
+    if(kind==='photo'){
+      updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:undefined,calibration:{},silhouette:[]}}}))
+      if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}
+    }
     void removeMedia(key).catch(()=>setError('No se pudo borrar el archivo del navegador.'))
   }
   const position=(e:ReactPointerEvent<HTMLDivElement>):Point=>{
@@ -581,6 +585,7 @@ export function ProductMockupStudio(){
               const enabledNow=e.target.checked
               updateProduct(p=>({...p,views:{...p.views,[v]:{...p.views[v],enabled:enabledNow}}}))
               if(enabledNow){setActive(v);setZoneId('')}else if(v===active){setActive(VIEWS.find(k=>k!==v&&product.views[k].enabled)||'front');setZoneId('')}
+              setMaskEditing(null);setMaskDraft([]);setCalibrationMode(null)
             }}/>{LABELS[v]}</label>)}</div>
             <div className="mockup-divider"/>
             <div className="mockup-calibration">
@@ -607,7 +612,7 @@ export function ProductMockupStudio(){
                           }
                         }}/>
                     </label>
-                    <button type="button" disabled={!models[active].photo||busy||!valid}
+                    <button type="button" disabled={!models[active].photo||busy||!valid||maskEditing!==null}
                       className={calibrationMode?.view===active&&calibrationMode.axis===axis?'is-marking':''}
                       onClick={()=>{setError('');setCalibrationMode({view:active,axis,first:null})}}>
                       {line?'Volver a marcar':'Marcar en foto'}
