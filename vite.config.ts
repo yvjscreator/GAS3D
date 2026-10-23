@@ -10,6 +10,10 @@ export default defineConfig({
   optimizeDeps: { exclude: ['@jsquash/oxipng'] },
   server: {
     proxy: {
+      '/api/mockups': {
+        target: 'http://127.0.0.1:8787',
+        changeOrigin: true,
+      },
       '/api/subtitles': {
         target: 'http://127.0.0.1:8787',
         changeOrigin: true,

@@ -24,6 +24,13 @@
 .mockup-guides{position:absolute;inset:0;pointer-events:none;overflow:visible;width:100%;height:100%}
 .mockup-guides polygon{fill:#2196f30d;stroke:#63c5ff;stroke-width:.55;stroke-dasharray:1.4,1}
 .mockup-guides circle{fill:#d8f2ff;stroke:#137fc4;stroke-width:.55}
+.mockup-product-zone-guides{position:absolute;inset:0;pointer-events:none;width:100%;height:100%}
+.mockup-product-zone-guides polygon{fill:#ffc86b0b;stroke:#ffc86b;stroke-width:.55;stroke-dasharray:2 1}
+.mockup-guide-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;margin-top:12px;color:#aec5d8}
+.mockup-guide-legend span{display:inline-flex;align-items:center;gap:6px}
+.mockup-guide-legend span::before{content:'';width:15px;border-top:2px dashed #ffc86b}
+.mockup-guide-legend .is-art::before{border-color:#63c5ff}
+.mockup-guide-legend .is-suggestion::before{border-color:#c2a7ff}
 .mockup-empty{width:100%;min-height:290px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#a6d9f4;background:#152330;border:1px dashed #4d7191;border-radius:8px;text-align:center;padding:18px}
 .mockup-empty strong{font-size:13px}
 .mockup-empty small{font-size:11px;color:#92a8b8}
@@ -81,6 +88,23 @@
 .mockup-product-actions button{min-width:0;min-height:40px;border:1px solid #45637b;border-radius:7px;padding:7px 9px;color:#d1eafc;background:#203649;cursor:pointer;font-size:11px;font-weight:700}
 .mockup-product-actions button:first-child{background:#23638c;color:#fff}
 .mockup-product-actions button:disabled{opacity:.5}
+.mockup-cloud-panel{container-type:inline-size;min-width:0;padding:16px;border:1px solid #31495e;border-radius:12px;background:#121c29;margin-bottom:18px}
+.mockup-cloud-heading{display:flex;gap:10px;align-items:center;color:#a6d9f4;margin-bottom:12px}
+.mockup-cloud-heading>div{min-width:0}
+.mockup-cloud-heading h3{margin:0;font-size:14px}
+.mockup-cloud-heading p,.mockup-cloud-panel>p,.mockup-cloud-editor-status{font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.mockup-cloud-heading p{margin:4px 0 0;color:#a1b8ca}
+.mockup-cloud-connect{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;align-items:end;gap:12px}
+.mockup-cloud-actions{display:flex;gap:8px;flex-wrap:wrap}
+.mockup-product-cloud-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding:0 12px 12px}
+.mockup-product-cloud-actions button{font-size:11px;padding-inline:6px}
+.mockup-cloud-badge{display:inline-block;margin-top:7px;font-size:11px;color:#a6d9f4}
+.mockup-cloud-editor-status{margin:0 0 12px;color:#b3c9d9}
+.mockup-cloud-editor-status p{margin:4px 0}
+.mockup-cloud-panel button:disabled,.mockup-header button:disabled{opacity:.5;cursor:not-allowed}
+@container(max-width:650px){.mockup-cloud-connect{grid-template-columns:repeat(2,minmax(0,1fr))}.mockup-cloud-connect>button{grid-column:1/-1}}
+@container(max-width:420px){.mockup-cloud-connect{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:690px){.mockup-header{flex-wrap:wrap}.mockup-cloud-panel{padding:12px}.mockup-cloud-panel button{min-height:44px}.mockup-cloud-actions>*{flex:1}.mockup-product-cloud-actions button{min-height:44px}}
 .mockup-library-empty{grid-column:1/-1;display:grid;justify-items:center;text-align:center;gap:8px;padding:45px 18px;color:#b3d2e5;border:1px dashed #45647a;border-radius:12px}
 .mockup-library-empty p{font-size:12px;margin:0}
 .mockup-editor-breadcrumb{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}

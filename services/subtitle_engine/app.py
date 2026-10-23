@@ -19,6 +19,7 @@ from fastapi.responses import Response
 from google import genai
 from google.genai import types as genai_types
 from pydantic import BaseModel, Field
+from .mockup_library import router as mockup_library_router
 
 APP_NAME = "GAS3D Subtitle Engine"
 GEMINI_MODEL = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe")
@@ -77,6 +78,7 @@ WORK_ROOT = Path(
 WORK_ROOT.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title=APP_NAME)
+app.include_router(mockup_library_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

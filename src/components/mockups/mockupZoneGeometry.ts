@@ -4,6 +4,11 @@ import { restoreGarmentMask } from './mockupMasks'
 export type ZoneGeometry = { placement:Placement; aspect:number; polygon?:Point[] }
 export const ZONE_EDGE_NAMES = ['superior','derecho','inferior','izquierdo'] as const
 
+/** The template boundary is independent of artwork presence, proportions or draft. */
+export function configuredZoneOutline(photo:{width:number;height:number},zone:ZoneGeometry):Point[]{
+  return zone.polygon?.length?zone.polygon:placementQuad(photo,{width:1000,height:1000/zone.aspect},zone.placement)
+}
+
 /** Pen zones use their enclosing box; rectangular/perspective zones use their actual quad. */
 function resizeFrame(photo:{width:number;height:number},zone:ZoneGeometry):Quad {
   if(!zone.polygon?.length)return placementQuad(photo,{width:1000,height:1000/zone.aspect},zone.placement)

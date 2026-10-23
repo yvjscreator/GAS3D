@@ -4,12 +4,16 @@ import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacemen
 import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
 import { detectGarment } from '../src/components/mockups/garmentDetection'
-import { resizeZoneFromEdge, zoneEdgeHandles } from '../src/components/mockups/mockupZoneGeometry'
+import { configuredZoneOutline, resizeZoneFromEdge, zoneEdgeHandles } from '../src/components/mockups/mockupZoneGeometry'
 
 const source=(path:string)=>readFileSync(path,'utf8')
 const front=initialPlacement('front'),back=initialPlacement('back')
 assert.ok(front.width<back.width,'Front logo should start smaller than back print')
 const photo={width:1000,height:1200},art={width:600,height:800}
+const configuredBoundary=configuredZoneOutline(photo,{placement:front,aspect:.7})
+assert.deepEqual(configuredBoundary,placementQuad(photo,{width:1000,height:1000/.7},front),'The fixed product guide must use template dimensions independently of the artwork')
+const polygonBoundary=[{x:.2,y:.2},{x:.8,y:.2},{x:.5,y:.8}]
+assert.deepEqual(configuredZoneOutline(photo,{placement:front,aspect:1,polygon:polygonBoundary}),polygonBoundary,'The same saved pen polygon must delimit the product zone in every mode')
 const quad=placementQuad(photo,art,front)
 assert.ok(quad[0].x<quad[1].x&&quad[0].y<quad[3].y,'Placement orientation wrong')
 assert.ok(pointInQuad({x:front.x,y:front.y},quad),'Image center should be selectable')
@@ -188,10 +192,12 @@ assert.deepEqual(safeZonePolygon(photo,seamZone,1,calibration,0,cutout),cutout,'
 assert.deepEqual(safeZonePolygon(photo,seamZone,1,calibration,1,cutout),[],'Concave positive seam margins must fail explicitly rather than invent a safe boundary')
 
 const productPage=source('src/components/mockups/ProductMockupStudio.tsx')
-assert.ok(productPage.includes('mockup-products.v2')&&productPage.includes('Crear producto')&&productPage.includes('Nuevo mockup'),'Missing product-first library')
+const productStorage=source('src/components/mockups/mockupProduct.ts')
+assert.ok(productPage.includes('configuredZoneOutline(photo,z)')&&productPage.includes('guides&&productZone')&&productPage.includes('Encajar en zona del producto'),'Setup and mockup must share a fixed product-zone guide independent of the PNG draft')
+assert.ok(productStorage.includes('mockup-products.v2')&&productPage.includes('Crear producto')&&productPage.includes('Nuevo mockup'),'Missing product-first library')
 assert.ok(productPage.includes('Duplicar')===false || productPage.includes('duplicate'),'Product duplication handler missing')
 assert.ok(productPage.includes('leftSleeve')&&productPage.includes('rightSleeve'),'Sleeve photographs must be supported')
-assert.ok(productPage.includes('restoreCalibration')&&productPage.includes('calibrationMode'),'Per-view editable calibration not wired')
+assert.ok(productStorage.includes('restoreCalibration')&&productPage.includes('calibrationMode'),'Per-view editable calibration not wired')
 assert.ok(productPage.includes('placementWidthForCm')&&productPage.includes('printDimensionsCm'),'Numeric print sizing not wired')
 assert.ok(productPage.includes('zoneDimensionsCm')&&productPage.includes('artworkFitsZone'),'Cm zone sizing and overflow warnings missing')
 assert.ok(productPage.includes('Adaptación a mangas')&&productPage.includes('defaultSleeveCurve'),'Curvature controls or automatic sleeve presets missing')
@@ -201,12 +207,12 @@ assert.ok(productPage.includes('detectPhoto(image,view)')&&productPage.includes(
 assert.ok(productPage.includes("zen?enabled.filter(v=>v===active):enabled")&&productPage.includes('PhotoRulers'),'Focused editor must show only the active photo with rulers')
 assert.ok(productPage.includes('setMaskClosed(true)')&&productPage.includes('Eliminar nodo')&&productPage.includes('setPointerCapture'),'Pen tool must support closure, node editing and captured touch drags')
 assert.ok(productPage.includes('panDragRef')&&productPage.includes('setZoom')&&productPage.includes('saveCalibration'),'Zoom, panning and point-first calibration must be wired')
-assert.ok(productPage.includes('Editar zona con Pluma')&&productPage.includes('polygon:restoreGarmentMask(z.polygon)'),'Pen-drawn zones must persist and restore alongside old rectangle zones')
+assert.ok(productPage.includes('Editar zona con Pluma')&&productStorage.includes('polygon:restoreGarmentMask(z.polygon)'),'Pen-drawn zones must persist and restore alongside old rectangle zones')
 assert.ok(productPage.includes('data-zone-edge={edge}')&&productPage.includes("if(screen==='setup'&&guides)zoneEdgeHandles"),'Side controls must be confined to product-zone setup')
 assert.ok(productPage.includes('resizeZoneFromEdge')&&productPage.includes("e.shiftKey?10:1"),'Zone side handles must support pointer and keyboard resizing')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('grid-template-rows:minmax(260px,1fr) minmax(150px,.6fr)'),'Narrow focused editor must reserve space for photo and controls')
 assert.ok(productPage.includes('clipToZone')&&productPage.includes('seamMarginCm'),'Independent seam margins and zone clipping missing')
-assert.ok(productPage.includes('photoName:file.name,calibration:{},silhouette:[]'),'Replacing a photo must invalidate its stale silhouette')
+assert.ok(productPage.includes('photoName:file.name,photoVersion,calibration:{},silhouette:[]'),'Replacing a photo must invalidate its stale silhouette')
 assert.ok(productPage.includes('if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}'),'Old contours must not be saved onto replacement photos')
 assert.ok(productPage.includes('viewLayers(product.views[view],photo,models[view].arts,draft[view])'),'Preview and export must use identical mask layer builder')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-calibration-grid'),'Responsive calibration panel missing')

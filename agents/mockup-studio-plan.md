@@ -1,6 +1,6 @@
 # GAS3D — Mockup Studio plan
 
-**Status (October 2026):** the product-first catalogue and multi-view compositor are implemented at `#/mockups`, with estimated centimeter calibration, sleeve-cylinder projection, garment silhouettes and seam-safe zones. The focused editor now provides straight-segment pen editing for silhouettes and print zones, zoom/panning, photo rulers and calibration from a single reference. Local color segmentation proposes editable contours and central print areas for contrasting photos. Fold-specific displacement maps, AI mask detection, bulk export and cloud sync remain planned.
+**Status (October 2026):** the product-first catalogue and multi-view compositor are implemented at `#/mockups`, with estimated centimeter calibration, sleeve-cylinder projection, garment silhouettes and seam-safe zones. The focused editor provides straight-segment pen editing, zoom/panning, photo rulers and single-reference calibration. Local color segmentation proposes editable contours and central print areas. Optional personal Cloudinary product/photo synchronization is implemented; setup and limits are in `agents/mockup-cloud-library.md`. Fold displacement, AI mask detection and bulk export remain planned.
 
 ## Goal
 Reuse the same original garment photo templates with many interchangeable transparent artwork PNGs; export realistic catalog imagery without image-generation drift. First use case: side-by-side black oversized T-shirt front/back, small chest logo and large back print, preserving original PNGs and photo geometry.
@@ -13,7 +13,7 @@ Reuse the same original garment photo templates with many interchangeable transp
 - Derive a **lighting map** from the garment source inside the printing zone (luminance normalized against locally varying fabric color), preserve highlights and folds through an adjustable lighting contribution. Use blend/composite operations that conserve the design's color and transparency. Avoid plain Multiply on dark shirts (it would erase bright designs).
 - Support optional **displacement map** for fabric folds; it must be authored/calibrated per template. Combine with a low-opacity fabric grain layer for print texture. Manual brightness/contrast/mask sliders and original-art view make integration tunable.
 - Deterministic Canvas/WebGL output with no generative redrawing of text, logos or characters, original image transparency intact. Export high-resolution PNG/JPEG and a combined two-column front/back catalog image.
-- Save template configuration and artwork placement locally (IndexedDB/manifest). No upload to server by default.
+- Save configuration and artwork placement locally (IndexedDB/manifest); explicit **Guardar en nube** synchronizes the reusable product and its original photos to Cloudinary. Artwork/drafts stay local.
 
 ## Visual quality safeguards
 - Treat mockups as visual representations, not guaranteed centimeters. Exact 8x8 cm or 35x40 cm placement requires calibrating photo scale from garment measurements/reference; otherwise label placement as approximate.

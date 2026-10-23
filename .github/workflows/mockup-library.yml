@@ -1,0 +1,22 @@
+name: Mockup cloud library
+on:
+  push:
+    paths:
+      - 'services/subtitle_engine/**'
+      - '.github/workflows/mockup-library.yml'
+  pull_request:
+    paths:
+      - 'services/subtitle_engine/**'
+      - '.github/workflows/mockup-library.yml'
+permissions:
+  contents: read
+jobs:
+  cloud-library:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r services/subtitle_engine/requirements.txt httpx
+      - run: PYTHONPATH=services python -m unittest subtitle_engine.test_mockup_library -v

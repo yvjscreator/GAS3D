@@ -2,6 +2,8 @@
 
 Backend FastAPI de transcripción para Subtitle Studio.
 
+También aloja el catálogo personal de Mockup Studio en `/api/mockups`, con originales y configuración en Cloudinary. Configuración, aislamiento respecto de SolutionSuite y pruebas: [mockup-cloud-library.md](../../agents/mockup-cloud-library.md).
+
 ## Flujo
 
 1. Recibe temporalmente el video.

@@ -12,6 +12,9 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
 
 # Large 3D source files and archives
 3d-garment-ad-studio/
