@@ -152,8 +152,31 @@ function warpedArtwork(layer:CanvasRenderingContext2D, image:MockImage, quad:Qua
   }
 }
 
+/** Per-layer clipping is applied to the generated overlay, never to the original PNG. */
+export type RenderLayer = {
+  art:MockImage
+  placement:Placement
+  clipPolygons?: ReadonlyArray<ReadonlyArray<Point>>
+}
+function applyLayerClip(layer:CanvasRenderingContext2D,polygons:ReadonlyArray<ReadonlyArray<Point>>,width:number,height:number){
+  for(const polygon of polygons){
+    if(polygon.length<3){layer.clearRect(0,0,width,height);return}
+    layer.save()
+    layer.globalCompositeOperation='destination-in'
+    layer.fillStyle='#fff'
+    layer.beginPath()
+    polygon.forEach((p,i)=>{
+      if(i===0)layer.moveTo(p.x*width,p.y*height)
+      else layer.lineTo(p.x*width,p.y*height)
+    })
+    layer.closePath()
+    layer.fill()
+    layer.restore()
+  }
+}
+
 /** Same renderer is used for responsive preview and native-resolution export. */
-export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,layers:ReadonlyArray<{art:MockImage;placement:Placement}>,maxEdge:number){
+export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,layers:ReadonlyArray<RenderLayer>,maxEdge:number){
   const ratio=Math.min(1,maxEdge/Math.max(photo.width,photo.height))
   const width=Math.max(1,Math.round(photo.width*ratio))
   const height=Math.max(1,Math.round(photo.height*ratio))
@@ -162,7 +185,7 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
   if(!ctx)throw new Error('No se pudo abrir el lienzo de mockups.')
   ctx.clearRect(0,0,width,height)
   ctx.drawImage(photo.bitmap,0,0,width,height)
-  for(const {art,placement} of layers){
+  for(const {art,placement,clipPolygons} of layers){
   const quad=placementQuad({width,height},art,placement)
   const outline=artworkOutline({width,height},art,placement)
   const x=bound(Math.floor(Math.min(...outline.map(p=>p.x))*width)-2,0,width)
@@ -177,6 +200,7 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
     const layer=overlay.getContext('2d',{willReadFrequently:true})
     if(!layer)throw new Error('No se pudo preparar el estampado.')
     warpedArtwork(layer,art,quad,width,height,placement.sleeveCurve)
+    if(clipPolygons?.length)applyLayerClip(layer,clipPolygons,width,height)
     if(placement.lighting>0){
       const fabric=ctx.getImageData(x,y,w,h)
       const print=layer.getImageData(x,y,w,h)
