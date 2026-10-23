@@ -26,9 +26,9 @@ assert.ok(scale&&Math.abs(scale.x-10)<1e-8&&Math.abs(scale.y-12)<1e-8,'Calibrati
 const p={...initialPlacement('back'),x:.5,y:.5,width:.3}
 const cm=printDimensionsCm(photo,art,p,calibration)
 assert.ok(cm&&Math.abs(cm.width-30)<1e-8&&Math.abs(cm.height-100/3)<1e-8,'Print dimensions should preserve PNG aspect ratio')
-assert.equal(placementWidthForCm(photo,art,calibration,'horizontal',35),.35,'Changing print width must preserve bitmap aspect')
-assert.equal(placementWidthForCm(photo,art,calibration,'vertical',40),.36,'Height-driven sizing must preserve bitmap aspect')
-assert.equal(printDimensionsCm(photo,art,{...p,width:.35},calibration)?.width,35)
+assert.ok(Math.abs((placementWidthForCm(photo,art,calibration,'horizontal',35)??NaN)-.35)<1e-9,'Changing print width must preserve bitmap aspect')
+assert.ok(Math.abs((placementWidthForCm(photo,art,calibration,'vertical',40)??NaN)-.36)<1e-9,'Height-driven sizing must preserve bitmap aspect')
+assert.ok(Math.abs((printDimensionsCm(photo,art,{...p,width:.35},calibration)?.width??NaN)-35)<1e-8,'Converting a scaled print back to cm must tolerate floating-point precision')
 const warped={...p,corners:[{x:.04,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}] as typeof p.corners}
 const resized=resizePrintPreservingWarp(warped,.6)
 assert.equal(resized.width,.6)
