@@ -3,12 +3,13 @@ import { ArrowDownToLine, ArrowLeft, Copy, ImagePlus, Layers2, Plus, RotateCcw, 
 import { AppLauncher } from '../navigation/AppLauncher'
 import { loadMedia, removeMedia, storeMedia } from '../../utils/mediaStorage'
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
-import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type ViewName } from './mockupEngine'
+import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type RenderLayer, type ViewName } from './mockupEngine'
+import { printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from './mockupMasks'
 import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, zoneDimensionsCm, type CalibrationAxis, type PhotoCalibration } from './mockupCalibration'
 import './mockupStudio.css'
 
-type Zone = { id:string; name:string; aspect:number; placement:Placement }
-type ProductView = { enabled:boolean; photoName?:string; calibration?:PhotoCalibration; zones:Zone[] }
+type Zone = { id:string; name:string; aspect:number; placement:Placement; seamMarginCm?:number; clipToZone?:boolean }
+type ProductView = { enabled:boolean; photoName?:string; calibration?:PhotoCalibration; silhouette?:Point[]; zones:Zone[] }
 type Product = { id:string; name:string; type:string; views:Record<ViewName,ProductView> }
 type Models = Record<ViewName,{photo:MockImage|null;arts:Record<string,MockImage>}>
 type DraftValue = {placement:Placement;name:string}
@@ -44,8 +45,10 @@ function readProducts():Product[]{
         enabled:Boolean(p.views[v]?.enabled),
         photoName:p.views[v]?.photoName,
         calibration:restoreCalibration(p.views[v]?.calibration),
+        silhouette:restoreGarmentMask(p.views[v]?.silhouette),
         zones:Array.isArray(p.views[v]?.zones)?p.views[v].zones.filter(z=>z&&typeof z.id==='string').map(z=>({
           id:z.id,name:typeof z.name==='string'?z.name:'Zona',aspect:bound(Number(z.aspect)||1,.15,6),placement:restorePlacement(z.placement,v),
+          seamMarginCm:bound(Number(z.seamMarginCm)||0,0,8),clipToZone:z.clipToZone===true,
         })):[],
       }])) as Product['views']}))
   }catch{return []}
@@ -75,6 +78,18 @@ function fitArt(zone:Zone,photo:MockImage,art:MockImage):Placement{
   const availableH=(zone.placement.width*photo.width)/zone.aspect
   const width=Math.min(zone.placement.width,availableH*art.width/art.height/photo.width)
   return {...zone.placement,width:Math.max(.025,width),corners:zone.placement.corners.map(p=>({...p})) as Placement['corners']}
+}
+/** One layer builder for both preview and native-resolution export. */
+function viewLayers(config:ProductView,photo:MockImage,arts:Record<string,MockImage>,draft?:Record<string,DraftValue>):RenderLayer[]{
+  return config.zones.flatMap(zone=>{
+    const art=arts[zone.id]
+    if(!art)return []
+    const placement=draft?.[zone.id]?.placement??fitArt(zone,photo,art)
+    const clipPolygons:Point[][]=[]
+    if(config.silhouette?.length)clipPolygons.push(config.silhouette)
+    if(zone.clipToZone)clipPolygons.push(safeZonePolygon(photo,zone.placement,zone.aspect,config.calibration??{},zone.seamMarginCm??0))
+    return [{art,placement,clipPolygons}]
+  })
 }
 function ProductThumbnail({id,views}:{id:string;views:Record<ViewName,ProductView>}){
   const [url,setUrl]=useState('')
@@ -108,6 +123,9 @@ export function ProductMockupStudio(){
   const [guides,setGuides]=useState(true)
   const [calibrationMode,setCalibrationMode]=useState<{view:ViewName;axis:CalibrationAxis;first:Point|null}|null>(null)
   const [measureDraft,setMeasureDraft]=useState<Record<string,string>>({})
+  const [maskEditing,setMaskEditing]=useState<ViewName|null>(null)
+  const [maskDraft,setMaskDraft]=useState<Point[]>([])
+  const maskDragRef=useRef<{view:ViewName;index:number;pointerId:number}|null>(null)
   const [feedback,setFeedback]=useState('')
   const [error,setError]=useState('')
   const inputRef=useRef<HTMLInputElement>(null)
@@ -116,7 +134,7 @@ export function ProductMockupStudio(){
   const dragRef=useRef<Drag|null>(null)
   const modelsRef=useRef(models)
   useEffect(()=>{modelsRef.current=models},[models])
-  useEffect(()=>{setMeasureDraft({});setCalibrationMode(null)},[selectedId])
+  useEffect(()=>{setMeasureDraft({});setCalibrationMode(null);setMaskEditing(null);setMaskDraft([])},[selectedId])
   const product=products.find(p=>p.id===selectedId)
   const enabled=product?VIEWS.filter(v=>product.views[v].enabled):[]
   const current=product?.views[active]
@@ -128,8 +146,16 @@ export function ProductMockupStudio(){
   const zoneCm=photo&&selectedZone?zoneDimensionsCm(photo,selectedZone.placement,selectedZone.aspect,calibration):null
   const printCm=photo&&selectedZone&&selectedArt
     ?printDimensionsCm(photo,selectedArt,draft[active]?.[selectedZone.id]?.placement??fitArt(selectedZone,photo,selectedArt),calibration):null
-  const printFits=photo&&selectedZone&&selectedArt
-    ?artworkFitsZone(photo,selectedArt,draft[active]?.[selectedZone.id]?.placement??fitArt(selectedZone,photo,selectedArt),selectedZone.placement,selectedZone.aspect):true
+  const safeBoundary=photo&&selectedZone
+    ?safeZonePolygon(photo,selectedZone.placement,selectedZone.aspect,calibration,selectedZone.seamMarginCm??0):null
+  const currentPrint=photo&&selectedZone&&selectedArt
+    ?(draft[active]?.[selectedZone.id]?.placement??fitArt(selectedZone,photo,selectedArt)):null
+  const printFits=photo&&selectedZone&&selectedArt&&currentPrint
+    ?(selectedZone.seamMarginCm
+      ?printInsideSafeAreas(photo,selectedArt,currentPrint,[safeBoundary??[]])
+      :artworkFitsZone(photo,selectedArt,currentPrint,selectedZone.placement,selectedZone.aspect)):true
+  const fabricFits=photo&&selectedArt&&currentPrint&&current?.silhouette?.length
+    ?printInsideSafeAreas(photo,selectedArt,currentPrint,[current.silhouette]):true
 
   useEffect(()=>{
     try{localStorage.setItem(LIBRARY_KEY,JSON.stringify(products))}catch{/* Storage optional */}
@@ -209,12 +235,8 @@ export function ProductMockupStudio(){
       for(const view of VIEWS.filter(v=>product.views[v].enabled)){
         const photo=models[view].photo,canvas=canvasRefs.current[view]
         if(!photo||!canvas)continue
-        const layers=screen==='mockup'?product.views[view].zones.flatMap(zone=>{
-          const art=models[view].arts[zone.id]
-          if(!art)return []
-          const placement=draft[view]?.[zone.id]?.placement??fitArt(zone,photo,art)
-          return [{art,placement}]
-        }):[]
+        const layers=screen==='mockup'
+          ?viewLayers(product.views[view],photo,models[view].arts,draft[view]):[]
         try{renderGarmentLayers(canvas,photo,layers,1050)}
         catch(e){setError(e instanceof Error?e.message:'Error al mostrar el mockup.')}
       }
@@ -266,7 +288,7 @@ export function ProductMockupStudio(){
         }}))
         if(kind==='photo'){
           // A replacement photo invalidates previously marked references.
-          updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:file.name,calibration:{}}}}))
+          updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:file.name,calibration:{},silhouette:[]}}}))
           setMeasureDraft(old=>Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(view+':'))))
           setCalibrationMode(null)
         }
@@ -291,7 +313,7 @@ export function ProductMockupStudio(){
       photo:kind==='photo'?null:old[view].photo,
       arts:kind==='art'?Object.fromEntries(Object.entries(old[view].arts).filter(([id])=>id!==zid)):old[view].arts,
     }}))
-    if(kind==='photo')updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:undefined,calibration:{}}}}))
+    if(kind==='photo')updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:undefined,calibration:{},silhouette:[]}}}}))
     void removeMedia(key).catch(()=>setError('No se pudo borrar el archivo del navegador.'))
   }
   const position=(e:ReactPointerEvent<HTMLDivElement>):Point=>{
@@ -393,10 +415,7 @@ export function ProductMockupStudio(){
     try{
       for(const view of chosen){
         const photo=models[view].photo!
-        const layers=product.views[view].zones.flatMap(zone=>{
-          const art=models[view].arts[zone.id]
-          return art?[{art,placement:draft[view]?.[zone.id]?.placement??fitArt(zone,photo,art)}]:[]
-        })
+        const layers=viewLayers(product.views[view],photo,models[view].arts,draft[view])
         const canvas=document.createElement('canvas')
         renderGarmentLayers(canvas,photo,layers,8192);canvases.push(canvas)
       }
