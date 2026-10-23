@@ -1,6 +1,6 @@
 # GAS3D — Mockup Studio plan
 
-**Status (October 2026):** the product-first local catalogue, named products, configurable front/back/side/sleeve views, multiple named print zones, proportion-preserving corner scaling, explicit warp mode and multi-zone PNG exports are implemented at `#/mockups`. See `agents/mockup-studio-mvp.md`. Physical calibration, silhouette masks, displacement maps and cloud sync remain planned.
+**Status (October 2026):** the product-first catalogue and multi-view compositor are implemented at `#/mockups`. The centimeter-calibration release adds per-view two-axis photo reference lines, estimated centimeter dimensions for zones and prints, proportion-preserving numeric print sizing and visual zone-overflow warnings. Physical accuracy remains approximate for angled photographs; silhouette masks, displacement maps and cloud sync are still planned.
 
 ## Goal
 Reuse the same original garment photo templates with many interchangeable transparent artwork PNGs; export realistic catalog imagery without image-generation drift. First use case: side-by-side black oversized T-shirt front/back, small chest logo and large back print, preserving original PNGs and photo geometry.
@@ -33,3 +33,12 @@ Reuse the same original garment photo templates with many interchangeable transp
 - A two-view example supports 8x8 cm centered chest and 35x40 cm back placement after calibration, while preserving true original PNG artwork.
 - Both desktop mouse and mobile touch editing, undo/redo, preview/export consistency and template restoration.
 - No promise of photorealism from arbitrary poorly lit garment photos without suitable maps.
+
+## Photo calibration release — implementation notes
+
+- Each product photo view stores optional independent horizontal and vertical references (two normalized image points plus measured centimeters for each axis). Legacy data is read without destructive migration, and the source photo and original art Blobs remain unchanged.
+- Set up calibration in **Configurar producto** by entering a known garment width and height and marking each pair of endpoints directly on that view's photo. The blue/orange guide lines never appear in exports.
+- With both axes available, setup displays estimated zone dimensions in centimeters; **Nuevo mockup** exposes numeric artwork width/height. Editing either dimension updates only the uniform bitmap scale. The other dimension recalculates, preserving original PNG proportions.
+- Moving or enlarging a print beyond its zone produces a warning, not clipping or modification of source artwork. Replacing a view's garment photo invalidates that view's calibration so outdated pixels-per-centimeter cannot silently carry over.
+- The two photo scales are local approximations, **not certified textile dimensions**, especially for camera perspective, sleeve curvature, lens distortion or non-planar fabric. Sleeve curvature/displacement belongs to a later phase.
+- Regression checks: `npm run qa:mockups`, `npm run build`, plus browser testing on phone and desktop before production rollout.
