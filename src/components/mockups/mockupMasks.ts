@@ -79,12 +79,14 @@ function lineIntersection(a:Point,b:Point,c:Point,d:Point):Point|null {
   return {x:a.x+t*dx,y:a.y+t*dy}
 }
 
-/** Insets convex zone quads in real cm, respecting different X and Y photo scales. */
+/** Insets convex print polygons in cm, respecting different X and Y photo scales. */
 export function safeZonePolygon(
   photo:PhotoSize, zone:Placement, aspect:number, calibration:PhotoCalibration, seamMarginCm:number,
+  polygon?:ReadonlyArray<Point>,
 ):Point[] {
   if(!Number.isFinite(aspect)||aspect<=0||photo.width<=0||photo.height<=0)return []
-  const quad=placementQuad(photo,{width:1000,height:1000/aspect},zone)
+  const quad=polygon?.length?polygon.map(p=>({...p})):placementQuad(photo,{width:1000,height:1000/aspect},zone)
+  if(quad.length<3)return []
   const margin=Number.isFinite(seamMarginCm)?Math.max(0,Math.min(8,seamMarginCm)):0
   if(!margin)return quad
   const scale=photoPixelsPerCm(photo,calibration)
@@ -94,20 +96,21 @@ export function safeZonePolygon(
   const points=quad.map(toCm),signed=area(points)
   if(Math.abs(signed)<CROSS_EPS)return []
   const orientation=Math.sign(signed)
-  // Only convex print zones admit a reliable inward offset.
-  for(let i=0;i<4;i++) {
-    if(cross(points[i],points[(i+1)%4],points[(i+2)%4])*orientation<=CROSS_EPS)return []
+  // Only convex print zones admit this reliable inward offset.
+  const count=points.length
+  for(let i=0;i<count;i++) {
+    if(cross(points[i],points[(i+1)%count],points[(i+2)%count])*orientation<=CROSS_EPS)return []
   }
   const edges=points.map((a,i)=>{
-    const b=points[(i+1)%4],dx=b.x-a.x,dy=b.y-a.y,length=Math.hypot(dx,dy)
+    const b=points[(i+1)%count],dx=b.x-a.x,dy=b.y-a.y,length=Math.hypot(dx,dy)
     if(length<1e-8)return null
     const shift={x:-dy*orientation*margin/length,y:dx*orientation*margin/length}
     return {a:{x:a.x+shift.x,y:a.y+shift.y},b:{x:b.x+shift.x,y:b.y+shift.y}}
   })
   if(edges.some(edge=>edge===null))return []
   const inset:Point[]=[]
-  for(let i=0;i<4;i++) {
-    const last=edges[(i+3)%4]!,next=edges[i]!
+  for(let i=0;i<count;i++) {
+    const last=edges[(i+count-1)%count]!,next=edges[i]!
     const point=lineIntersection(last.a,last.b,next.a,next.b)
     if(!point||!Number.isFinite(point.x)||!Number.isFinite(point.y))return []
     inset.push(point)

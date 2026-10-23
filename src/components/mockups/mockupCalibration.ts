@@ -6,6 +6,19 @@ export type CalibrationLine = { from: Point; to: Point; cm: number }
 export type PhotoCalibration = { horizontal?: CalibrationLine; vertical?: CalibrationLine }
 export type PhotoSize = { width: number; height: number }
 
+/** Readable source-pixel or cm ticks, following the photo origin and zoom. */
+export function rulerTicks(length:number,origin:number,pixelsPerUnit:number){
+  const raw=65/pixelsPerUnit,power=10**Math.floor(Math.log10(raw))
+  const step=([1,2,5,10].find(n=>n*power>=raw)??10)*power
+  const first=Math.ceil(-origin/pixelsPerUnit/step)*step
+  const ticks:{position:number;value:number}[]=[]
+  for(let value=first;origin+value*pixelsPerUnit<length;value+=step){
+    ticks.push({position:origin+value*pixelsPerUnit,value:Math.abs(value)<step/100?0:Number(value.toPrecision(8))})
+    if(ticks.length>200)break
+  }
+  return ticks
+}
+
 const validPoint = (p: unknown): p is Point => {
   if (!p || typeof p !== 'object') return false
   const value = p as Partial<Point>
@@ -32,9 +45,12 @@ export function restoreCalibration(raw: unknown): PhotoCalibration {
 /** Approximate photo pixels per physical centimeter at the marked references. */
 export function photoPixelsPerCm(photo: PhotoSize, calibration: PhotoCalibration): { x: number; y: number } | null {
   const horizontal = calibration.horizontal, vertical = calibration.vertical
-  if (!horizontal || !vertical || photo.width <= 0 || photo.height <= 0) return null
-  const x = Math.abs(horizontal.to.x - horizontal.from.x) * photo.width / horizontal.cm
-  const y = Math.abs(vertical.to.y - vertical.from.y) * photo.height / vertical.cm
+  if ((!horizontal && !vertical) || photo.width <= 0 || photo.height <= 0) return null
+  // A single known length estimates a uniform photo scale. A second axis can refine it.
+  const horizontalScale = horizontal ? Math.abs(horizontal.to.x - horizontal.from.x) * photo.width / horizontal.cm : null
+  const verticalScale = vertical ? Math.abs(vertical.to.y - vertical.from.y) * photo.height / vertical.cm : null
+  const x = horizontalScale ?? verticalScale!
+  const y = verticalScale ?? horizontalScale!
   if (!Number.isFinite(x) || !Number.isFinite(y) || x <= 0 || y <= 0) return null
   return { x, y }
 }

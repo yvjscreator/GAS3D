@@ -174,3 +174,75 @@
 .mockup-seam-guides polygon{fill:rgba(255,209,114,.05);stroke:#ffd17b;stroke-width:.55;stroke-dasharray:1.5 1}
 .mockup-seam-settings .mockup-field{min-width:0}
 @media(max-width:460px){.mockup-mask-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Focused photo editor. One shared stage and renderer for overview and large editing. */
+.mockup-photo-frame,.mockup-photo-viewport{min-width:0;min-height:0}
+.mockup-mask-buttons button{display:flex;align-items:center;justify-content:center;gap:6px}
+.mockup-zone-suggestion{margin-top:12px;padding-top:10px;border-top:1px solid #41516a}
+.mockup-suggestion-guides{position:absolute;inset:0;pointer-events:none;width:100%;height:100%}
+.mockup-suggestion-guides polygon{fill:#b198fa15;stroke:#c2a7ff;stroke-width:.6;stroke-dasharray:2 1}
+.mockup-mask-guides circle.is-selected{fill:#fff;stroke:#faad35}
+.mockup-mask-guides circle.is-start{fill:#90ffc9}
+.mockup-zen{position:fixed;inset:0;z-index:1000;height:100dvh;min-height:0;padding:10px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.mockup-zen .mockup-header{width:100%;max-width:none;margin:0;min-height:48px;padding-bottom:8px;flex-shrink:0}
+.mockup-zen .mockup-header h1{font-size:17px}
+.mockup-zen .mockup-header p{display:none}
+.mockup-zen .mockup-editor-shell{display:flex;flex-direction:column;flex:1;width:100%;max-width:none;min-height:0}
+.mockup-zen .mockup-editor-breadcrumb{flex-shrink:0;margin-bottom:8px}
+.mockup-zen .mockup-layout{width:100%;max-width:none;flex:1;min-height:0;grid-template-columns:minmax(0,1fr) 330px;gap:10px;align-items:stretch}
+.mockup-zen .mockup-workspace{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;min-height:0;padding:10px;gap:8px}
+.mockup-zen .mockup-workspace-heading{margin:0;flex-wrap:wrap}
+.mockup-zen .mockup-view-grid{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);min-height:0}
+.mockup-zen .mockup-view{display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0;padding:0;border:0;background:transparent;gap:6px}
+.mockup-zen .mockup-view-title,.mockup-zen .mockup-workspace-heading h2{display:none}
+.mockup-zen .mockup-photo-frame{position:relative;display:grid;grid-template-columns:28px minmax(0,1fr);grid-template-rows:28px minmax(0,1fr);overflow:hidden;background:#0a121c}
+.mockup-zen .mockup-photo-viewport{grid-column:2;grid-row:2;display:grid;place-items:center;position:relative;overflow:hidden;touch-action:none}
+.mockup-zen .mockup-stage{grid-area:1/1;max-width:none;max-height:none;margin:0;transform-origin:center;flex-shrink:0;overflow:hidden;border:0;border-radius:0}
+.mockup-zen .mockup-stage svg polygon,.mockup-zen .mockup-stage svg polyline,.mockup-zen .mockup-stage svg line,.mockup-zen .mockup-stage svg circle{vector-effect:non-scaling-stroke;stroke-width:2px}
+.mockup-zen .mockup-stage svg circle,.mockup-zen .mockup-mask-guides.is-editing circle{r:var(--mockup-node-radius)}
+.mockup-zen .mockup-stage svg polygon,.mockup-zen .mockup-stage svg polyline{stroke-dasharray:6 4}
+.mockup-ruler-unit{grid-area:1/1;display:grid;place-items:center;font-size:10px;color:#b9d9ed;background:#163044;z-index:2}
+.mockup-ruler-top{grid-area:1/2;display:block;width:100%;height:28px;min-width:0;z-index:2}
+.mockup-ruler-left{grid-area:2/1;display:block;width:28px;height:100%;min-height:0;z-index:2}
+.mockup-zen .mockup-controls{height:100%;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;padding:12px;scrollbar-width:thin}
+.mockup-zen .mockup-controls>*{flex-shrink:0}
+.mockup-zen .mockup-controls.tool-pen .mockup-mask-editor{order:-2}
+.mockup-zen .mockup-controls.tool-pen .mockup-zone-suggestion{order:-1}
+.mockup-zen .mockup-controls.is-setup>.mockup-divider{display:none}
+.mockup-zen .mockup-controls.is-setup:not(.inspector-calibration)>.mockup-calibration{display:none}
+.mockup-zen .mockup-controls.is-setup:not(.inspector-pen)>.mockup-mask-editor,.mockup-zen .mockup-controls.is-setup:not(.inspector-pen)>.mockup-zone-suggestion{display:none}
+.mockup-zen .mockup-controls.is-setup:not(.inspector-zone)>.mockup-zone-heading,.mockup-zen .mockup-controls.is-setup:not(.inspector-zone)>.mockup-zone-inspector{display:none}
+.mockup-zen.is-panel-hidden .mockup-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.mockup-zen.is-panel-hidden .mockup-controls{display:none}
+.mockup-zen .mockup-product-settings{display:none}
+.mockup-zen .mockup-controls>.mockup-divider:first-of-type{display:none}
+.mockup-zen-toolbar,.mockup-zoom-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
+.mockup-zoom-tools{margin-left:auto}
+.mockup-zoom-tools output{min-width:42px;text-align:center;font-size:11px;font-variant-numeric:tabular-nums;color:#c8e4f5}
+.mockup-zen-toolbar button{display:flex;align-items:center;justify-content:center;gap:5px;min-height:38px;min-width:38px;padding:7px 9px;border:1px solid #45637b;border-radius:7px;color:#c8e4f5;background:#1a2d3e;font-size:11px;cursor:pointer}
+.mockup-zen-toolbar button[aria-pressed=true]{background:#27618c;border-color:#78c5ef;color:#fff}
+.mockup-zen-toolbar button:disabled{opacity:.45;cursor:not-allowed}
+.mockup-zen .mockup-hint{font-size:10px;line-height:1.4;margin:0}
+.mockup-zen>.mockup-status{width:100%;max-width:none;max-height:46px;overflow:auto;margin:0;padding:6px 10px;flex-shrink:0}
+.mockup-zen .mockup-calibration-prompt{flex-wrap:wrap}
+.mockup-zen .mockup-calibration-prompt>span{flex-basis:100%}
+@media(max-width:1100px){.mockup-zen .mockup-layout{grid-template-columns:minmax(0,1fr) 285px}.mockup-zen .mockup-workspace-heading{align-items:flex-start;flex-direction:column}.mockup-zen .mockup-view-tabs{width:100%}}
+@media(max-width:760px){
+  .mockup-zen{padding:6px;gap:6px}
+  .mockup-zen .mockup-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(260px,1fr) minmax(150px,.6fr);gap:6px}
+  .mockup-zen .mockup-header{gap:6px;min-height:44px}
+  .mockup-zen .mockup-header h1{font-size:14px}
+  .mockup-zen .mockup-header .mockup-nav-button{font-size:10px;padding:6px;min-height:40px}
+  .mockup-zen .mockup-editor-breadcrumb{flex-direction:row;align-items:center;gap:6px;margin-bottom:6px}
+  .mockup-zen .mockup-editor-breadcrumb>strong{display:none}
+  .mockup-zen .mockup-editor-breadcrumb>div{width:100%}
+  .mockup-zen .mockup-editor-breadcrumb button{flex:1;padding:7px;min-height:40px}
+  .mockup-zen .mockup-workspace{padding:6px;gap:6px}
+  .mockup-zen .mockup-workspace-heading h2,.mockup-zen .mockup-view-title,.mockup-zen .mockup-hint{display:none}
+  .mockup-zen .mockup-workspace{grid-template-rows:auto auto minmax(0,1fr)}
+  .mockup-zen .mockup-view{grid-template-rows:minmax(0,1fr) auto}
+  .mockup-zen .mockup-view-actions button,.mockup-zen-toolbar button{min-height:44px}
+  .mockup-zen .mockup-controls{padding:10px}
+  .mockup-zen .mockup-calibration-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mockup-zen .mockup-zoom-tools{margin-left:0}
+}

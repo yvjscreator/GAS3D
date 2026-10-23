@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
-import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
+import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
+import { detectGarment } from '../src/components/mockups/garmentDetection'
 
 const source=(path:string)=>readFileSync(path,'utf8')
 const front=initialPlacement('front'),back=initialPlacement('back')
@@ -40,7 +41,43 @@ assert.ok(artworkFitsZone(photo,art,p,{...p,width:.5},1),'Normal artwork must fi
 assert.ok(!artworkFitsZone(photo,art,{...p,x:.92},{...p,width:.5},1),'Moving outside a zone must warn')
 assert.deepEqual(restoreCalibration({horizontal:{from:{x:0,y:0},to:{x:0,y:0},cm:0}}),{},'Reject invalid or stale reference geometry')
 assert.equal(photoPixelsPerCm(photo,{}),null,'Legacy products must stay uncalibrated')
-assert.equal(printDimensionsCm(photo,art,p,{}),null,'Do not claim physical measures without both references')
+assert.equal(printDimensionsCm(photo,art,p,{}),null,'Do not claim physical measures without any known reference')
+const singleAxis={vertical:calibration.vertical}
+assert.deepEqual(photoPixelsPerCm(photo,singleAxis),{x:12,y:12},'One known length should estimate an isotropic photo scale')
+assert.ok(Math.abs((printDimensionsCm(photo,{width:400,height:400},p,singleAxis)?.width??0)-25)<1e-8,'A single vertical reference must size a print in centimeters')
+assert.equal(printDimensionsCm(photo,{width:400,height:400},p,singleAxis)?.width,printDimensionsCm(photo,{width:400,height:400},p,singleAxis)?.height,'Uniform estimated scale should keep square artwork square in cm')
+const ruler=rulerTicks(600,100,10)
+assert.ok(ruler.some(t=>t.value===0&&t.position===100),'Ruler zero must track the image origin')
+assert.ok(ruler.every(t=>Math.abs(t.position-(100+t.value*10))<1e-7),'Ruler values must follow calibrated scale')
+assert.ok(rulerTicks(300,-75,20).every(t=>t.position>=0&&t.position<300),'Panned/zoomed ruler ticks must stay visible')
+
+// Color segmentation retains concavities, ignores detached marks and fails safely on low contrast.
+const garment=[{x:.38,y:.1},{x:.62,y:.1},{x:.82,y:.23},{x:.94,y:.43},{x:.77,y:.55},
+  {x:.72,y:.42},{x:.72,y:.92},{x:.28,y:.92},{x:.28,y:.42},{x:.23,y:.55},{x:.06,y:.43},{x:.18,y:.23}]
+function garmentRaster(foreground:number,background:number,alpha=false){
+  const width=160,height=192,data=new Uint8ClampedArray(width*height*4)
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const inside=pointInPolygon({x:(x+.5)/width,y:(y+.5)/height},garment)
+    const value=inside?foreground:background,i=(y*width+x)*4
+    data[i]=data[i+1]=data[i+2]=value;data[i+3]=alpha&&!inside?0:255
+  }
+  // Detached speck must not become part of the garment contour.
+  for(let y=3;y<7;y++)for(let x=3;x<7;x++){const i=(y*width+x)*4;data[i]=data[i+1]=data[i+2]=foreground}
+  return {width,height,data}
+}
+for(const raster of [garmentRaster(20,250),garmentRaster(245,20),garmentRaster(245,250,true)]){
+  const before=raster.data.slice(),detected=detectGarment(raster)
+  assert.deepEqual(raster.data,before,'Detection must never mutate source photo pixels')
+  assert.ok(detected.outline.length>=8&&detected.outline.length<=32,'Detection should produce an editable bounded contour')
+  assert.ok(pointInPolygon({x:.5,y:.65},detected.outline),'Detected garment should include the torso')
+  assert.ok(!pointInPolygon({x:.15,y:.8},detected.outline),'Detection must preserve the armpit concavity')
+  assert.ok(!pointInPolygon({x:.03,y:.03},detected.outline),'Detached noise must be excluded')
+  assert.ok(detected.zone,'Contrasting torso should produce a conservative print area')
+  const zone=detected.zone!
+  assert.ok(outlineInsidePolygon(placementQuad(raster,{width:1000,height:1000/zone.aspect},zone.placement),detected.outline),'Suggested zone must remain wholly inside the garment')
+}
+assert.throws(()=>detectGarment(garmentRaster(245,250)),/contraste/,'White-on-white detection should request manual editing')
+assert.throws(()=>detectGarment({width:0,height:0,data:[]}),/analizar/,'Malformed samples must fail safely')
 
 // Sleeve cylinder mesh must preserve corner anchors, be opt-in for old drafts and
 // create a real (non-affine) curvature with accurate guides and hit testing.
@@ -105,6 +142,11 @@ assert.ok(!printInsideSafeAreas(photo,art,{...p,width:.47},[seamBoundary]),'Larg
 assert.equal(safeZonePolygon(photo,seamZone,1,{},2).length,4,'Uncalibrated legacy zones should retain photo-relative boundaries')
 assert.deepEqual(safeZonePolygon(photo,seamZone,1,calibration,8).length,4,'Valid 8 cm safety margins should remain geometrically valid')
 assert.ok(printInsideSafeAreas(photo,art,{...p,width:.2,sleeveCurve:defaultSleeveCurve()},[seamBoundary]),'Sleeve curves are checked against the safe boundary')
+const customZone=[{x:.2,y:.2},{x:.7,y:.2},{x:.8,y:.4},{x:.7,y:.8},{x:.2,y:.8}]
+assert.deepEqual(safeZonePolygon(photo,seamZone,1,calibration,0,customZone),customZone,'Pen zones must override rectangular boundaries in the shared renderer')
+assert.equal(safeZonePolygon(photo,seamZone,1,calibration,1,customZone).length,5,'Convex pen zones should support physical seam insets')
+assert.deepEqual(safeZonePolygon(photo,seamZone,1,calibration,0,cutout),cutout,'Concave pen zones should clip accurately at zero margin')
+assert.deepEqual(safeZonePolygon(photo,seamZone,1,calibration,1,cutout),[],'Concave positive seam margins must fail explicitly rather than invent a safe boundary')
 
 const productPage=source('src/components/mockups/ProductMockupStudio.tsx')
 assert.ok(productPage.includes('mockup-products.v2')&&productPage.includes('Crear producto')&&productPage.includes('Nuevo mockup'),'Missing product-first library')
@@ -116,6 +158,12 @@ assert.ok(productPage.includes('zoneDimensionsCm')&&productPage.includes('artwor
 assert.ok(productPage.includes('Adaptación a mangas')&&productPage.includes('defaultSleeveCurve'),'Curvature controls or automatic sleeve presets missing')
 assert.ok(productPage.includes('pointInArtwork')&&productPage.includes('artworkOutline'),'Curved hit testing and outline guides missing')
 assert.ok(productPage.includes('saveSilhouette')&&productPage.includes('restoreGarmentMask'),'Editable fabric silhouette panel missing')
+assert.ok(productPage.includes('detectPhoto(image,view)')&&productPage.includes('Añadir zona sugerida'),'Uploaded photos must offer automatic contours and independent zone suggestions')
+assert.ok(productPage.includes("zen?enabled.filter(v=>v===active):enabled")&&productPage.includes('PhotoRulers'),'Focused editor must show only the active photo with rulers')
+assert.ok(productPage.includes('setMaskClosed(true)')&&productPage.includes('Eliminar nodo')&&productPage.includes('setPointerCapture'),'Pen tool must support closure, node editing and captured touch drags')
+assert.ok(productPage.includes('panDragRef')&&productPage.includes('setZoom')&&productPage.includes('saveCalibration'),'Zoom, panning and point-first calibration must be wired')
+assert.ok(productPage.includes('Editar zona con Pluma')&&productPage.includes('polygon:restoreGarmentMask(z.polygon)'),'Pen-drawn zones must persist and restore alongside old rectangle zones')
+assert.ok(source('src/components/mockups/mockupStudio.css').includes('grid-template-rows:minmax(260px,1fr) minmax(150px,.6fr)'),'Narrow focused editor must reserve space for photo and controls')
 assert.ok(productPage.includes('clipToZone')&&productPage.includes('seamMarginCm'),'Independent seam margins and zone clipping missing')
 assert.ok(productPage.includes('photoName:file.name,calibration:{},silhouette:[]'),'Replacing a photo must invalidate its stale silhouette')
 assert.ok(productPage.includes('if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}'),'Old contours must not be saved onto replacement photos')

@@ -1,6 +1,6 @@
 # GAS3D — Mockup Studio plan
 
-**Status (October 2026):** the product-first catalogue and multi-view compositor are implemented at `#/mockups`. The centimeter-calibration release adds per-view two-axis photo reference lines, estimated centimeter dimensions for zones and prints, proportion-preserving numeric print sizing and visual zone-overflow warnings. Physical accuracy remains approximate for angled photographs. Non-destructive adjustable sleeve-cylinder projection is now implemented for individual prints (including prints assigned to side-view photos); manual garment silhouette masks and centimeter seam-safe print zones are now implemented. Fold-specific displacement maps, AI mask detection, bulk export and cloud sync remain planned.
+**Status (October 2026):** the product-first catalogue and multi-view compositor are implemented at `#/mockups`, with estimated centimeter calibration, sleeve-cylinder projection, garment silhouettes and seam-safe zones. The focused editor now provides straight-segment pen editing for silhouettes and print zones, zoom/panning, photo rulers and calibration from a single reference. Local color segmentation proposes editable contours and central print areas for contrasting photos. Fold-specific displacement maps, AI mask detection, bulk export and cloud sync remain planned.
 
 ## Goal
 Reuse the same original garment photo templates with many interchangeable transparent artwork PNGs; export realistic catalog imagery without image-generation drift. First use case: side-by-side black oversized T-shirt front/back, small chest logo and large back print, preserving original PNGs and photo geometry.
@@ -24,7 +24,7 @@ Reuse the same original garment photo templates with many interchangeable transp
 
 ## Iterations
 1. MVP: flat front/back photographs, rectangle/perspective zone editor, PNG art transform, garment mask, adjustable grayscale light-map, manual shadows, native PNG export and two-panel composition.
-2. Template authoring: reusable product templates, named angles and multiple zones are implemented locally; calibration in cm, seam-aware boundaries, reusable displacement maps and garment masks remain planned.
+2. Template authoring: reusable products, named angles, multiple zones, approximate cm calibration, garment masks and seam-safe boundaries are implemented locally. Reusable fold displacement maps remain planned.
 3. Advanced: contour mesh/warp controls, optional AI-assisted zone/mask detection with manual overrides, bulk apply N designs to one template, ZIP/export presets.
 
 ## Acceptance
@@ -63,3 +63,12 @@ Reuse the same original garment photo templates with many interchangeable transp
 - Preview and PNG export both call `viewLayers` and `renderGarmentLayers`. They use the same destination-in clipping path for each layer; sleeve curvature and fabric luminance remain compatible.
 - The manual polygon approximates the visible 2D cloth silhouette, **not seam detection or 3D geometry**. Concave fabric contours are allowed, but zones with intersecting/degenerate quadrilaterals cannot have a reliable positive seam inset.
 - Regression checks extend `npm run qa:mockups` for polygon restoration, concavity, boundary containment, centimeter insets, sleeve curvature compatibility and shared renderer wiring. Browser visual testing on actual phone/desktop and Render build validation are still required before describing the release as fully validated.
+
+## Focused pen editor, color detection and rulers — October 2026
+
+- New/replacement photos are analyzed locally using a <=384 px working copy. A sufficiently uniform border background and contrasting connected subject produce an editable <=32-node outline and a conservative central-zone suggestion. Saving a contour and adding a zone are explicit actions; existing zones, artwork placements and original media are retained. Poor contrast requests manual pen editing rather than applying an unreliable result. This is color segmentation, not AI garment/seam detection.
+- **Editar en grande**, **Abrir Pluma** and **Editar zona con Pluma** open the existing photo stage as a focused single-view editor. The shared header retains AppLauncher. The panel switches between calibration, pen and zone controls and can be hidden; the same preview/export compositor remains in use.
+- Straight-segment pen editing supports first-node closure, inserting on a closed edge, dragging/deleting a selected node and undo. Custom zone polygons persist separately from garment silhouettes, clip with the common renderer, and can be moved/uniformly scaled without changing the PNG. Convex polygon cm insets are supported; concave positive insets are explicitly invalid. Bézier handles are not implemented.
+- Zoom (50–500%), reset framing, hand panning and Space + drag all transform the same photo-space guides and pointer hit tests. Top/left rulers follow the photo transform and show source pixels until calibration is saved.
+- Calibration now supports **points first → assign centimeters → save**. One known/estimated horizontal or vertical segment supplies a uniform estimated pixel-per-cm scale; a second reference can refine the other axis. For a 75 cm garment-height estimate, mark the garment endpoints rather than counting blank photo margins. Measurements remain explicitly estimated.
+- Automated coverage includes contrasting dark/light/transparent scenes, concavities, detached noise, failure on low contrast, nonmutation of input pixels, suggested-zone containment, one-axis dimensions, ruler origin/zoom math and convex/concave custom clipping. Device and production deployment validation are separate from these checks.

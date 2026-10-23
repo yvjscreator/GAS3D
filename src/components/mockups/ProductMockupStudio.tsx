@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowDownToLine, ArrowLeft, Copy, ImagePlus, Layers2, Plus, RotateCcw, Shirt, Trash2, Upload } from 'lucide-react'
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { ArrowDownToLine, ArrowLeft, Copy, Hand, ImagePlus, Layers2, Maximize2, Minimize2, PenTool, Plus, RotateCcw, Ruler, ScanLine, Shirt, Trash2, Upload, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppLauncher } from '../navigation/AppLauncher'
 import { loadMedia, removeMedia, storeMedia } from '../../utils/mediaStorage'
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
 import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type RenderLayer, type ViewName } from './mockupEngine'
-import { printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from './mockupMasks'
+import { pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from './mockupMasks'
 import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, zoneDimensionsCm, type CalibrationAxis, type PhotoCalibration } from './mockupCalibration'
+import { detectGarment, type GarmentDetection } from './garmentDetection'
+import { PhotoRulers } from './PhotoRulers'
 import './mockupStudio.css'
 
-type Zone = { id:string; name:string; aspect:number; placement:Placement; seamMarginCm?:number; clipToZone?:boolean }
+type Zone = { id:string; name:string; aspect:number; placement:Placement; polygon?:Point[]; seamMarginCm?:number; clipToZone?:boolean }
 type ProductView = { enabled:boolean; photoName?:string; calibration?:PhotoCalibration; silhouette?:Point[]; zones:Zone[] }
 type Product = { id:string; name:string; type:string; views:Record<ViewName,ProductView> }
 type Models = Record<ViewName,{photo:MockImage|null;arts:Record<string,MockImage>}>
@@ -49,6 +51,7 @@ function readProducts():Product[]{
         zones:Array.isArray(p.views[v]?.zones)?p.views[v].zones.filter(z=>z&&typeof z.id==='string').map(z=>({
           id:z.id,name:typeof z.name==='string'?z.name:'Zona',aspect:bound(Number(z.aspect)||1,.15,6),placement:restorePlacement(z.placement,v),
           seamMarginCm:bound(Number(z.seamMarginCm)||0,0,8),clipToZone:z.clipToZone===true,
+          polygon:restoreGarmentMask(z.polygon),
         })):[],
       }])) as Product['views']}))
   }catch{return []}
@@ -87,7 +90,7 @@ function viewLayers(config:ProductView,photo:MockImage,arts:Record<string,MockIm
     const placement=draft?.[zone.id]?.placement??fitArt(zone,photo,art)
     const clipPolygons:Point[][]=[]
     if(config.silhouette?.length)clipPolygons.push(config.silhouette)
-    if(zone.clipToZone)clipPolygons.push(safeZonePolygon(photo,zone.placement,zone.aspect,config.calibration??{},zone.seamMarginCm??0))
+    if(zone.clipToZone)clipPolygons.push(safeZonePolygon(photo,zone.placement,zone.aspect,config.calibration??{},zone.seamMarginCm??0,zone.polygon))
     return [{art,placement,clipPolygons}]
   })
 }
@@ -121,10 +124,28 @@ export function ProductMockupStudio(){
   const [busy,setBusy]=useState(false)
   const [warpMode,setWarpMode]=useState(false)
   const [guides,setGuides]=useState(true)
-  const [calibrationMode,setCalibrationMode]=useState<{view:ViewName;axis:CalibrationAxis;first:Point|null}|null>(null)
+  const [calibrationMode,setCalibrationMode]=useState<{view:ViewName;axis:CalibrationAxis;first:Point|null;second?:Point}|null>(null)
   const [measureDraft,setMeasureDraft]=useState<Record<string,string>>({})
   const [maskEditing,setMaskEditing]=useState<ViewName|null>(null)
   const [maskDraft,setMaskDraft]=useState<Point[]>([])
+  const [maskClosed,setMaskClosed]=useState(false)
+  const [penTarget,setPenTarget]=useState<'fabric'|'zone'>('fabric')
+  const [penZoneId,setPenZoneId]=useState('')
+  const [selectedNode,setSelectedNode]=useState<number|null>(null)
+  const [maskHistory,setMaskHistory]=useState<{points:Point[];closed:boolean}[]>([])
+  const [detection,setDetection]=useState<(GarmentDetection & {view:ViewName})|null>(null)
+  const [zen,setZen]=useState(false)
+  const [zenTool,setZenTool]=useState<'zone'|'pen'|'hand'>('zone')
+  const [inspector,setInspector]=useState<'calibration'|'pen'|'zone'>('zone')
+  const [inspectorOpen,setInspectorOpen]=useState(true)
+  const [zoom,setZoom]=useState(1)
+  const [pan,setPan]=useState<Point>({x:0,y:0})
+  const [viewport,setViewport]=useState({width:800,height:600})
+  const viewportRef=useRef<HTMLDivElement>(null)
+  const studioRef=useRef<HTMLElement>(null)
+  const returnFocusRef=useRef<HTMLElement|null>(null)
+  const panDragRef=useRef<{pointerId:number;start:Point;origin:Point}|null>(null)
+  const spaceRef=useRef(false)
   const maskDragRef=useRef<{view:ViewName;index:number;pointerId:number}|null>(null)
   const [feedback,setFeedback]=useState('')
   const [error,setError]=useState('')
@@ -134,7 +155,7 @@ export function ProductMockupStudio(){
   const dragRef=useRef<Drag|null>(null)
   const modelsRef=useRef(models)
   useEffect(()=>{modelsRef.current=models},[models])
-  useEffect(()=>{setMeasureDraft({});setCalibrationMode(null);setMaskEditing(null);setMaskDraft([])},[selectedId])
+  useEffect(()=>{setMeasureDraft({});setCalibrationMode(null);setMaskEditing(null);setMaskDraft([]);setDetection(null);setZen(false)},[selectedId])
   const product=products.find(p=>p.id===selectedId)
   const enabled=product?VIEWS.filter(v=>product.views[v].enabled):[]
   const current=product?.views[active]
@@ -147,15 +168,57 @@ export function ProductMockupStudio(){
   const printCm=photo&&selectedZone&&selectedArt
     ?printDimensionsCm(photo,selectedArt,draft[active]?.[selectedZone.id]?.placement??fitArt(selectedZone,photo,selectedArt),calibration):null
   const safeBoundary=photo&&selectedZone
-    ?safeZonePolygon(photo,selectedZone.placement,selectedZone.aspect,calibration,selectedZone.seamMarginCm??0):null
+    ?safeZonePolygon(photo,selectedZone.placement,selectedZone.aspect,calibration,selectedZone.seamMarginCm??0,selectedZone.polygon):null
   const currentPrint=photo&&selectedZone&&selectedArt
     ?(draft[active]?.[selectedZone.id]?.placement??fitArt(selectedZone,photo,selectedArt)):null
   const printFits=photo&&selectedZone&&selectedArt&&currentPrint
-    ?(selectedZone.seamMarginCm
+    ?(selectedZone.seamMarginCm||selectedZone.polygon?.length
       ?printInsideSafeAreas(photo,selectedArt,currentPrint,[safeBoundary??[]])
       :artworkFitsZone(photo,selectedArt,currentPrint,selectedZone.placement,selectedZone.aspect)):true
   const fabricFits=photo&&selectedArt&&currentPrint&&current?.silhouette?.length
     ?printInsideSafeAreas(photo,selectedArt,currentPrint,[current.silhouette]):true
+  const fittedWidth=photo?Math.max(1,Math.min(viewport.width-32,(viewport.height-32)*photo.width/photo.height)):1
+  const fittedHeight=photo?fittedWidth*photo.height/photo.width:1
+
+  useEffect(()=>{
+    if(!zen)return
+    const target=viewportRef.current
+    if(!target)return
+    const observer=new ResizeObserver(entries=>{
+      const rect=entries[0].contentRect;setViewport({width:rect.width,height:rect.height})
+    })
+    observer.observe(target)
+    return ()=>observer.disconnect()
+  },[zen,active])
+  useEffect(()=>{
+    if(!zen)return
+    const overflow=document.body.style.overflow
+    document.body.style.overflow='hidden'
+    studioRef.current?.querySelector<HTMLButtonElement>('.mockup-zen-exit')?.focus()
+    const onKey=(event:KeyboardEvent)=>{
+      const editing=event.target instanceof HTMLElement&&!!event.target.closest('input,textarea,select')
+      if(document.querySelector('.gas-app-launcher-dialog'))return
+      if(event.key==='Escape'&&!event.defaultPrevented){
+        setZen(false);event.preventDefault()
+      }
+      if(event.code==='Space'&&!editing){spaceRef.current=true;event.preventDefault()}
+      if(event.key==='Tab'){
+        const items=Array.from(studioRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),[href]')??[]).filter(node=>node.getClientRects().length)
+        const first=items[0],last=items[items.length-1]
+        if(event.shiftKey&&document.activeElement===first){last?.focus();event.preventDefault()}
+        else if(!event.shiftKey&&document.activeElement===last){first?.focus();event.preventDefault()}
+      }
+    }
+    const onUp=(event:KeyboardEvent)=>{if(event.code==='Space')spaceRef.current=false}
+    const blur=()=>{spaceRef.current=false}
+    window.addEventListener('keydown',onKey);window.addEventListener('keyup',onUp);window.addEventListener('blur',blur)
+    return ()=>{
+      document.body.style.overflow=overflow;spaceRef.current=false
+      window.removeEventListener('keydown',onKey);window.removeEventListener('keyup',onUp);window.removeEventListener('blur',blur)
+      returnFocusRef.current?.focus()
+    }
+  },[zen])
+  useEffect(()=>{setZoom(1);setPan({x:0,y:0})},[active])
 
   useEffect(()=>{
     try{localStorage.setItem(LIBRARY_KEY,JSON.stringify(products))}catch{/* Storage optional */}
@@ -242,7 +305,7 @@ export function ProductMockupStudio(){
       }
     })
     return ()=>cancelAnimationFrame(frame)
-  },[models,draft,product,screen,loadedId])
+  },[models,draft,product,screen,loadedId,zen,active])
 
   const updateProduct=(edit:(p:Product)=>Product)=>{
     setProducts(all=>all.map(p=>p.id===selectedId?edit(p):p))
@@ -255,10 +318,72 @@ export function ProductMockupStudio(){
     return draft[view]?.[zone.id]?.placement??(photo&&art?fitArt(zone,photo,art):zone.placement)
   }
   const editPlacement=(view:ViewName,zone:Zone,edit:(p:Placement)=>Placement)=>{
-    if(screen==='setup')updateZone(view,zone.id,z=>({...z,placement:edit(z.placement)}))
+    if(screen==='setup')updateZone(view,zone.id,z=>{
+      const placement=edit(z.placement)
+      if(!z.polygon?.length)return {...z,placement}
+      const ratio=placement.width/z.placement.width
+      const polygon=restoreGarmentMask(z.polygon.map(p=>({
+        x:placement.x+(p.x-z.placement.x)*ratio,y:placement.y+(p.y-z.placement.y)*ratio,
+      })))
+      return polygon.length?{...z,placement,polygon}:z
+    })
     else setDraft(previous=>({...previous,[view]:{...previous[view],[zone.id]:{
       placement:edit(placementFor(view,zone)),name:previous[view]?.[zone.id]?.name??models[view].arts[zone.id]?.name??'Diseño',
     }}}))
+  }
+  const openZen=(view:ViewName,showPanel?:boolean)=>{
+    if(!zen){
+      returnFocusRef.current=document.activeElement instanceof HTMLElement?document.activeElement:null
+      setInspectorOpen(showPanel??window.innerWidth>760)
+    }
+    if(!zen||view!==active){setZoom(1);setPan({x:0,y:0})}
+    setActive(view);setZen(true);setGuides(true)
+    requestAnimationFrame(()=>{const panel=studioRef.current?.querySelector('.mockup-controls');if(panel)panel.scrollTop=0})
+  }
+  const beginMask=(view:ViewName,target:'fabric'|'zone'='fabric')=>{
+    if(!product)return
+    if(maskEditing===view&&penTarget!==target){setError('Guardá o cancelá el contorno actual antes de cambiar entre silueta y zona.');return}
+    if(maskEditing!==view){
+      const zone=product.views[view].zones.find(z=>z.id===zoneId)??product.views[view].zones[0]
+      const outline=target==='zone'&&zone&&models[view].photo
+        ?zone.polygon?.length?zone.polygon:placementQuad(models[view].photo!,zoneSize(zone),zone.placement).map(p=>({x:bound(p.x,0,1),y:bound(p.y,0,1)}))
+        :product.views[view].silhouette??[]
+      setMaskDraft(outline.map(p=>({...p})));setPenTarget(target);setPenZoneId(zone?.id??'')
+      setMaskClosed(Boolean(outline.length));setMaskHistory([]);setSelectedNode(null)
+    }
+    setMaskEditing(view);setCalibrationMode(null);setZenTool('pen');setInspector('pen');setError('');openZen(view)
+  }
+  const detectPhoto=(image:MockImage,view:ViewName)=>{
+    if(maskEditing===view&&penTarget==='zone'){
+      setError('Guardá o cancelá la zona que estás trazando antes de detectar la prenda.');return
+    }
+    try{
+      const ratio=Math.min(1,384/Math.max(image.width,image.height)),canvas=document.createElement('canvas')
+      canvas.width=Math.max(1,Math.round(image.width*ratio));canvas.height=Math.max(1,Math.round(image.height*ratio))
+      const ctx=canvas.getContext('2d',{willReadFrequently:true})
+      if(!ctx)throw new Error('No se pudo analizar la fotografía.')
+      ctx.drawImage(image.bitmap,0,0,canvas.width,canvas.height)
+      const result=detectGarment(ctx.getImageData(0,0,canvas.width,canvas.height),view)
+      setDetection({...result,view});setMaskDraft(result.outline);setMaskClosed(true);setMaskHistory([]);setSelectedNode(null)
+      setPenTarget('fabric')
+      setMaskEditing(view);setCalibrationMode(null);setZenTool('pen');setInspector('pen');setError('');openZen(view)
+      setFeedback('Contorno detectado. Revisalo con la Pluma y guardalo. La zona sugerida es editable y no identifica costuras.')
+    }catch(e){
+      setFeedback(e instanceof Error?e.message:'No se pudo detectar la prenda. Usá la Pluma.')
+    }
+  }
+  const rememberMask=()=>setMaskHistory(history=>[...history.slice(-29),{points:maskDraft.map(p=>({...p})),closed:maskClosed}])
+  const undoMask=()=>{
+    const previous=maskHistory[maskHistory.length-1]
+    if(!previous)return
+    setMaskDraft(previous.points);setMaskClosed(previous.closed);setMaskHistory(history=>history.slice(0,-1));setSelectedNode(null)
+  }
+  const saveCalibration=()=>{
+    if(!calibrationMode?.first||!calibrationMode.second)return
+    const {view,axis,first,second}=calibrationMode,cm=Number(measureDraft[view+':'+axis]??calibration[axis]?.cm)
+    if(!Number.isFinite(cm)||cm<.1||cm>500){setError('Asigná al tramo una medida entre 0,1 y 500 cm.');return}
+    updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],calibration:{...p.views[view].calibration,[axis]:{from:first,to:second,cm}}}}}))
+    setCalibrationMode(null);setError('');setFeedback('Referencia guardada. Las reglas y los tamaños usan esta escala estimada.')
   }
   const openUpload=(kind:'photo'|'art',view:ViewName,zid?:string)=>{
     targetRef.current={kind,view,zoneId:zid}
@@ -292,6 +417,7 @@ export function ProductMockupStudio(){
           setMeasureDraft(old=>Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(view+':'))))
           setCalibrationMode(null)
           if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}
+          setDetection(null)
         }
         else if(zid){
           setDraft(old=>({...old,[view]:{...old[view],[zid]:{
@@ -303,6 +429,7 @@ export function ProductMockupStudio(){
           }}}))
         }
         setFeedback('Archivo guardado en este navegador.')
+        if(kind==='photo')detectPhoto(image,view)
       }catch(e){setError(e instanceof Error?e.message:'No se pudo cargar el archivo.')}
       finally{setBusy(false)}
     })()
@@ -317,6 +444,7 @@ export function ProductMockupStudio(){
     if(kind==='photo'){
       updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:undefined,calibration:{},silhouette:[]}}}))
       if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}
+      setDetection(null)
     }
     void removeMedia(key).catch(()=>setError('No se pudo borrar el archivo del navegador.'))
   }
@@ -325,17 +453,39 @@ export function ProductMockupStudio(){
     return {x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height}
   }
   const onPointerDown=(e:ReactPointerEvent<HTMLDivElement>,view:ViewName)=>{
-    if(busy||loadedId!==selectedId||e.button!==0||!product)return
-    if(screen==='setup'&&maskEditing){
+    if(busy||loadedId!==selectedId||!product)return
+    if(zen&&(zenTool==='hand'||spaceRef.current||e.button===1)){
+      e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId)
+      panDragRef.current={pointerId:e.pointerId,start:{x:e.clientX,y:e.clientY},origin:pan};return
+    }
+    if(e.button!==0)return
+    if(screen==='setup'&&maskEditing&&(!zen||zenTool==='pen')){
       if(maskEditing!==view)return
       const p=position(e),r=e.currentTarget.getBoundingClientRect()
-      const index=maskDraft.findIndex(vertex=>
-        Math.hypot((vertex.x-p.x)*r.width,(vertex.y-p.y)*r.height)<22)
+      let index=-1,closest=22
+      maskDraft.forEach((vertex,i)=>{
+        const distance=Math.hypot((vertex.x-p.x)*r.width,(vertex.y-p.y)*r.height)
+        if(distance<closest){closest=distance;index=i}
+      })
       if(index>=0){
+        if(index===0&&maskDraft.length>=3&&!maskClosed){rememberMask();setMaskClosed(true);return}
+        rememberMask();setSelectedNode(index)
         maskDragRef.current={view,index,pointerId:e.pointerId}
         e.currentTarget.setPointerCapture(e.pointerId)
       }else if(maskDraft.length<32){
-        setMaskDraft(points=>[...points,{x:bound(p.x,0,1),y:bound(p.y,0,1)}])
+        if(maskClosed){
+          let insertion=-1,nearest=16
+          for(let i=0;i<maskDraft.length;i++){
+            const a=maskDraft[i],b=maskDraft[(i+1)%maskDraft.length]
+            const dx=(b.x-a.x)*r.width,dy=(b.y-a.y)*r.height,length=dx*dx+dy*dy
+            const t=length?bound(((p.x-a.x)*r.width*dx+(p.y-a.y)*r.height*dy)/length,0,1):0
+            const d=Math.hypot((p.x-a.x)*r.width-t*dx,(p.y-a.y)*r.height-t*dy)
+            if(d<nearest){insertion=i+1;nearest=d}
+          }
+          if(insertion>=0){rememberMask();setMaskDraft(points=>[...points.slice(0,insertion),p,...points.slice(insertion)]);setSelectedNode(insertion)}
+        }else{
+          rememberMask();setMaskDraft(points=>[...points,{x:bound(p.x,0,1),y:bound(p.y,0,1)}]);setSelectedNode(maskDraft.length)
+        }
       }
       return
     }
@@ -344,18 +494,10 @@ export function ProductMockupStudio(){
       const pointOnPhoto=position(e)
       if(!calibrationMode.first){setCalibrationMode({...calibrationMode,first:pointOnPhoto});return}
       const axis=calibrationMode.axis,first=calibrationMode.first
-      const value=measureDraft[view+':'+axis]??product.views[view].calibration?.[axis]?.cm?.toString()??''
-      const cm=Number(value)
-      if(!value.trim()||!Number.isFinite(cm)||cm<.1||cm>500){
-        setError('Introducí primero una medida válida en centímetros.');setCalibrationMode(null);return
-      }
       const delta=Math.abs(axis==='horizontal'?pointOnPhoto.x-first.x:pointOnPhoto.y-first.y)
-      if(delta<.005){setError('Los puntos están demasiado cerca. Volvé a marcar la referencia.');setCalibrationMode(null);return}
-      updateProduct(p=>({...p,views:{...p.views,[view]:{
-        ...p.views[view],
-        calibration:{...p.views[view].calibration,[axis]:{from:first,to:pointOnPhoto,cm}},
-      }}}))
-      setCalibrationMode(null);setError('');setFeedback('Referencia guardada para '+LABELS[view]+'.')
+      if(delta<.005){setError('Los puntos están demasiado cerca. Volvé a marcar la referencia.');return}
+      setCalibrationMode({...calibrationMode,second:pointOnPhoto});setError('')
+      setFeedback('Tramo marcado. Asignale centímetros y pulsá Guardar referencia.')
       return
     }
     const zone=view===active?selectedZone:product.views[view].zones[0]
@@ -366,15 +508,18 @@ export function ProductMockupStudio(){
     const placement=screen==='setup'?zone.placement:placementFor(view,zone)
     const p=position(e),quad=placementQuad(photo,art,placement),r=e.currentTarget.getBoundingClientRect()
     let corner=-1
-    for(let i=0;i<4;i++){
+    for(let i=0;i<4&&!(screen==='setup'&&zone.polygon?.length);i++){
       if(Math.hypot((quad[i].x-p.x)*r.width,(quad[i].y-p.y)*r.height)<24){corner=i;break}
     }
-    if(corner<0&&!(screen==='mockup'?pointInArtwork(p,artworkOutline(photo,art,placement)):pointInQuad(p,quad)))return
+    if(corner<0&&!(screen==='mockup'?pointInArtwork(p,artworkOutline(photo,art,placement)):
+      zone.polygon?.length?pointInPolygon(p,zone.polygon):pointInQuad(p,quad)))return
     e.currentTarget.setPointerCapture(e.pointerId)
     setActive(view);setZoneId(zone.id)
     dragRef.current={view,zoneId:zone.id,pointerId:e.pointerId,corner,kind:corner<0?'move':(warpMode||e.ctrlKey||e.metaKey?'warp':'scale'),start:p,origin:placement,artSize:art}
   }
   const onPointerMove=(e:ReactPointerEvent<HTMLDivElement>,view:ViewName)=>{
+    const panDrag=panDragRef.current
+    if(panDrag?.pointerId===e.pointerId){setPan({x:panDrag.origin.x+e.clientX-panDrag.start.x,y:panDrag.origin.y+e.clientY-panDrag.start.y});return}
     const marker=maskDragRef.current
     if(marker&&marker.view===view&&marker.pointerId===e.pointerId&&maskEditing===view){
       const p=position(e)
@@ -393,6 +538,7 @@ export function ProductMockupStudio(){
     editPlacement(view,zone,()=>next)
   }
   const onPointerEnd=(e:ReactPointerEvent<HTMLDivElement>)=>{
+    if(panDragRef.current?.pointerId===e.pointerId)panDragRef.current=null
     if(maskDragRef.current?.pointerId===e.pointerId)maskDragRef.current=null
     if(dragRef.current?.pointerId===e.pointerId)dragRef.current=null
     if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)
@@ -402,9 +548,21 @@ export function ProductMockupStudio(){
     const outline=restoreGarmentMask(maskDraft)
     if(outline.length<3){setError('El contorno necesita al menos tres puntos sin cruces.');return}
     const view=maskEditing
-    updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],silhouette:outline}}}))
+    if(penTarget==='zone'){
+      const xs=outline.map(p=>p.x),ys=outline.map(p=>p.y)
+      const left=Math.min(...xs),right=Math.max(...xs),top=Math.min(...ys),bottom=Math.max(...ys)
+      const image=models[view].photo
+      if(!image)return
+      updateZone(view,penZoneId,z=>({...z,polygon:outline,clipToZone:true,
+        placement:{...z.placement,x:(left+right)/2,y:(top+bottom)/2,width:right-left,rotation:0,corners:initialPlacement(view).corners},
+        aspect:(right-left)*image.width/((bottom-top)*image.height),
+      }))
+    }
+    else updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],silhouette:outline}}}))
     setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null
-    setError('');setFeedback('Contorno de la prenda guardado en '+LABELS[view]+'.')
+    setSelectedNode(null);setZenTool('zone')
+    if(penTarget==='zone')setInspector('zone')
+    setError('');setFeedback((penTarget==='zone'?'Contorno de zona guardado; recorte activado en ':'Contorno de la prenda guardado en ')+LABELS[view]+'.')
   }
   const addProduct=()=>{
     if(!newName.trim())return
@@ -480,12 +638,27 @@ export function ProductMockupStudio(){
     finally{canvases.forEach(c=>{c.width=0;c.height=0});setBusy(false)}
   }
 
-  return <main className="mockup-studio">
+  return <main ref={studioRef} className={'mockup-studio'+(zen?' mockup-zen'+(!inspectorOpen?' is-panel-hidden':''):'')}
+    style={zen?{'--mockup-node-radius':600/(fittedWidth*zoom)} as CSSProperties:undefined}
+    role={zen?'dialog':undefined} aria-modal={zen?true:undefined} aria-label={zen?'Editor ampliado de mockups':undefined}
+    onKeyDown={e=>{
+      if(!zen||(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select')))return
+      if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&maskEditing===active){e.preventDefault();undoMask()}
+      if(e.key==='Delete'&&maskEditing===active&&selectedNode!==null){
+        e.preventDefault();rememberMask();setMaskDraft(points=>points.filter((_,i)=>i!==selectedNode));setSelectedNode(null)
+        if(maskDraft.length<=3)setMaskClosed(false)
+      }
+    }}>
     <input ref={inputRef} className="mockup-file" type="file" onChange={onSelect} aria-label="Seleccionar archivo"/>
     <header className="mockup-header">
       <AppLauncher active="mockups"/>
       <div><h1>Mockup <span>Studio</span></h1><p>Biblioteca de productos y estampados reutilizables</p></div>
-      {screen!=='library'&&<button type="button" className="mockup-nav-button" disabled={busy} onClick={()=>{setScreen('library');setSelectedId(null)}}><ArrowLeft size={16}/> Productos</button>}
+      {zen&&<>
+        {maskEditing&&<button type="button" className="mockup-nav-button mockup-primary" disabled={!maskClosed||restoreGarmentMask(maskDraft).length<3} onClick={saveSilhouette}>Guardar</button>}
+        <button type="button" className="mockup-nav-button" aria-label={inspectorOpen?'Ocultar panel de controles':'Mostrar panel de controles'} aria-expanded={inspectorOpen} onClick={()=>setInspectorOpen(value=>!value)}>Panel</button>
+        <button type="button" className="mockup-nav-button mockup-zen-exit" aria-label="Salir del modo amplio" onClick={()=>setZen(false)}><Minimize2 size={16}/> Salir</button>
+      </>}
+      {screen!=='library'&&!zen&&<button type="button" className="mockup-nav-button" disabled={busy} onClick={()=>{setScreen('library');setSelectedId(null);setZen(false)}}><ArrowLeft size={16}/> Productos</button>}
     </header>
     {screen==='library'||!product?<section className="mockup-library">
       <div className="mockup-library-intro"><div><h2>Productos</h2><p>Guardá cada prenda una sola vez. Después creá todos los mockups que necesites, sin volver a cargar las fotos.</p></div><span>{products.length} productos</span></div>
@@ -515,9 +688,23 @@ export function ProductMockupStudio(){
       </div></nav>
       <div className="mockup-layout">
         <section className="mockup-workspace">
-          <div className="mockup-workspace-heading"><h2>{screen==='setup'?'Fotografías y zonas':'Vista previa del mockup'}</h2><div className="mockup-view-tabs" role="group" aria-label="Vistas">{enabled.map(v=><button type="button" key={v} className={v===active?'active':''} onClick={()=>{setActive(v);setZoneId('');setCalibrationMode(null);setMaskEditing(null);setMaskDraft([])}}>{LABELS[v]}</button>)}</div></div>
+          <div className="mockup-workspace-heading"><h2>{screen==='setup'?'Fotografías y zonas':'Vista previa del mockup'}</h2><div className="mockup-view-tabs" role="group" aria-label="Vistas">{enabled.map(v=><button type="button" key={v} className={v===active?'active':''} onClick={()=>{setActive(v);setZoneId('');setCalibrationMode(null);setMaskEditing(null);setMaskDraft([]);setDetection(null);setZenTool('zone')}}>{LABELS[v]}</button>)}</div></div>
+          {zen&&<div className="mockup-zen-toolbar" role="toolbar" aria-label="Herramientas del lienzo">
+            {screen==='setup'&&<button type="button" aria-pressed={zenTool==='pen'} onClick={()=>beginMask(active,maskEditing?penTarget:'fabric')}><PenTool size={16}/> Pluma</button>}
+            <button type="button" aria-pressed={zenTool==='zone'} onClick={()=>{setZenTool('zone');setInspector('zone');setCalibrationMode(null)}}><Maximize2 size={16}/> {screen==='setup'?'Zona':'Estampado'}</button>
+            {screen==='setup'&&<button type="button" onClick={()=>{
+              setZenTool('zone');setInspector('calibration');setInspectorOpen(true);requestAnimationFrame(()=>studioRef.current?.querySelector('.mockup-calibration')?.scrollIntoView({block:'start'}))
+            }}><Ruler size={16}/> Calibrar</button>}
+            <button type="button" aria-pressed={zenTool==='hand'} onClick={()=>setZenTool('hand')}><Hand size={16}/> Mano</button>
+            <div className="mockup-zoom-tools">
+              <button type="button" aria-label="Alejar" disabled={zoom<=.5} onClick={()=>setZoom(value=>bound(value/1.25,.5,5))}><ZoomOut size={17}/></button>
+              <output aria-live="polite">{Math.round(zoom*100)}%</output>
+              <button type="button" aria-label="Acercar" disabled={zoom>=5} onClick={()=>setZoom(value=>bound(value*1.25,.5,5))}><ZoomIn size={17}/></button>
+              <button type="button" onClick={()=>{setZoom(1);setPan({x:0,y:0})}}>Encajar</button>
+            </div>
+          </div>}
           <div className="mockup-view-grid">
-            {enabled.map(view=>{
+            {(zen?enabled.filter(v=>v===active):enabled).map(view=>{
               const photo=models[view].photo,viewZones=product.views[view].zones
               const z=view===active?selectedZone:viewZones[0]
               const art=z?(screen==='setup'?zoneSize(z):models[view].arts[z.id]):null
@@ -526,32 +713,42 @@ export function ProductMockupStudio(){
               const outline=photo&&art&&placement&&screen==='mockup'?artworkOutline(photo,art,placement):quad
               const silhouette=maskEditing===view?maskDraft:product.views[view].silhouette??[]
               const safeGuide=photo&&z&&screen==='setup'&&(z.seamMarginCm??0)>0
-                ?safeZonePolygon(photo,z.placement,z.aspect,product.views[view].calibration??{},z.seamMarginCm??0):null
+                ?safeZonePolygon(photo,z.placement,z.aspect,product.views[view].calibration??{},z.seamMarginCm??0,z.polygon):null
               return <div className={'mockup-view'+(active===view?' is-active':'')} key={view}>
                 <div className="mockup-view-title"><strong>{LABELS[view]}</strong><span>{photo?.name||'Sin fotografía'}</span></div>
-                {photo?<div className="mockup-stage" style={{aspectRatio:photo.width+'/'+photo.height,cursor:calibrationMode?.view===view||maskEditing===view?'crosshair':undefined}}
+                {photo?<div className={zen?'mockup-photo-frame':'mockup-photo-frame is-compact'}>
+                  {zen&&<PhotoRulers frame={{...viewport,imageWidth:fittedWidth,imageHeight:fittedHeight,photoWidth:photo.width,pan,zoom}} scale={photoScale}/>}
+                  <div ref={zen?viewportRef:undefined} className={zen?'mockup-photo-viewport':'mockup-photo-viewport is-compact'}
+                    onPointerDown={e=>{if(zen&&e.target===e.currentTarget)onPointerDown(e,view)}}
+                    onPointerMove={e=>{if(panDragRef.current&&e.target===e.currentTarget)onPointerMove(e,view)}} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}>
+                  <div className="mockup-stage" style={{aspectRatio:photo.width+'/'+photo.height,
+                    ...(zen?{width:fittedWidth,height:fittedHeight,transform:`translate(${pan.x}px, ${pan.y}px) scale(${zoom})`}:{}),
+                    cursor:zen&&zenTool==='hand'?'grab':calibrationMode?.view===view||(maskEditing===view&&(!zen||zenTool==='pen'))?'crosshair':undefined}}
                   onPointerDown={e=>onPointerDown(e,view)} onPointerMove={e=>onPointerMove(e,view)} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}>
                   <canvas ref={node=>{canvasRefs.current[view]=node}} aria-label={'Vista '+LABELS[view]}/>
                   {guides&&quad&&<svg className="mockup-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                    <polygon points={(outline??quad).map(p=>p.x*100+','+p.y*100).join(' ')}/>
-                    {quad.map((p,i)=><circle key={i} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
+                    <polygon points={(screen==='setup'&&z?.polygon?.length?z.polygon:outline??quad).map(p=>p.x*100+','+p.y*100).join(' ')}/>
+                    {!(screen==='setup'&&z?.polygon?.length)&&quad.map((p,i)=><circle key={i} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
                   </svg>}
                   {screen==='setup'&&guides&&safeGuide&&safeGuide.length>2&&
                     <svg className="mockup-seam-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                       <polygon points={safeGuide.map(p=>p.x*100+','+p.y*100).join(' ')}/>
                     </svg>}
+                  {screen==='setup'&&guides&&detection?.view===view&&detection.zone&&<svg className="mockup-suggestion-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <polygon points={placementQuad(photo,{width:1000,height:1000/detection.zone.aspect},detection.zone.placement).map(p=>p.x*100+','+p.y*100).join(' ')}/>
+                  </svg>}
                   {screen==='setup'&&(guides||maskEditing===view)&&silhouette.length>0&&
                     <svg className={'mockup-mask-guides'+(maskEditing===view?' is-editing':'')}
                       viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                       {silhouette.length>=3&&<path fillRule="evenodd"
                         d={'M0 0H100V100H0Z M'+silhouette.map(p=>(p.x*100)+','+(p.y*100)).join(' L')+' Z'}/>}
-                      {silhouette.length>=3&&<polygon points={silhouette.map(p=>p.x*100+','+p.y*100).join(' ')}/>}
+                      {silhouette.length>=3&&(maskEditing!==view||maskClosed)&&<polygon points={silhouette.map(p=>p.x*100+','+p.y*100).join(' ')}/>}
                       {maskEditing===view&&<>
                         {silhouette.length>1&&<polyline points={silhouette.map(p=>p.x*100+','+p.y*100).join(' ')}/>}
-                        {silhouette.map((p,i)=><circle key={i} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
+                        {silhouette.map((p,i)=><circle key={i} className={i===selectedNode?'is-selected':i===0?'is-start':''} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
                       </>}
                     </svg>}
-                  {screen==='setup'&&guides&&<svg className="mockup-calibration-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  {screen==='setup'&&(guides||calibrationMode?.view===view)&&<svg className="mockup-calibration-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                     {(['horizontal','vertical'] as const).map(axis=>{
                       const line=product.views[view].calibration?.[axis]
                       return line?<g key={axis} className={axis}>
@@ -562,20 +759,26 @@ export function ProductMockupStudio(){
                     })}
                     {calibrationMode?.view===view&&calibrationMode.first&&
                       <circle className="pending" cx={calibrationMode.first.x*100} cy={calibrationMode.first.y*100} r="1.45"/>}
+                    {calibrationMode?.view===view&&calibrationMode.first&&calibrationMode.second&&<g className={calibrationMode.axis==='horizontal'?'horizontal':'vertical'}>
+                      <line x1={calibrationMode.first.x*100} y1={calibrationMode.first.y*100} x2={calibrationMode.second.x*100} y2={calibrationMode.second.y*100}/>
+                      <circle cx={calibrationMode.second.x*100} cy={calibrationMode.second.y*100} r="1.1"/>
+                    </g>}
                   </svg>}
-                </div>:<button type="button" className="mockup-empty" disabled={screen!=='setup'} onClick={()=>openUpload('photo',view)}><Shirt size={32}/><strong>{screen==='setup'?'Añadir fotografía':'Falta configurar la fotografía'}</strong><small>{LABELS[view]}</small></button>}
+                </div></div></div>:<button type="button" className="mockup-empty" disabled={screen!=='setup'} onClick={()=>openUpload('photo',view)}><Shirt size={32}/><strong>{screen==='setup'?'Añadir fotografía':'Falta configurar la fotografía'}</strong><small>{LABELS[view]}</small></button>}
                 <div className="mockup-view-actions">
                   {screen==='setup'?<button type="button" disabled={busy} onClick={()=>openUpload('photo',view)}><ImagePlus size={15}/>{photo?'Cambiar foto':'Añadir foto'}</button>:
                     <button type="button" disabled={busy||!z||!photo} onClick={()=>openUpload('art',view,z?.id)}><Layers2 size={15}/>{z&&models[view].arts[z.id]?'Cambiar PNG':'Añadir PNG'}</button>}
                   {screen==='setup'&&photo&&<button type="button" className="mockup-remove" onClick={()=>removeAsset('photo',view)} aria-label="Quitar foto"><Trash2 size={15}/></button>}
+                  {!zen&&photo&&<button type="button" onClick={()=>{setZenTool('zone');setInspector('zone');openZen(view)}}><Maximize2 size={15}/> Editar en grande</button>}
                 </div>
               </div>
             })}
           </div>
-          <p className="mockup-hint">Arrastrá el estampado para moverlo. Las esquinas escalan proporcionalmente. Para deformar: Ctrl + arrastrar en computadora, o activá «Deformar» en móvil. Las guías no se exportan.</p>
+          <p className="mockup-hint">{zen?'Pluma: clic para crear nodos; clic en el primero para cerrar; clic en un borde para añadir. Arrastrá nodos para ajustar. Mano o Espacio + arrastrar para desplazar. ':''}Arrastrá el estampado para moverlo. Las esquinas escalan proporcionalmente. Para deformar: Ctrl + arrastrar en computadora, o activá «Deformar» en móvil. Las guías no se exportan.</p>
         </section>
-        <aside className="mockup-controls">
+        <aside className={'mockup-controls'+(zen?' tool-'+zenTool+' inspector-'+inspector+(screen==='setup'?' is-setup':''):'')}>
           {screen==='setup'?<>
+            <div className="mockup-product-settings">
             <h2>Configuración del producto</h2>
             <label className="mockup-field">Nombre<input value={product.name} onChange={e=>updateProduct(p=>({...p,name:e.target.value}))}/></label>
             <label className="mockup-field">Tipo<select value={product.type} onChange={e=>updateProduct(p=>({...p,type:e.target.value}))}>{TYPES.map(t=><option key={t}>{t}</option>)}</select></label>
@@ -587,24 +790,25 @@ export function ProductMockupStudio(){
               if(enabledNow){setActive(v);setZoneId('')}else if(v===active){setActive(VIEWS.find(k=>k!==v&&product.views[k].enabled)||'front');setZoneId('')}
               setMaskEditing(null);setMaskDraft([]);setCalibrationMode(null)
             }}/>{LABELS[v]}</label>)}</div>
+            </div>
             <div className="mockup-divider"/>
             <div className="mockup-calibration">
               <h3>Calibración de fotografía · {LABELS[active]}</h3>
-              <p className="mockup-note">Medí la prenda y marcá dos puntos por eje sobre la foto. La escala es aproximada si hay perspectiva.</p>
+              <p className="mockup-note">Marcá dos puntos y asignale al tramo su medida en cm. Una referencia estima ambos ejes; podés añadir la otra para afinar la escala.</p>
               <div className="mockup-calibration-grid">
                 {(['horizontal','vertical'] as const).map(axis=>{
                   const line=current?.calibration?.[axis]
                   const key=active+':'+axis
                   const value=measureDraft[key]??(line?.cm?.toString()??'')
-                  const valid=value.trim()!==''&&Number.isFinite(Number(value))&&Number(value)>=.1&&Number(value)<=500
                   return <div key={axis} className="mockup-calibration-axis">
                     <label className="mockup-field">{axis==='horizontal'?'Ancho de referencia (cm)':'Alto de referencia (cm)'}
                       <input type="number" min=".1" max="500" step=".1" value={value}
+                        onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();saveCalibration()}}}
                         onChange={e=>{
                           const input=e.target.value
                           setMeasureDraft(old=>({...old,[key]:input}))
                           const cm=Number(input)
-                          if(line&&input.trim()&&Number.isFinite(cm)&&cm>=.1&&cm<=500){
+                          if(line&&calibrationMode?.axis!==axis&&input.trim()&&Number.isFinite(cm)&&cm>=.1&&cm<=500){
                             updateProduct(p=>({...p,views:{...p.views,[active]:{
                               ...p.views[active],
                               calibration:{...p.views[active].calibration,[axis]:{...line,cm}},
@@ -612,9 +816,9 @@ export function ProductMockupStudio(){
                           }
                         }}/>
                     </label>
-                    <button type="button" disabled={!models[active].photo||busy||!valid||maskEditing!==null}
+                    <button type="button" disabled={!models[active].photo||busy}
                       className={calibrationMode?.view===active&&calibrationMode.axis===axis?'is-marking':''}
-                      onClick={()=>{setError('');setCalibrationMode({view:active,axis,first:null})}}>
+                      onClick={()=>{setError('');setZenTool('zone');setInspector('calibration');setCalibrationMode({view:active,axis,first:null});openZen(active,true)}}>
                       {line?'Volver a marcar':'Marcar en foto'}
                     </button>
                     <small>{line?'Referencia marcada':'Sin referencia'}</small>
@@ -622,22 +826,33 @@ export function ProductMockupStudio(){
                 })}
               </div>
               {calibrationMode?.view===active&&<div className="mockup-calibration-prompt" role="status">
-                Marcá {calibrationMode.first?'el segundo':'el primer'} punto sobre la fotografía.
+                <span>{calibrationMode.second?'Tramo listo. Escribí sus centímetros y guardá la referencia.':`Marcá ${calibrationMode.first?'el segundo':'el primer'} punto sobre la fotografía.`}</span>
+                {calibrationMode.second&&<button type="button" onClick={saveCalibration}>Guardar referencia</button>}
                 <button type="button" onClick={()=>setCalibrationMode(null)}>Cancelar</button>
               </div>}
-              <p className="mockup-note">{photoScale?'Dos referencias listas: ya podés usar centímetros.':'Completá ancho y alto para habilitar medidas en centímetros.'}</p>
+              <p className="mockup-note">{photoScale?(calibration.horizontal&&calibration.vertical?'Dos referencias: escala estimada por eje.':'Una referencia: escala uniforme estimada en cm. Las medidas de ChatGPT son aproximadas.'):'Sin referencia: las reglas muestran píxeles. Marcá el alto de la prenda, sin incluir el fondo, y asignale una medida conocida o estimada.'}</p>
             </div>
             <div className="mockup-divider"/>
             <section className="mockup-mask-editor" aria-label="Máscara de silueta">
-              <h3>Silueta de la prenda · {LABELS[active]}</h3>
-              <p className="mockup-note">Marcá el borde de la tela para que el estampado no aparezca fuera de la prenda. El recorte se aplica solamente al mockup.</p>
+              <h3>{maskEditing===active&&penTarget==='zone'?'Contorno de zona':'Silueta de la prenda'} · {LABELS[active]}</h3>
+              <p className="mockup-note">{maskEditing===active&&penTarget==='zone'?'Dibujá el límite de esta zona de impresión. Al guardar se activa su recorte visual, conservando el PNG original.':'Marcá el borde de la tela para que el estampado no aparezca fuera de la prenda. El recorte se aplica solamente al mockup.'}</p>
+              <div className="mockup-mask-buttons">
+                <button type="button" disabled={!photo||busy} onClick={()=>{if(photo)detectPhoto(photo,active)}}><ScanLine size={16}/> Detectar prenda</button>
+                <button type="button" disabled={!photo||busy} onClick={()=>beginMask(active)}><PenTool size={16}/> Abrir Pluma</button>
+              </div>
+              {maskEditing===active&&<p className="mockup-note">Pluma sobre: {penTarget==='fabric'?'silueta de la prenda':current?.zones.find(z=>z.id===penZoneId)?.name??'zona de impresión'}. Segmentos rectos con nodos editables.</p>}
               {maskEditing===active?<div className="mockup-mask-actions">
-                <p role="status">Puntos: {maskDraft.length} de 32. Tocá para añadir y arrastrá un punto para corregirlo.</p>
+                <p role="status">Puntos: {maskDraft.length} de 32 · {maskClosed?'Contorno cerrado':'Contorno abierto'}. {maskClosed?'Tocá un borde para añadir un nodo.':'Tocá el primer nodo para cerrar.'} Arrastrá los nodos para corregir.</p>
                 <div className="mockup-mask-buttons">
-                  <button type="button" disabled={maskDraft.length===0} onClick={()=>setMaskDraft(points=>points.slice(0,-1))}>Deshacer punto</button>
-                  <button type="button" className="mockup-primary" disabled={restoreGarmentMask(maskDraft).length<3}
-                    onClick={saveSilhouette}>Guardar contorno</button>
-                  <button type="button" onClick={()=>{setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}}>Cancelar</button>
+                  <button type="button" disabled={!maskHistory.length} onClick={undoMask}>Deshacer</button>
+                  <button type="button" disabled={selectedNode===null} onClick={()=>{
+                    rememberMask();setMaskDraft(points=>points.filter((_,i)=>i!==selectedNode));setSelectedNode(null);if(maskDraft.length<=3)setMaskClosed(false)
+                  }}>Eliminar nodo</button>
+                  {!maskClosed&&<button type="button" disabled={maskDraft.length<3} onClick={()=>{rememberMask();setMaskClosed(true)}}>Cerrar contorno</button>}
+                  <button type="button" onClick={()=>{rememberMask();setMaskDraft([]);setMaskClosed(false);setSelectedNode(null)}}>Nuevo contorno</button>
+                  <button type="button" className="mockup-primary" disabled={!maskClosed||restoreGarmentMask(maskDraft).length<3}
+                    onClick={saveSilhouette}>{penTarget==='zone'?'Guardar zona':'Guardar contorno'}</button>
+                  <button type="button" onClick={()=>{setMaskEditing(null);setMaskDraft([]);setDetection(null);setZenTool('zone');maskDragRef.current=null}}>Cancelar</button>
                 </div>
                 {maskDraft.length>=3&&restoreGarmentMask(maskDraft).length<3&&
                   <p className="mockup-print-warning">El contorno tiene cruces o es demasiado pequeño. Mové los puntos para corregirlo.</p>}
@@ -645,7 +860,7 @@ export function ProductMockupStudio(){
                 <p>{current?.silhouette?.length?current.silhouette.length+' puntos guardados · recorte activo':'Sin silueta: el estampado puede salir del borde de la tela.'}</p>
                 <div className="mockup-mask-buttons">
                   <button type="button" disabled={!photo||busy} onClick={()=>{
-                    setCalibrationMode(null);setMaskDraft((current?.silhouette??[]).map(p=>({...p})));setMaskEditing(active);setError('')
+                    beginMask(active)
                   }}>{current?.silhouette?.length?'Editar silueta':'Dibujar silueta'}</button>
                   {Boolean(current?.silhouette?.length)&&<button type="button" className="mockup-remove"
                     onClick={()=>updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],silhouette:[]}}}))}>
@@ -654,20 +869,33 @@ export function ProductMockupStudio(){
                 </div>
               </div>}
             </section>
+            {detection?.view===active&&detection.zone&&<section className="mockup-zone-suggestion">
+              <h3>Zona central sugerida</h3><p className="mockup-note">El trazo violeta propone un área inicial. Revisá su posición; el color no detecta costuras ni medidas físicas.</p>
+              <button type="button" className="mockup-secondary-full" onClick={()=>{
+                if(!detection.zone)return
+                const zone={...newZone(active,'Zona sugerida'),...detection.zone}
+                updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],zones:[...p.views[active].zones,zone]}}}))
+                setZoneId(zone.id);setDetection(null);setZenTool('zone');setInspector('zone')
+              }}>Añadir zona sugerida</button>
+            </section>}
             <div className="mockup-divider"/>
-            <h3>Zonas de estampado · {LABELS[active]}</h3>
+            <div className="mockup-zone-heading"><h3>Zonas de estampado · {LABELS[active]}</h3>
             <button type="button" className="mockup-secondary-full" onClick={()=>{
               const z=newZone(active,'Zona '+(current!.zones.length+1))
               updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],zones:[...p.views[active].zones,z]}}}))
               setZoneId(z.id)
-            }}><Plus size={16}/> Añadir zona</button>
+            }}><Plus size={16}/> Añadir zona</button></div>
           </>:<><h2>Estampados · {LABELS[active]}</h2><p className="mockup-note">Elegí una zona y añadí su PNG. Podés usar varios estampados por vista.</p></>}
+          <section className="mockup-zone-inspector">
           <div className="mockup-zone-tabs">{current?.zones.map(z=><button type="button" key={z.id} className={z.id===selectedZone?.id?'active':''} onClick={()=>setZoneId(z.id)}>{z.name}</button>)}</div>
           {selectedZone&&<div className="mockup-zone-controls">
             {screen==='setup'?<>
               <label className="mockup-field">Nombre de zona<input value={selectedZone.name} onChange={e=>updateZone(active,selectedZone.id,z=>({...z,name:e.target.value}))}/></label>
-              <label className="mockup-adjustment"><span>Ancho relativo de la zona: {Math.round(selectedZone.placement.width*100)}%</span><input type="range" min="4" max="95" value={Math.round(selectedZone.placement.width*100)} onChange={e=>updateZone(active,selectedZone.id,z=>({...z,placement:{...z.placement,width:Number(e.target.value)/100}}))}/></label>
-              <label className="mockup-adjustment"><span>Proporción (ancho/alto): {selectedZone.aspect.toFixed(2)}</span><input type="range" min="0.25" max="3" step=".05" value={selectedZone.aspect} onChange={e=>updateZone(active,selectedZone.id,z=>({...z,aspect:Number(e.target.value)}))}/></label>
+              <button type="button" className="mockup-secondary-full" onClick={()=>beginMask(active,'zone')}><PenTool size={16}/> Editar zona con Pluma</button>
+              {Boolean(selectedZone.polygon?.length)&&<><p className="mockup-note">Zona personalizada: {selectedZone.polygon!.length} nodos. Arrastrá el área para moverla o usá la Pluma para cambiar su forma.</p>
+                <button type="button" className="mockup-secondary-full" onClick={()=>updateZone(active,selectedZone.id,z=>({...z,polygon:[]}))}>Volver a zona rectangular</button></>}
+              <label className="mockup-adjustment"><span>Ancho relativo de la zona: {Math.round(selectedZone.placement.width*100)}%</span><input type="range" min="4" max="95" value={Math.round(selectedZone.placement.width*100)} onChange={e=>editPlacement(active,selectedZone,p=>({...p,width:Number(e.target.value)/100}))}/></label>
+              {!selectedZone.polygon?.length&&<label className="mockup-adjustment"><span>Proporción (ancho/alto): {selectedZone.aspect.toFixed(2)}</span><input type="range" min="0.25" max="3" step=".05" value={selectedZone.aspect} onChange={e=>updateZone(active,selectedZone.id,z=>({...z,aspect:Number(e.target.value)}))}/></label>}
               {zoneCm&&<p className="mockup-physical-summary">Zona estimada: <strong>{zoneCm.width.toFixed(1)} × {zoneCm.height.toFixed(1)} cm</strong></p>}
               <div className="mockup-seam-settings">
                 <label className="mockup-field">Distancia de seguridad a costuras (cm)
@@ -684,7 +912,7 @@ export function ProductMockupStudio(){
                   ?'El margen reduce la zona permitida desde sus bordes. El trazo punteado muestra el área segura.'
                   :'Calibrá primero esta fotografía para configurar márgenes reales en cm.'}</p>
                 {safeBoundary?.length===0&&<p className="mockup-print-warning">
-                  El margen elegido es demasiado grande para esta zona. Reducilo o ampliá la zona.
+                  El margen no es válido: reducí su tamaño o usá un contorno convexo para aplicar un margen positivo.
                 </p>}
               </div>
               <button type="button" className="mockup-danger-action" onClick={()=>{
@@ -786,11 +1014,12 @@ export function ProductMockupStudio(){
             <button type="button" className={!warpMode?'active':''} onClick={()=>setWarpMode(false)}>Escalar</button>
             <button type="button" className={warpMode?'active':''} onClick={()=>setWarpMode(true)}>Deformar</button>
           </div>
-          <p className="mockup-note">{photoScale?'Escala estimada a partir de dos referencias marcadas en esta fotografía.':'Sin calibrar: las medidas de esta vista son relativas a la fotografía.'}</p>
+          <p className="mockup-note">{photoScale?'Escala estimada a partir de referencias marcadas en esta fotografía.':'Sin calibrar: las medidas de esta vista son relativas a la fotografía.'}</p>
           {screen==='mockup'?<div className="mockup-export-actions">
             <button type="button" disabled={busy||!models[active].photo} onClick={()=>void exportMockup(false)}><ArrowDownToLine size={16}/> Exportar {LABELS[active]}</button>
             <button type="button" className="mockup-primary" disabled={busy||loadedId!==selectedId||!enabled.some(v=>models[v].photo)} onClick={()=>void exportMockup(true)}><ArrowDownToLine size={16}/> Exportar todas las vistas</button>
           </div>:<button type="button" className="mockup-primary mockup-secondary-full" onClick={()=>{setScreen('mockup');setCalibrationMode(null)}}>Crear mockup de este producto</button>}
+          </section>
         </aside>
       </div>
     </div>}
