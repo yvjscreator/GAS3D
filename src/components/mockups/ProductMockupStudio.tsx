@@ -666,7 +666,7 @@ export function ProductMockupStudio(){
               {zoneCm&&<p className="mockup-physical-summary">Zona estimada: <strong>{zoneCm.width.toFixed(1)} × {zoneCm.height.toFixed(1)} cm</strong></p>}
               <div className="mockup-seam-settings">
                 <label className="mockup-field">Distancia de seguridad a costuras (cm)
-                  <input type="number" min="0" max="8" step=".1" disabled={!photoScale}
+                  <input type="number" min="0" max="8" step=".1"
                     value={selectedZone.seamMarginCm??0}
                     onChange={e=>updateZone(active,selectedZone.id,z=>({...z,seamMarginCm:bound(Number(e.target.value)||0,0,8)}))}/>
                 </label>
