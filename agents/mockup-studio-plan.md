@@ -1,6 +1,6 @@
 # GAS3D — Mockup Studio plan
 
-**Status (October 2026):** the product-first catalogue and multi-view compositor are implemented at `#/mockups`. The centimeter-calibration release adds per-view two-axis photo reference lines, estimated centimeter dimensions for zones and prints, proportion-preserving numeric print sizing and visual zone-overflow warnings. Physical accuracy remains approximate for angled photographs; silhouette masks, displacement maps and cloud sync are still planned.
+**Status (October 2026):** the product-first catalogue and multi-view compositor are implemented at `#/mockups`. The centimeter-calibration release adds per-view two-axis photo reference lines, estimated centimeter dimensions for zones and prints, proportion-preserving numeric print sizing and visual zone-overflow warnings. Physical accuracy remains approximate for angled photographs. Non-destructive adjustable sleeve-cylinder projection is now implemented for individual prints (including prints assigned to side-view photos); garment silhouette masks, photographed-fold displacement maps and cloud sync are still planned.
 
 ## Goal
 Reuse the same original garment photo templates with many interchangeable transparent artwork PNGs; export realistic catalog imagery without image-generation drift. First use case: side-by-side black oversized T-shirt front/back, small chest logo and large back print, preserving original PNGs and photo geometry.
@@ -42,3 +42,13 @@ Reuse the same original garment photo templates with many interchangeable transp
 - Moving or enlarging a print beyond its zone produces a warning, not clipping or modification of source artwork. Replacing a view's garment photo invalidates that view's calibration so outdated pixels-per-centimeter cannot silently carry over.
 - The two photo scales are local approximations, **not certified textile dimensions**, especially for camera perspective, sleeve curvature, lens distortion or non-planar fabric. Sleeve curvature/displacement belongs to a later phase.
 - Regression checks: `npm run qa:mockups`, `npm run build`, plus browser testing on phone and desktop before production rollout.
+
+## Sleeve curvature release — October 2026
+
+- Each artwork placement now accepts optional `sleeveCurve: { strength, axis, direction }`. Missing values from preexisting drafts produce the exact original flat projection.
+- Newly uploaded prints in dedicated `leftSleeve` or `rightSleeve` views receive a gentle **28%** curve by default; other views remain flat unless enabled manually, including lateral photographs with a sleeve print.
+- The per-print **Adaptación a mangas** panel exposes Plano/Manga curva, intensity 0–100, presets, wrapping axis (vertical/horizontal) and direction. The printable PNG source in IndexedDB and product template geometry remain unmodified.
+- The common `renderGarmentLayers` engine interpolates a cylindrical nonlinear mesh (16×16 only when enabled, existing 5×6 for flat prints). The same renderer performs responsive preview and full-size export. The curved contour is used for guides, pointer hit tests and zone-overflow warnings; lighting bounds include the bowed silhouette.
+- This approximates sleeve volume from a 2D photo, **not** a garment 3D simulation or fold-specific physical displacement. Manual corner dragging/perspective remains available. Print sizes in cm are estimates of the flat artwork before photographic curvature.
+- Regression cases in `npm run qa:mockups` cover corner anchors, axis/direction, boundary hit testing, overflow, persisted settings, flat legacy defaults and preview/export wiring.
+- After merging to `main`, verify `npm run build` on Render; GitHub Actions jobs have previously failed before starting any runner, so those failures alone do not verify or disprove code quality. Device-based visual validation remains outstanding.
