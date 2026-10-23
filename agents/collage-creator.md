@@ -51,3 +51,5 @@ Browsers do not guarantee support for every `image/*` encoding. The source must 
 - [x] Static QA assertions included in project build.
 - [ ] Actual phone Safari/Chrome visual and persistent-storage smoke test.
 - [ ] Full deployed build and PNG output verified by browser.
+
+Transient success/error notices use the shared Sileo popup host. Clearing the collage uses an accessible in-app confirmation dialog (cancellation/Escape leaves items intact); native JavaScript alert/confirm/prompt APIs are prohibited across GAS3D.

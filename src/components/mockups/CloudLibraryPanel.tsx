@@ -24,8 +24,5 @@ export function CloudLibraryPanel({cloud,pending,disabled,onSave}:{
       <button type="submit" className="mockup-nav-button mockup-primary" disabled={unavailable}>Conectar catálogo</button>
     </form>}
     <p className="mockup-note">Se sincronizan las fotos originales, vistas, zonas y calibraciones al guardar en nube. Los estampados PNG y sus borradores siguen en este dispositivo. La conexión se recuerda durante esta sesión.</p>
-    {cloud.working&&<p role="status">Sincronizando… {cloud.message}</p>}
-    {!cloud.working&&cloud.message&&<p className="mockup-feedback" role="status">{cloud.message}</p>}
-    {cloud.issue&&<p className="mockup-error" role="alert">{cloud.issue}</p>}
   </section>
 }

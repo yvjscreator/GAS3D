@@ -13,6 +13,7 @@ export default tseslint.config(
     languageOptions: { globals: globals.browser },
     plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },
     rules: {
+      'no-alert': 'error',
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       // Three.js objects are intentionally configured imperatively after hooks create them.

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { penFabricOutline } from '../src/components/mockups/mockupPen'
+import { initialViewModes } from '../src/components/mockups/mockupWorkspace'
+import { requestConfirmation, confirmationSnapshot, settleConfirmation, subscribeConfirmation } from '../src/components/ui/confirmation'
 import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
 import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
@@ -204,13 +207,47 @@ assert.ok(productPage.includes('Adaptación a mangas')&&productPage.includes('de
 assert.ok(productPage.includes('pointInArtwork')&&productPage.includes('artworkOutline'),'Curved hit testing and outline guides missing')
 assert.ok(productPage.includes('saveSilhouette')&&productPage.includes('restoreGarmentMask'),'Editable fabric silhouette panel missing')
 assert.ok(productPage.includes('detectPhoto(image,view)')&&productPage.includes('Añadir zona sugerida'),'Uploaded photos must offer automatic contours and independent zone suggestions')
-assert.ok(productPage.includes("zen?enabled.filter(v=>v===active):enabled")&&productPage.includes('PhotoRulers'),'Focused editor must show only the active photo with rulers')
+assert.ok(productPage.includes("enabled.filter(v=>v===active).map")&&productPage.includes('PhotoRulers'),'Focused editor must show only the active photo with rulers')
 assert.ok(productPage.includes('setMaskClosed(true)')&&productPage.includes('Eliminar nodo')&&productPage.includes('setPointerCapture'),'Pen tool must support closure, node editing and captured touch drags')
 assert.ok(productPage.includes('panDragRef')&&productPage.includes('setZoom')&&productPage.includes('saveCalibration'),'Zoom, panning and point-first calibration must be wired')
 assert.ok(productPage.includes('Editar zona con Pluma')&&productStorage.includes('polygon:restoreGarmentMask(z.polygon)'),'Pen-drawn zones must persist and restore alongside old rectangle zones')
 assert.ok(productPage.includes('data-zone-edge={edge}')&&productPage.includes("if(screen==='setup'&&guides)zoneEdgeHandles"),'Side controls must be confined to product-zone setup')
 assert.ok(productPage.includes('resizeZoneFromEdge')&&productPage.includes("e.shiftKey?10:1"),'Zone side handles must support pointer and keyboard resizing')
-assert.ok(source('src/components/mockups/mockupStudio.css').includes('grid-template-rows:minmax(260px,1fr) minmax(150px,.6fr)'),'Narrow focused editor must reserve space for photo and controls')
+const workspaceCss=source('src/components/mockups/mockupStudio.css')
+assert.ok(workspaceCss.includes('grid-template-columns:52px minmax(0,1fr) 320px'),'Desktop workspace must reserve narrow tools, flexible canvas and readable layers')
+assert.ok(workspaceCss.includes('.mockup-zen.is-panel-hidden .mockup-layout{grid-template-columns:52px minmax(0,1fr)}'),'Hidden layers must relinquish their grid track')
+assert.ok(workspaceCss.includes('width:min(300px,calc(100% - 54px))')&&workspaceCss.includes('grid-template-columns:48px minmax(0,1fr)'),'Mobile controls must be a toggled drawer while retaining the canvas')
+assert.ok(!productPage.includes('mockup-editor-breadcrumb')&&!productPage.includes('mockup-status'),'The editor must have one compact header and floating transient notifications')
+const layers=source('src/components/mockups/MockupLayers.tsx')
+assert.ok(layers.includes('role="switch"')&&layers.includes('onMode(view, modes[view]')&&layers.includes('onSelect(view)'),'Every view must have its own working mode switch and selection')
+assert.ok(layers.includes('!photo.bitmap.width')&&layers.includes('!photo.bitmap.height'),'Thumbnail effects must skip bitmaps already detached by product navigation')
+assert.ok(productPage.includes('setLoadedId(null);setModels(blank());setDraft({});return'),'Leaving a product must clear closed working bitmaps without deleting original media')
+const viewModes=initialViewModes('setup'),changedModes={...viewModes,left:'mockup'}
+assert.equal(changedModes.front,'setup','Changing the side-view mode cannot switch the front mode')
+assert.equal(initialViewModes('mockup').back,'mockup','Opening a new mockup must initialize each view in artwork mode')
+assert.equal(penFabricOutline(rectangularMask,customZone,'zone',true),rectangularMask,'Editing a print zone must retain the saved garment outline')
+assert.equal(penFabricOutline(rectangularMask,customZone,'fabric',true),customZone,'Fabric edits must display their own draft')
+assert.equal(penFabricOutline(rectangularMask,customZone,'fabric',false),rectangularMask,'A cancelled pen draft must not change the saved silhouette')
+assert.ok(productPage.includes('data-pen-target="zone"')&&productPage.includes('data-pen-target="fabric"'),'Each pen target needs its own overlay')
+assert.ok(productPage.includes('const zone=preferredZone(product.views[view],zoneId)'),'The pen must edit the selected/default product zone, including after reload')
+let confirmationsChanged=0
+const unsubscribe=subscribeConfirmation(()=>confirmationsChanged++)
+const cancelled=requestConfirmation({title:'Test',description:'No data mutation',accept:'Continue'})
+assert.equal(confirmationSnapshot()?.title,'Test')
+assert.equal(await requestConfirmation({title:'Duplicate',description:'',accept:'Continue'}),false,'A second destructive action cannot replace a pending decision')
+settleConfirmation(false)
+assert.equal(await cancelled,false,'Cancelling must resolve without authorizing the action')
+const accepted=requestConfirmation({title:'Test',description:'',accept:'Continue'})
+settleConfirmation(true)
+assert.equal(await accepted,true)
+assert.equal(confirmationSnapshot(),null)
+assert.equal(confirmationsChanged,4)
+unsubscribe()
+for(const path of readdirSync('src',{recursive:true}).filter(path=>/\.[cm]?[jt]sx?$/.test(String(path)))){
+  assert.ok(!/\b(?:(?:window|globalThis)\.)?(?:alert|confirm|prompt)\s*\(/.test(source('src/'+path)),'Native blocking dialogs are prohibited: '+path)
+}
+assert.ok(source('src/main.tsx').includes('<NotificationHost />')&&source('src/components/ui/NotificationHost.tsx').includes('<Toaster'),'Floating notices and DOM confirmations must be mounted once for every route')
+assert.ok(source('src/components/ui/notifications.ts').includes('id: nextId()'),'Progress and result popups need distinct IDs so cleanup cannot dismiss the result')
 assert.ok(productPage.includes('clipToZone')&&productPage.includes('seamMarginCm'),'Independent seam margins and zone clipping missing')
 assert.ok(productPage.includes('photoName:file.name,photoVersion,calibration:{},silhouette:[]'),'Replacing a photo must invalidate its stale silhouette')
 assert.ok(productPage.includes('if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}'),'Old contours must not be saved onto replacement photos')

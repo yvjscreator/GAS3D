@@ -48,6 +48,12 @@ The GitHub workflow `.github/workflows/video-studio-roadmap.yml` enforces item 2
 - The launcher must be usable on mobile and desktop, including in full-screen/Zen modes, with overlay above app-specific chrome, Escape/outside close, keyboard navigation, and accurate current-module highlighting.
 - Navigate by hash without going through Video Studio or replacing module-local workflow buttons. All modules, including Halftone Lab, must appear in the launcher.
 
+## Notifications and confirmations (all GAS3D screens)
+
+- Never use native JavaScript `alert`, `confirm`, or `prompt` dialogs, including `window`/`globalThis` variants. Use accessible in-app DOM dialogs for confirmations and forms for input.
+- Transient success, error and operation-progress notices must be floating popups, never full-width banners that consume workspace height. Reuse the shared Sileo host and `notify` / `useTaskNotice` from `src/components/ui/notifications.ts`.
+- Use `requestConfirmation` for destructive decisions; cancellation, Escape and navigation must leave data untouched. Keep persistent actionable validation beside the field it concerns.
+
 ## Responsive, column-first interface design (all GAS3D screens)
 
 Mandatory guidance: `agents/ui-layout-guidelines.md`.

@@ -1,12 +1,16 @@
+import { notify, useTaskNotice } from '../ui/notifications'
+import { requestConfirmation } from '../ui/confirmation'
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { deleteCloudProduct, fetchCloudCatalogue, mergeCloudCatalogue, normalizeConnection, readCloudConnection, rememberCloudConnection, restoredCloudProduct, saveCloudProduct, type CloudConnection } from './mockupCloud'
 import { productIsDirty, type Product } from './mockupProduct'
 
+const setMessage=(message:string)=>notify('success',message)
+const setIssue=(message:string)=>notify('error',message)
+
 export function useMockupCloud(setProducts:Dispatch<SetStateAction<Product[]>>){
   const [connection,setConnection]=useState<CloudConnection|null>(readCloudConnection)
   const [working,setWorking]=useState(false)
-  const [message,setMessage]=useState('')
-  const [issue,setIssue]=useState('')
+  useTaskNotice(working,'Sincronizando catálogo…')
   const running=useRef(false)
   const perform=useCallback(async<T,>(operation:()=>Promise<T>):Promise<T|undefined>=>{
     if(running.current)return
@@ -38,7 +42,6 @@ export function useMockupCloud(setProducts:Dispatch<SetStateAction<Product[]>>){
     let pendingCleanup=false
     for(let index=0;index<products.length;index++){
       const product=products[index]
-      setMessage(`Guardando ${index+1} de ${products.length}: ${product.name}…`)
       const saved=await saveCloudProduct(connection,product),restored=restoredCloudProduct(saved)
       pendingCleanup||=saved.cleanupPending
       // Edits made while the request was running stay dirty against the saved snapshot.
@@ -63,7 +66,7 @@ export function useMockupCloud(setProducts:Dispatch<SetStateAction<Product[]>>){
   }
   const recover=(product:Product)=>perform(async()=>{
     if(!connection)throw new Error('Conectá primero tu catálogo.')
-    if(productIsDirty(product)&&!window.confirm('¿Descartar los cambios locales de «'+product.name+'» y recuperar la versión guardada en la nube? Los estampados PNG locales se conservan.'))return
+    if(productIsDirty(product)&&!await requestConfirmation({title:'Recuperar versión de la nube',description:'Se descartarán los cambios locales de «'+product.name+'» y se recuperará la versión guardada en la nube. Los estampados PNG locales se conservan.',accept:'Recuperar versión',destructive:true}))return
     const catalogue=await fetchCloudCatalogue(connection)
     const record=catalogue.records.find(item=>item.product.id===product.id)
     if(!record)throw new Error('No se encontró el producto en este catálogo.')
@@ -71,5 +74,5 @@ export function useMockupCloud(setProducts:Dispatch<SetStateAction<Product[]>>){
       :local.map(item=>item.id===product.id?restoredCloudProduct(record):item))
     setMessage('Versión de la nube recuperada.')
   })
-  return {connection,working,message,issue,connect,disconnect,refresh,save,erase,recover}
+  return {connection,working,connect,disconnect,refresh,save,erase,recover}
 }

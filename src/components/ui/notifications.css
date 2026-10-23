@@ -1,0 +1,15 @@
+[data-sileo-viewport]{z-index:12000!important;--sileo-width:min(350px,calc(100vw - 32px));font-family:inherit}
+[data-sileo-title]{text-transform:none!important}
+[data-sileo-viewport][data-theme] [data-sileo-description]{color:#d1e1ec}
+[data-sileo-description]{overflow-wrap:anywhere}
+[data-sileo-button]{min-height:32px}
+.gas-confirmation{width:min(440px,calc(100vw - 28px));padding:24px;border:1px solid #4e6a80;border-radius:14px;color:#e4eef8;background:#152331;box-shadow:0 20px 80px #0009}
+.gas-confirmation::backdrop{background:#050b14b8;backdrop-filter:blur(3px)}
+.gas-confirmation h2{margin:0 0 12px;font-size:18px}
+.gas-confirmation p{margin:0 0 24px;color:#b8cddd;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.gas-confirmation form>div{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.gas-confirmation button{min-height:44px;border:1px solid #527b99;border-radius:7px;padding:9px 16px;color:#edf6ff;background:#1c3c54;font:inherit;font-size:12px;cursor:pointer}
+.gas-confirmation button.is-destructive{background:#6b293c;border-color:#ba647e}
+.gas-confirmation button.is-primary{background:#276994;border-color:#77bef0}
+.gas-confirmation button:focus-visible{outline:2px solid #8bd4ff;outline-offset:3px}
+@media(max-width:760px){[data-sileo-viewport]{left:8px!important}}

@@ -1,3 +1,5 @@
+import { requestConfirmation } from '../ui/confirmation'
+import { notify } from '../ui/notifications'
 import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, ImagePlus, Images, Layers3, GripVertical, Trash2, Upload, RefreshCw } from 'lucide-react'
 import {
@@ -14,6 +16,7 @@ import { AppLauncher } from '../navigation/AppLauncher'
 
 type CollageItem = { id: string; name: string; background: CollageBackground; url: string; width: number; height: number }
 type Feedback = { kind: 'success' | 'error'; text: string } | null
+const setFeedback = (feedback: Feedback) => { if (feedback) notify(feedback.kind, feedback.text) }
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024
 const supported = (file: File) => file.type.startsWith('image/') || /\.(png|jpg|jpeg|webp|avif|gif|heic|heif)$/i.test(file.name)
@@ -31,7 +34,6 @@ export function CollageCreator() {
   const [items, setItems] = useState<CollageItem[]>([])
   const [hydrating, setHydrating] = useState(true)
   const [working, setWorking] = useState<'adding' | 'exporting' | null>(null)
-  const [feedback, setFeedback] = useState<Feedback>(null)
   const [quality, setQuality] = useState<CollageQuality>('maximum')
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
@@ -265,7 +267,8 @@ export function CollageCreator() {
   }
 
   const clearAll = async () => {
-    if (busy || !items.length || !window.confirm('¿Quitar todas las imágenes del collage? La última imagen añadida seguirá disponible.')) return
+    if (busy || !items.length) return
+    if (!await requestConfirmation({ title: 'Vaciar collage', description: 'Se quitarán todas las imágenes de este collage y sus archivos guardados en este navegador.', accept: 'Quitar imágenes', destructive: true })) return
     const removed = [...items]
     setItems([])
     removed.forEach((item) => { activeUrls.current.delete(item.url); URL.revokeObjectURL(item.url) })
@@ -371,7 +374,6 @@ export function CollageCreator() {
       </section>
 
       <div className="collage-info"><Upload size={17} /><span>Se guarda automáticamente en el navegador de este dispositivo mediante IndexedDB y localStorage. Las imágenes no se suben a ningún servidor. Puedes sustituir cualquiera desde el icono de recarga.</span></div>
-      {feedback && <div className={'collage-feedback ' + feedback.kind} role="status">{feedback.text}</div>}
     </div>
     <div className="collage-mobile-actions" aria-label="Acciones del collage"><button type="button" className="collage-btn collage-btn-secondary" disabled={busy} onClick={() => pickerRef.current?.click()}><ImagePlus size={18} /> Añadir</button><button type="button" className="collage-btn collage-btn-primary" disabled={busy || !canExport} onClick={() => void exportPng()}><Download size={18} /> {working === 'exporting' ? 'Exportando…' : 'Exportar PNG'}</button></div>
   </main>
