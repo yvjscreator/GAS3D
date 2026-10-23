@@ -23,14 +23,14 @@ Route: `#/mockups`; integrated into the shared AppLauncher. The October 2026 rel
 - Original photos and original transparent PNG Blobs live in IndexedDB; product manifest and placement drafts live in localStorage. Compositing uses at most a 4096 px working bitmap for very large artwork (up to its existing validated limit). The stored source artwork is never overwritten or AI-regenerated.
 - The first opening with an empty product library attempts a non-destructive import of legacy front/back media keys. The original v1 data is left intact.
 - All media is **local to the browser/device**: this is not yet a cloud-synced team product catalogue. Browser data clearing removes the local collection.
-- Print zones are *photo-relative*, not certified real-world centimeters. Do not present dimensions as accurate physical measurements until a reference calibration system is implemented.
+- Print zones and prints support optional two-axis photo calibration in centimeters. Physical sizes remain **estimated**, not certified, when the camera perspective or fabric curvature is unknown.
 - Photos bearing preexisting artwork cannot be cleaned by this compositor. Use blank garment photographs.
 
 ## Outstanding improvements
 
-- Photo reference calibration for exact physical print dimensions and multiple zones with per-zone centimeter bounds.
-- Garment silhouette masks, seam-aware boundaries and fabric displacement maps.
-- More accurate 3D fabric shape, bulk artwork sets, ZIP exports, undo/redo and cloud-backed product synchronization.
+- Higher-accuracy scale modeling for angled camera views and variable depth. Photo reference calibration and approximate centimeter display are now available.
+- Garment silhouette masks, seam-aware boundaries and photographed-fold displacement maps. The per-print cylindrical sleeve deformation now has a strength slider, axis/direction controls and automatic soft presets for newly loaded sleeve artwork.
+- True 3D fabric geometry, bulk artwork sets, ZIP exports, undo/redo and cloud-backed product synchronization.
 
 ## Validation
 
