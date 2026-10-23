@@ -4,7 +4,7 @@ import { AppLauncher } from '../navigation/AppLauncher'
 import { loadMedia, removeMedia, storeMedia } from '../../utils/mediaStorage'
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
 import { bound, canvasPng, ensurePhotoSize, initialPlacement, placementQuad, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type ViewName } from './mockupEngine'
-import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, restoreCalibration, zoneDimensionsCm, type CalibrationAxis, type PhotoCalibration } from './mockupCalibration'
+import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, zoneDimensionsCm, type CalibrationAxis, type PhotoCalibration } from './mockupCalibration'
 import './mockupStudio.css'
 
 type Zone = { id:string; name:string; aspect:number; placement:Placement }
@@ -288,7 +288,7 @@ export function ProductMockupStudio(){
       photo:kind==='photo'?null:old[view].photo,
       arts:kind==='art'?Object.fromEntries(Object.entries(old[view].arts).filter(([id])=>id!==zid)):old[view].arts,
     }}))
-    if(kind==='photo')updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:undefined}}}))
+    if(kind==='photo')updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:undefined,calibration:{}}}}))
     void removeMedia(key).catch(()=>setError('No se pudo borrar el archivo del navegador.'))
   }
   const position=(e:ReactPointerEvent<HTMLDivElement>):Point=>{
@@ -578,7 +578,7 @@ export function ProductMockupStudio(){
                 <button type="button" disabled={busy||!models[active].photo} onClick={()=>openUpload('art',active,selectedZone.id)}><Upload size={15}/> PNG del arte</button>
                 <button type="button" disabled={busy||!selectedArt} onClick={()=>removeAsset('art',active,selectedZone.id)}><Trash2 size={15}/> Quitar arte</button>
               </div>
-              <label className="mockup-adjustment"><span>Ancho del estampado: {Math.round(placementFor(active,selectedZone).width*100)}%</span><input type="range" min="3" max="95" value={Math.round(placementFor(active,selectedZone).width*100)} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,width:Number(e.target.value)/100}))}/></label>
+              <label className="mockup-adjustment"><span>Ancho del estampado: {Math.round(placementFor(active,selectedZone).width*100)}%</span><input type="range" min="3" max="95" value={Math.round(placementFor(active,selectedZone).width*100)} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>resizePrintPreservingWarp(p,Number(e.target.value)/100))}/></label>
               {printCm&&selectedArt&&photo&&<div className="mockup-print-centimeters">
                 <h3>Tamaño del estampado · cm</h3>
                 <div className="mockup-cm-inputs">
@@ -593,7 +593,7 @@ export function ProductMockupStudio(){
                           if(!input.trim())return
                           const newWidth=placementWidthForCm(photo,selectedArt,calibration,axis,Number(input))
                           if(newWidth===null){setError('Ingresá una medida válida de 0,1 a 500 cm.');return}
-                          editPlacement(active,selectedZone,p=>({...p,width:newWidth}))
+                          editPlacement(active,selectedZone,p=>resizePrintPreservingWarp(p,newWidth))
                         }}/>
                     </label>
                   })}
@@ -624,7 +624,7 @@ export function ProductMockupStudio(){
           {screen==='mockup'?<div className="mockup-export-actions">
             <button type="button" disabled={busy||!models[active].photo} onClick={()=>void exportMockup(false)}><ArrowDownToLine size={16}/> Exportar {LABELS[active]}</button>
             <button type="button" className="mockup-primary" disabled={busy||loadedId!==selectedId||!enabled.some(v=>models[v].photo)} onClick={()=>void exportMockup(true)}><ArrowDownToLine size={16}/> Exportar todas las vistas</button>
-          </div>:<button type="button" className="mockup-primary mockup-secondary-full" onClick={()=>setScreen('mockup')}>Crear mockup de este producto</button>}
+          </div>:<button type="button" className="mockup-primary mockup-secondary-full" onClick={()=>{setScreen('mockup');setCalibrationMode(null)}}>Crear mockup de este producto</button>}
         </aside>
       </div>
     </div>}
