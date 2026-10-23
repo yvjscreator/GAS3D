@@ -3,6 +3,19 @@
 export type ViewName = string
 export type Point = { x: number; y: number }
 export type Quad = [Point, Point, Point, Point]
+/** Optional non-destructive cylinder projection used for sleeve artwork. */
+export type SleeveCurve = { strength: number; axis: 'horizontal' | 'vertical'; direction: -1 | 1 }
+export const defaultSleeveCurve = (): SleeveCurve => ({ strength: 28, axis: 'vertical', direction: 1 })
+export function restoreSleeveCurve(raw: unknown): SleeveCurve | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const source = raw as Partial<SleeveCurve>
+  return {
+    strength: typeof source.strength === 'number' && Number.isFinite(source.strength)
+      ? Math.min(100, Math.max(0, source.strength)) : 0,
+    axis: source.axis === 'horizontal' ? 'horizontal' : 'vertical',
+    direction: source.direction === -1 ? -1 : 1,
+  }
+}
 export type Placement = {
   x: number
   y: number
@@ -10,6 +23,7 @@ export type Placement = {
   rotation: number
   lighting: number
   corners: Quad
+  sleeveCurve?: SleeveCurve
 }
 export type MockImage = { width: number; height: number; bitmap: ImageBitmap; name: string }
 
@@ -39,6 +53,7 @@ export function restorePlacement(value: unknown, view: ViewName): Placement {
     rotation:number(state.rotation,def.rotation,-180,180),
     lighting:number(state.lighting,def.lighting,0,1),
     corners:offsets,
+    sleeveCurve:restoreSleeveCurve(state.sleeveCurve),
   }
 }
 
@@ -67,6 +82,44 @@ const interpolate = (q:Quad,u:number,v:number):Point => ({
   y:(1-u)*(1-v)*q[0].y + u*(1-v)*q[1].y + u*v*q[2].y + (1-u)*v*q[3].y,
 })
 
+/** Cylindrical projection across one axis plus a gentle arched cloth contour.
+ * Endpoints stay anchored to the manually positioned four corners.
+ * The original artwork bitmap is untouched; only its rendered mesh is warped.
+ */
+export function curvedArtworkPoint(q: Quad, u: number, v: number, curve?: SleeveCurve): Point {
+  const amount = curve && Number.isFinite(curve.strength) ? bound(curve.strength, 0, 100) / 100 : 0
+  if (amount === 0) return interpolate(q,u,v)
+  const vertical = curve?.axis !== 'horizontal'
+  const transverse = vertical ? v : u
+  const longitudinal = vertical ? u : v
+  const angle = amount * 2.45
+  const projected = .5 + Math.sin((transverse-.5)*angle)/(2*Math.sin(angle/2))
+  const bulge = amount * .105 * (1-Math.pow(2*transverse-1,2)) * (curve?.direction===-1?-1:1)
+  return vertical
+    ? interpolate(q,longitudinal+bulge,projected)
+    : interpolate(q,projected,longitudinal+bulge)
+}
+
+/** Ordered photo-relative visible boundary; also used to detect curve overflow. */
+export function artworkOutline(photo: {width:number;height:number}, art: {width:number;height:number}, placement: Placement): Point[] {
+  const quad = placementQuad(photo,art,placement)
+  if (!placement.sleeveCurve?.strength) return quad
+  const steps = 16, result: Point[] = []
+  for (let i=0;i<steps;i++) result.push(curvedArtworkPoint(quad,i/steps,0,placement.sleeveCurve))
+  for (let i=0;i<steps;i++) result.push(curvedArtworkPoint(quad,1,i/steps,placement.sleeveCurve))
+  for (let i=0;i<steps;i++) result.push(curvedArtworkPoint(quad,1-i/steps,1,placement.sleeveCurve))
+  for (let i=0;i<steps;i++) result.push(curvedArtworkPoint(quad,0,1-i/steps,placement.sleeveCurve))
+  return result
+}
+export function pointInArtwork(point: Point, outline: ReadonlyArray<Point>): boolean {
+  let inside = false
+  for (let i=0,j=outline.length-1;i<outline.length;j=i++) {
+    const a=outline[i],b=outline[j]
+    if ((a.y>point.y)!==(b.y>point.y) && point.x < (b.x-a.x)*(point.y-a.y)/(b.y-a.y)+a.x) inside=!inside
+  }
+  return inside
+}
+
 function paintTriangle(ctx:CanvasRenderingContext2D, art:ImageBitmap, sx:Point, sy:Point, sz:Point, dx:Point,dy:Point,dz:Point){
   const det=(sx.x*(sy.y-sz.y)+sy.x*(sz.y-sx.y)+sz.x*(sx.y-sy.y))
   if(Math.abs(det)<.0001)return
@@ -83,13 +136,15 @@ function paintTriangle(ctx:CanvasRenderingContext2D, art:ImageBitmap, sx:Point, 
   ctx.drawImage(art,0,0)
   ctx.restore()
 }
-function warpedArtwork(layer:CanvasRenderingContext2D, image:MockImage, quad:Quad, width:number,height:number){
+function warpedArtwork(layer:CanvasRenderingContext2D, image:MockImage, quad:Quad, width:number,height:number,curve?:SleeveCurve){
   const q=quad.map(p=>({x:p.x*width,y:p.y*height})) as Quad
-  // Small bilinear mesh provides editable 4-corner perspective/cloth curvature.
-  const nx=5,ny=6
+  // Higher tessellation only when a cylindrical sleeve effect is enabled.
+  const curved=Boolean(curve?.strength)
+  const nx=curved?16:5,ny=curved?16:6
   for(let row=0;row<ny;row++)for(let col=0;col<nx;col++){
     const u=col/nx,v=row/ny,U=(col+1)/nx,V=(row+1)/ny
-    const p00=interpolate(q,u,v),p10=interpolate(q,U,v),p11=interpolate(q,U,V),p01=interpolate(q,u,V)
+    const p00=curvedArtworkPoint(q,u,v,curve),p10=curvedArtworkPoint(q,U,v,curve)
+    const p11=curvedArtworkPoint(q,U,V,curve),p01=curvedArtworkPoint(q,u,V,curve)
     const s00={x:u*image.width,y:v*image.height},s10={x:U*image.width,y:v*image.height}
     const s11={x:U*image.width,y:V*image.height},s01={x:u*image.width,y:V*image.height}
     paintTriangle(layer,image.bitmap,s00,s10,s11,p00,p10,p11)
@@ -109,10 +164,11 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
   ctx.drawImage(photo.bitmap,0,0,width,height)
   for(const {art,placement} of layers){
   const quad=placementQuad({width,height},art,placement)
-  const x=bound(Math.floor(Math.min(...quad.map(p=>p.x))*width)-2,0,width)
-  const y=bound(Math.floor(Math.min(...quad.map(p=>p.y))*height)-2,0,height)
-  const right=bound(Math.ceil(Math.max(...quad.map(p=>p.x))*width)+2,0,width)
-  const bottom=bound(Math.ceil(Math.max(...quad.map(p=>p.y))*height)+2,0,height)
+  const outline=artworkOutline({width,height},art,placement)
+  const x=bound(Math.floor(Math.min(...outline.map(p=>p.x))*width)-2,0,width)
+  const y=bound(Math.floor(Math.min(...outline.map(p=>p.y))*height)-2,0,height)
+  const right=bound(Math.ceil(Math.max(...outline.map(p=>p.x))*width)+2,0,width)
+  const bottom=bound(Math.ceil(Math.max(...outline.map(p=>p.y))*height)+2,0,height)
   const w=right-x,h=bottom-y
   if(w<=0||h<=0)continue
 
@@ -120,7 +176,7 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
   try{
     const layer=overlay.getContext('2d',{willReadFrequently:true})
     if(!layer)throw new Error('No se pudo preparar el estampado.')
-    warpedArtwork(layer,art,quad,width,height)
+    warpedArtwork(layer,art,quad,width,height,placement.sleeveCurve)
     if(placement.lighting>0){
       const fabric=ctx.getImageData(x,y,w,h)
       const print=layer.getImageData(x,y,w,h)
