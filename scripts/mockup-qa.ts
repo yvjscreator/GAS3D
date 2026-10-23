@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { initialPlacement, placementQuad, pointInQuad, restorePlacement, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
+import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, restoreCalibration, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 
 const source=(path:string)=>readFileSync(path,'utf8')
 const front=initialPlacement('front'),back=initialPlacement('back')
@@ -18,10 +19,32 @@ const enlarged=placementQuad(photo,art,larger)
 assert.ok(larger.width>front.width,'Normal corner drag must grow the artwork proportionally')
 assert.ok(Math.abs(enlarged[0].x-quad[0].x)<1e-7&&Math.abs(enlarged[0].y-quad[0].y)<1e-7,'Opposite corner must stay anchored')
 assert.ok(Math.abs((enlarged[1].x-enlarged[0].x)/(enlarged[3].y-enlarged[0].y)-(quad[1].x-quad[0].x)/(quad[3].y-quad[0].y))<1e-6,'Proportional resizing should not warp a print')
+const line={horizontal:{from:{x:.2,y:.3},to:{x:.8,y:.3},cm:60},vertical:{from:{x:.3,y:.1},to:{x:.3,y:.9},cm:80}}
+const calibration=restoreCalibration(line)
+const scale=photoPixelsPerCm(photo,calibration)
+assert.ok(scale&&Math.abs(scale.x-10)<1e-8&&Math.abs(scale.y-12)<1e-8,'Calibration references must resolve photo pixels per cm')
+const p={...initialPlacement('back'),x:.5,y:.5,width:.3}
+const cm=printDimensionsCm(photo,art,p,calibration)
+assert.ok(cm&&Math.abs(cm.width-30)<1e-8&&Math.abs(cm.height-100/3)<1e-8,'Print dimensions should preserve PNG aspect ratio')
+assert.equal(placementWidthForCm(photo,art,calibration,'horizontal',35),.35,'Changing print width must preserve bitmap aspect')
+assert.equal(placementWidthForCm(photo,art,calibration,'vertical',40),.36,'Height-driven sizing must preserve bitmap aspect')
+assert.equal(printDimensionsCm(photo,art,{...p,width:.35},calibration)?.width,35)
+const area=zoneDimensionsCm(photo,{...p,width:.5},1,calibration)
+assert.ok(area&&Math.abs(area.width-50)<1e-8&&Math.abs(area.height-500/12)<1e-8,'Zone bounds need centimeter dimensions')
+assert.ok(artworkFitsZone(photo,art,p,{...p,width:.5},1),'Normal artwork must fit inside its zone')
+assert.ok(!artworkFitsZone(photo,art,{...p,x:.92},{...p,width:.5},1),'Moving outside a zone must warn')
+assert.deepEqual(restoreCalibration({horizontal:{from:{x:0,y:0},to:{x:0,y:0},cm:0}}),{},'Reject invalid or stale reference geometry')
+assert.equal(photoPixelsPerCm(photo,{}),null,'Legacy products must stay uncalibrated')
+assert.equal(printDimensionsCm(photo,art,p,{}),null,'Do not claim physical measures without both references')
+
 const productPage=source('src/components/mockups/ProductMockupStudio.tsx')
 assert.ok(productPage.includes('mockup-products.v2')&&productPage.includes('Crear producto')&&productPage.includes('Nuevo mockup'),'Missing product-first library')
 assert.ok(productPage.includes('Duplicar')===false || productPage.includes('duplicate'),'Product duplication handler missing')
 assert.ok(productPage.includes('leftSleeve')&&productPage.includes('rightSleeve'),'Sleeve photographs must be supported')
+assert.ok(productPage.includes('restoreCalibration')&&productPage.includes('calibrationMode'),'Per-view editable calibration not wired')
+assert.ok(productPage.includes('placementWidthForCm')&&productPage.includes('printDimensionsCm'),'Numeric print sizing not wired')
+assert.ok(productPage.includes('zoneDimensionsCm')&&productPage.includes('artworkFitsZone'),'Cm zone sizing and overflow warnings missing')
+assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-calibration-grid'),'Responsive calibration panel missing')
 assert.ok(productPage.includes('Añadir zona')&&productPage.includes('zoneId'),'Independent print zones must be configurable')
 assert.ok(productPage.includes("screen==='setup'")&&productPage.includes("screen==='mockup'"),'Product authoring and artwork application must remain separate')
 assert.ok(productPage.includes('Ctrl + arrastrar')&&productPage.includes('setWarpMode'),'Deformation mode must be explicit on desktop/mobile')
