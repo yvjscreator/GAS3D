@@ -49,6 +49,16 @@ export function printDimensionsCm(
   return { width: pixelsWide / scale.x, height: pixelsWide * art.height / art.width / scale.y }
 }
 
+/** Numeric resizing keeps any previously explicit corner warp proportional. */
+export function resizePrintPreservingWarp(placement: Placement, width: number): Placement {
+  const ratio = width / placement.width
+  return {
+    ...placement,
+    width,
+    corners: placement.corners.map(p => ({ x: p.x * ratio, y: p.y * ratio })) as Placement['corners'],
+  }
+}
+
 export function placementWidthForCm(
   photo: PhotoSize, art: PhotoSize, calibration: PhotoCalibration,
   axis: CalibrationAxis, centimeters: number,
