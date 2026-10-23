@@ -521,6 +521,8 @@ export function ProductMockupStudio(){
               const quad=photo&&art&&placement?placementQuad(photo,art,placement):null
               const outline=photo&&art&&placement&&screen==='mockup'?artworkOutline(photo,art,placement):quad
               const silhouette=maskEditing===view?maskDraft:product.views[view].silhouette??[]
+              const safeGuide=photo&&z&&screen==='setup'&&(z.seamMarginCm??0)>0
+                ?safeZonePolygon(photo,z.placement,z.aspect,product.views[view].calibration??{},z.seamMarginCm??0):null
               return <div className={'mockup-view'+(active===view?' is-active':'')} key={view}>
                 <div className="mockup-view-title"><strong>{LABELS[view]}</strong><span>{photo?.name||'Sin fotografía'}</span></div>
                 {photo?<div className="mockup-stage" style={{aspectRatio:photo.width+'/'+photo.height,cursor:calibrationMode?.view===view||maskEditing===view?'crosshair':undefined}}
@@ -530,6 +532,10 @@ export function ProductMockupStudio(){
                     <polygon points={(outline??quad).map(p=>p.x*100+','+p.y*100).join(' ')}/>
                     {quad.map((p,i)=><circle key={i} cx={p.x*100} cy={p.y*100} r="1.15"/>)}
                   </svg>}
+                  {screen==='setup'&&guides&&safeGuide&&safeGuide.length>2&&
+                    <svg className="mockup-seam-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                      <polygon points={safeGuide.map(p=>p.x*100+','+p.y*100).join(' ')}/>
+                    </svg>}
                   {screen==='setup'&&(guides||maskEditing===view)&&silhouette.length>0&&
                     <svg className={'mockup-mask-guides'+(maskEditing===view?' is-editing':'')}
                       viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -617,6 +623,33 @@ export function ProductMockupStudio(){
               <p className="mockup-note">{photoScale?'Dos referencias listas: ya podés usar centímetros.':'Completá ancho y alto para habilitar medidas en centímetros.'}</p>
             </div>
             <div className="mockup-divider"/>
+            <section className="mockup-mask-editor" aria-label="Máscara de silueta">
+              <h3>Silueta de la prenda · {LABELS[active]}</h3>
+              <p className="mockup-note">Marcá el borde de la tela para que el estampado no aparezca fuera de la prenda. El recorte se aplica solamente al mockup.</p>
+              {maskEditing===active?<div className="mockup-mask-actions">
+                <p role="status">Puntos: {maskDraft.length} de 32. Tocá para añadir y arrastrá un punto para corregirlo.</p>
+                <div className="mockup-mask-buttons">
+                  <button type="button" disabled={maskDraft.length===0} onClick={()=>setMaskDraft(points=>points.slice(0,-1))}>Deshacer punto</button>
+                  <button type="button" className="mockup-primary" disabled={restoreGarmentMask(maskDraft).length<3}
+                    onClick={saveSilhouette}>Guardar contorno</button>
+                  <button type="button" onClick={()=>{setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}}>Cancelar</button>
+                </div>
+                {maskDraft.length>=3&&restoreGarmentMask(maskDraft).length<3&&
+                  <p className="mockup-print-warning">El contorno tiene cruces o es demasiado pequeño. Mové los puntos para corregirlo.</p>}
+              </div>:<div className="mockup-mask-actions">
+                <p>{current?.silhouette?.length?current.silhouette.length+' puntos guardados · recorte activo':'Sin silueta: el estampado puede salir del borde de la tela.'}</p>
+                <div className="mockup-mask-buttons">
+                  <button type="button" disabled={!photo||busy} onClick={()=>{
+                    setCalibrationMode(null);setMaskDraft((current?.silhouette??[]).map(p=>({...p})));setMaskEditing(active);setError('')
+                  }}>{current?.silhouette?.length?'Editar silueta':'Dibujar silueta'}</button>
+                  {Boolean(current?.silhouette?.length)&&<button type="button" className="mockup-remove"
+                    onClick={()=>updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],silhouette:[]}}}))}>
+                    Quitar máscara
+                  </button>}
+                </div>
+              </div>}
+            </section>
+            <div className="mockup-divider"/>
             <h3>Zonas de estampado · {LABELS[active]}</h3>
             <button type="button" className="mockup-secondary-full" onClick={()=>{
               const z=newZone(active,'Zona '+(current!.zones.length+1))
@@ -631,6 +664,24 @@ export function ProductMockupStudio(){
               <label className="mockup-adjustment"><span>Ancho relativo de la zona: {Math.round(selectedZone.placement.width*100)}%</span><input type="range" min="4" max="95" value={Math.round(selectedZone.placement.width*100)} onChange={e=>updateZone(active,selectedZone.id,z=>({...z,placement:{...z.placement,width:Number(e.target.value)/100}}))}/></label>
               <label className="mockup-adjustment"><span>Proporción (ancho/alto): {selectedZone.aspect.toFixed(2)}</span><input type="range" min="0.25" max="3" step=".05" value={selectedZone.aspect} onChange={e=>updateZone(active,selectedZone.id,z=>({...z,aspect:Number(e.target.value)}))}/></label>
               {zoneCm&&<p className="mockup-physical-summary">Zona estimada: <strong>{zoneCm.width.toFixed(1)} × {zoneCm.height.toFixed(1)} cm</strong></p>}
+              <div className="mockup-seam-settings">
+                <label className="mockup-field">Distancia de seguridad a costuras (cm)
+                  <input type="number" min="0" max="8" step=".1" disabled={!photoScale}
+                    value={selectedZone.seamMarginCm??0}
+                    onChange={e=>updateZone(active,selectedZone.id,z=>({...z,seamMarginCm:bound(Number(e.target.value)||0,0,8)}))}/>
+                </label>
+                <label className="mockup-option-toggle">
+                  <input type="checkbox" checked={Boolean(selectedZone.clipToZone)}
+                    onChange={e=>updateZone(active,selectedZone.id,z=>({...z,clipToZone:e.target.checked}))}/>
+                  Recortar visualmente el estampado a la zona segura
+                </label>
+                <p className="mockup-note">{photoScale
+                  ?'El margen reduce la zona permitida desde sus bordes. El trazo punteado muestra el área segura.'
+                  :'Calibrá primero esta fotografía para configurar márgenes reales en cm.'}</p>
+                {safeBoundary?.length===0&&<p className="mockup-print-warning">
+                  El margen elegido es demasiado grande para esta zona. Reducilo o ampliá la zona.
+                </p>}
+              </div>
               <button type="button" className="mockup-danger-action" onClick={()=>{
                 if(current!.zones.length<=1){setError('Cada vista debe conservar al menos una zona.');return}
                 updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],zones:p.views[active].zones.filter(z=>z.id!==selectedZone.id)}}}))
@@ -665,7 +716,8 @@ export function ProductMockupStudio(){
                 </div>
                 <p className="mockup-note">Escribí una medida y pulsá Enter. La otra se calcula automáticamente, sin deformar el PNG.</p>
               </div>}
-              {!printFits&&selectedArt&&<p className="mockup-print-warning" role="status">El estampado sobresale de su zona. Reducilo o movelo antes de exportar.</p>}
+              {!printFits&&selectedArt&&<p className="mockup-print-warning" role="status">El estampado excede la zona segura o su margen de costura. Reducilo o movelo.</p>}
+              {!fabricFits&&selectedArt&&<p className="mockup-print-warning" role="status">Parte del estampado queda fuera de la silueta de tela y será recortada visualmente en el mockup.</p>}
               {selectedArt&&<section className="mockup-sleeve-controls" aria-label="Adaptación curva para mangas">
                 <h3>Adaptación a mangas</h3>
                 <p className="mockup-note">El estampado sigue el volumen de la tela. También podés activar este modo en una fotografía lateral.</p>
