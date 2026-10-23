@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { initialPlacement, placementQuad, pointInQuad, restorePlacement, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
+import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
 import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 
 const source=(path:string)=>readFileSync(path,'utf8')
@@ -41,6 +41,35 @@ assert.deepEqual(restoreCalibration({horizontal:{from:{x:0,y:0},to:{x:0,y:0},cm:
 assert.equal(photoPixelsPerCm(photo,{}),null,'Legacy products must stay uncalibrated')
 assert.equal(printDimensionsCm(photo,art,p,{}),null,'Do not claim physical measures without both references')
 
+// Sleeve cylinder mesh must preserve corner anchors, be opt-in for old drafts and
+// create a real (non-affine) curvature with accurate guides and hit testing.
+const sleeveQuad=placementQuad(photo,art,p)
+const straightPoint=curvedArtworkPoint(sleeveQuad,1,.5)
+const softCurve={...defaultSleeveCurve(),strength:80}
+const curvedPoint=curvedArtworkPoint(sleeveQuad,1,.5,softCurve)
+assert.ok(curvedPoint.x>straightPoint.x+.01,'Sleeve bend should bow the edge away from its flat quad')
+for(const [u,v,index] of [[0,0,0],[1,0,1],[1,1,2],[0,1,3]] as const){
+  const result=curvedArtworkPoint(sleeveQuad,u,v,softCurve)
+  assert.ok(Math.abs(result.x-sleeveQuad[index].x)<1e-9&&Math.abs(result.y-sleeveQuad[index].y)<1e-9,'Sleeve corners must stay fixed')
+}
+const curvedOutline=artworkOutline(photo,art,{...p,sleeveCurve:softCurve})
+assert.equal(curvedOutline.length,64,'Curved guide contour should follow the warped mesh')
+assert.equal(artworkOutline(photo,art,p).length,4,'Legacy prints must retain their flat outline')
+assert.ok(!pointInArtwork({x:.01,y:.01},curvedOutline),'Hit testing should reject clicks outside the sleeve')
+const nearBulge={x:(straightPoint.x+curvedPoint.x)/2,y:curvedPoint.y}
+assert.ok(pointInArtwork(nearBulge,curvedOutline),'Bulging sleeve edge must remain draggable')
+const reverse=curvedArtworkPoint(sleeveQuad,1,.5,{...softCurve,direction:-1})
+assert.ok(reverse.x<straightPoint.x-.01,'Bend direction must be reversible')
+const horizontal=curvedArtworkPoint(sleeveQuad,.5,1,{...softCurve,axis:'horizontal'})
+const flatHorizontal=curvedArtworkPoint(sleeveQuad,.5,1)
+assert.ok(horizontal.y>flatHorizontal.y+.01,'Sleeve wrap axis must be selectable')
+assert.ok(artworkFitsZone(photo,art,{...p,sleeveCurve:softCurve},{...p,width:.5},1),'A curved small print should fit a larger print zone')
+assert.ok(!artworkFitsZone(photo,art,{...p,width:.5,sleeveCurve:softCurve},{...p,width:.5},1),'Bulging contour outside zone must be flagged')
+assert.equal(restorePlacement({ ...p },'leftSleeve').sleeveCurve,undefined,'Old saved drafts must remain uncurved')
+assert.deepEqual(restorePlacement({...p,sleeveCurve:softCurve},'leftSleeve').sleeveCurve,softCurve,'Sleeve curve must survive settings restoration')
+assert.equal(restoreSleeveCurve({strength:999,axis:'bad',direction:99})?.strength,100,'Invalid sleeve values must be clamped')
+assert.ok(Math.abs(curvedArtworkPoint(sleeveQuad,.2,.35,{...softCurve,strength:0}).x-curvedArtworkPoint(sleeveQuad,.2,.35).x)<1e-9,'Zero curvature must be strictly equivalent to flat projection')
+
 const productPage=source('src/components/mockups/ProductMockupStudio.tsx')
 assert.ok(productPage.includes('mockup-products.v2')&&productPage.includes('Crear producto')&&productPage.includes('Nuevo mockup'),'Missing product-first library')
 assert.ok(productPage.includes('Duplicar')===false || productPage.includes('duplicate'),'Product duplication handler missing')
@@ -48,6 +77,8 @@ assert.ok(productPage.includes('leftSleeve')&&productPage.includes('rightSleeve'
 assert.ok(productPage.includes('restoreCalibration')&&productPage.includes('calibrationMode'),'Per-view editable calibration not wired')
 assert.ok(productPage.includes('placementWidthForCm')&&productPage.includes('printDimensionsCm'),'Numeric print sizing not wired')
 assert.ok(productPage.includes('zoneDimensionsCm')&&productPage.includes('artworkFitsZone'),'Cm zone sizing and overflow warnings missing')
+assert.ok(productPage.includes('Adaptación a mangas')&&productPage.includes('defaultSleeveCurve'),'Curvature controls or automatic sleeve presets missing')
+assert.ok(productPage.includes('pointInArtwork')&&productPage.includes('artworkOutline'),'Curved hit testing and outline guides missing')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-calibration-grid'),'Responsive calibration panel missing')
 assert.ok(productPage.includes('Añadir zona')&&productPage.includes('zoneId'),'Independent print zones must be configurable')
 assert.ok(productPage.includes("screen==='setup'")&&productPage.includes("screen==='mockup'"),'Product authoring and artwork application must remain separate')
@@ -69,6 +100,9 @@ assert.ok(page.includes('setActive(view)')&&page.includes('setPointerCapture'),'
 assert.ok(page.includes('onPointerDown')&&page.includes('pointerMove'),'Mouse/touch editing missing')
 assert.ok(page.includes("exportMockup('combined')")&&page.includes("exportMockup('active')"),'Both export modes required')
 assert.ok(engine.includes('renderGarment')&&engine.includes('warpedArtwork')&&engine.includes('placement.lighting'),'Compositing, warp or fabric lights missing')
+assert.ok(engine.includes('warpedArtwork(layer,art,quad,width,height,placement.sleeveCurve)'),'Both preview and export must use sleeve warping in the common renderer')
+assert.ok(engine.includes('const outline=artworkOutline'),'Curve must be included in lighting bounds')
+assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-sleeve-controls'),'Responsive sleeve controls are missing')
 assert.ok(page.includes("Sin fotografía")&&page.includes("Sin cargar"),'Empty templates must be understandable')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('@media(max-width:690px)'),'Mobile editor layout missing')
-console.log('Mockup Studio QA: product library, proportional scaling, multi-zone editor and legacy routes passed.')
+console.log('Mockup Studio QA: calibration, cylindrical sleeve mesh, print bounds, product catalogue and legacy routes passed.')
