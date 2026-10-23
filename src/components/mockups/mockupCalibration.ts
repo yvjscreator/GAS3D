@@ -1,4 +1,4 @@
-import { bound, placementQuad, type Placement, type Point } from './mockupEngine'
+import { artworkOutline, bound, placementQuad, type Placement, type Point } from './mockupEngine'
 
 /** Two independently measured photo-space axes. Coordinates are fractions of the photo. */
 export type CalibrationAxis = 'horizontal' | 'vertical'
@@ -99,5 +99,5 @@ export function artworkFitsZone(
 ): boolean {
   if (!Number.isFinite(zoneAspect) || zoneAspect <= 0) return false
   const boundary = placementQuad(photo, { width: 1000, height: 1000 / zoneAspect }, zone)
-  return placementQuad(photo, art, print).every(point => insideConvexQuad(point, boundary))
+  return artworkOutline(photo, art, print).every(point => insideConvexQuad(point, boundary))
 }
