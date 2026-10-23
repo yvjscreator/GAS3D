@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { initialPlacement, placementQuad, pointInQuad, restorePlacement, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
-import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, restoreCalibration, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
+import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 
 const source=(path:string)=>readFileSync(path,'utf8')
 const front=initialPlacement('front'),back=initialPlacement('back')
@@ -29,6 +29,10 @@ assert.ok(cm&&Math.abs(cm.width-30)<1e-8&&Math.abs(cm.height-100/3)<1e-8,'Print 
 assert.equal(placementWidthForCm(photo,art,calibration,'horizontal',35),.35,'Changing print width must preserve bitmap aspect')
 assert.equal(placementWidthForCm(photo,art,calibration,'vertical',40),.36,'Height-driven sizing must preserve bitmap aspect')
 assert.equal(printDimensionsCm(photo,art,{...p,width:.35},calibration)?.width,35)
+const warped={...p,corners:[{x:.04,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}] as typeof p.corners}
+const resized=resizePrintPreservingWarp(warped,.6)
+assert.equal(resized.width,.6)
+assert.ok(Math.abs(resized.corners[0].x-.08)<1e-8,'Resize must preserve existing manual warp proportions')
 const area=zoneDimensionsCm(photo,{...p,width:.5},1,calibration)
 assert.ok(area&&Math.abs(area.width-50)<1e-8&&Math.abs(area.height-500/12)<1e-8,'Zone bounds need centimeter dimensions')
 assert.ok(artworkFitsZone(photo,art,p,{...p,width:.5},1),'Normal artwork must fit inside its zone')
