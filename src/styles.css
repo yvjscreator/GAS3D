@@ -224,6 +224,11 @@ h2 { font-size:var(--font-ui-section); }
 .ui-icon-button.record { color:#fff0f2; background:#a93745; border-color:#d45563; }.ui-icon-button.record:hover:not(:disabled) { background:#c44352; border-color:#ef6d79; }
 .ui-icon-button.record svg { fill:currentColor; }
 .ui-tool-group { display:flex; align-items:center; gap:5px; min-width:0; }
+.ui-inline-field { display:grid; gap:5px; min-width:0; }
+.ui-inline-field>label { color:#bed4e6; font-size:11px; font-weight:650; line-height:1.35; }
+.ui-inline-field-controls { display:grid; grid-template-columns:minmax(0,1fr) repeat(var(--inline-actions),auto); align-items:center; gap:6px; min-width:0; }
+.ui-inline-field-controls>* { min-width:0; }
+.ui-inline-field-controls>input { width:100%; }
 .ui-segmented { display:flex; align-items:center; gap:3px; padding:3px; background:#10151c; border:1px solid #303b48; border-radius:8px; }
 .ui-segmented button { display:flex; align-items:center; justify-content:center; gap:5px; min-height:31px; padding:0 10px; color:#77859a; background:transparent; border:0; border-radius:5px; font-size:var(--font-ui-meta); font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
 .ui-segmented button.active { color:#eef7ff; background:#28547f; box-shadow:0 2px 8px #0008; }.ui-segmented button:last-child.active { background:#4b327e; }

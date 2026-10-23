@@ -16,6 +16,25 @@ Recommended composition for a wide studio work area:
 
 Adapt the number of columns to actual container width, not only viewport width: for example 3 → 2 → 1 for cards and 4 → 2 → 1 for settings. Do not force a third column if it leaves tiny cards. Use `grid-template-columns:repeat(N,minmax(0,1fr))`, `min-width:0` on children and container queries or breakpoints that reflect the layout's real available width.
 
+## Compact field/action groups inside every container
+
+The same rule applies to narrow sidebars, dialogs and cards, across every GAS3D module. A sidebar's width does not justify an endless stack of full-width controls. Distinguish independent groups (which may need separate rows) from the field and actions belonging to ONE operation (which should share a row).
+
+For a calibration reference, use this structure even in a ~285px inspector:
+
+```text
+Ancho de referencia (cm)
+[54           ][Marcar][✓][×]
+Alto de referencia (cm)
+[70           ][Marcar][✓][×]
+```
+
+Reuse `InlineField` from `src/components/ui/primitives.tsx`: its label sits above an input/action grid, with a flexible field and intrinsic action columns. `src/components/mockups/PhotoCalibrationControls.tsx` is the working example. ✓ applies only that reference; × restores its last saved state. Keep button names available through accessible labels and tooltips, and preserve keyboard input. On touch screens keep 44px actions while retaining the row where it fits.
+
+Apply the pattern to name+edit tools, number+unit/actions, sliders+labels, layer selection+mode switches and related presets. Do not shrink text into unreadability or move primary controls into closed accordions. Long explanations can be optional help; active validation stays beside its field. Saved-state text should not require its own full-width row when an icon or inline state suffices.
+
+Before finishing, inspect a populated inspector at desktop, medium and narrow widths, including an active edit. Check actual field/button bounding boxes, container scroll height and reachability of save/cancel/export. A static assertion that a grid exists does not prove the controls fit, and a large empty canvas does not justify unnecessary scrolling in the sidebar.
+
 ## Universal app switcher in every studio header
 
 Use `AppLauncher` from `src/components/navigation/AppLauncher.tsx` in each tool's compact header, rather than adding a second toolbar on top of one. Preserve module-specific controls: generated voice/script in subtitles, image export/Zen, and recording/preview in video. On narrow screens, keep touch targets usable and allow the menu to overlay fixed editors without clipping. The five tools must all be reachable directly.

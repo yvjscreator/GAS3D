@@ -33,7 +33,7 @@ export function MockupLayers({ product, active, modes, labels, photos, disabled,
         </button>
         <button type="button" role="switch" aria-label={'Modo MockUp de ' + labels[view]} aria-checked={modes[view] === 'mockup'} disabled={disabled}
           className="mockup-layer-mode" onClick={() => onMode(view, modes[view] === 'setup' ? 'mockup' : 'setup')}>
-          <span className={modes[view] === 'setup' ? 'is-current' : ''}>Configuración</span><i aria-hidden="true" /><span className={modes[view] === 'mockup' ? 'is-current' : ''}>MockUp</span>
+          <span className={modes[view] === 'setup' ? 'is-current' : ''}>Config.</span><i aria-hidden="true" /><span className={modes[view] === 'mockup' ? 'is-current' : ''}>MockUp</span>
         </button>
       </article>)}
     </div>

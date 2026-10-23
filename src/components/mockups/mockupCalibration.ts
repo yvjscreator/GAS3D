@@ -5,6 +5,18 @@ export type CalibrationAxis = 'horizontal' | 'vertical'
 export type CalibrationLine = { from: Point; to: Point; cm: number }
 export type PhotoCalibration = { horizontal?: CalibrationLine; vertical?: CalibrationLine }
 export type PhotoSize = { width: number; height: number }
+export type CalibrationDraft = { axis: CalibrationAxis; first: Point | null; second?: Point }
+
+/** Apply an edited length or a completed new segment; incomplete marking never falls back to old points. */
+export function calibrationLineToSave(saved: CalibrationLine | undefined, draft: CalibrationDraft | null, axis: CalibrationAxis, value: string): CalibrationLine | null {
+  const cm = Number(value)
+  const marking = draft?.axis === axis ? draft : null
+  const from = marking ? marking.first : saved?.from
+  const to = marking ? marking.second : saved?.to
+  if (!validLength(cm) || !validPoint(from) || !validPoint(to)) return null
+  if (Math.abs(axis === 'horizontal' ? to.x - from.x : to.y - from.y) < .005) return null
+  return { from: { ...from }, to: { ...to }, cm }
+}
 
 /** Readable source-pixel or cm ticks, following the photo origin and zoom. */
 export function rulerTicks(length:number,origin:number,pixelsPerUnit:number){

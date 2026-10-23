@@ -24,6 +24,15 @@ export function ToolGroup({ label, className = '', children }: { label: string; 
   return <div className={`ui-tool-group ${className}`.trim()} role="group" aria-label={label}>{children}</div>
 }
 
+/** Keep a field and its related actions together, including inside narrow inspectors. */
+export function InlineField({ label, htmlFor, actionCount = 1, children, className = '' }: {
+  label: string; htmlFor: string; actionCount?: number; children: ReactNode; className?: string
+}) {
+  return <div className={'ui-inline-field ' + className} style={{ '--inline-actions': actionCount } as CSSProperties}>
+    <label htmlFor={htmlFor}>{label}</label><div className="ui-inline-field-controls">{children}</div>
+  </div>
+}
+
 export type SegmentedOption<T extends string> = { value: T; label: string; icon?: LucideIcon; disabled?: boolean }
 
 export function SegmentedControl<T extends string>({ value, options, onChange, label, compact = false }: { value: T; options: SegmentedOption<T>[]; onChange: (value: T) => void; label: string; compact?: boolean }) {

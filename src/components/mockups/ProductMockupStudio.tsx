@@ -5,7 +5,7 @@ import { loadMedia, removeMedia, storeMedia, storeMediaMetadata } from '../../ut
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
 import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type RenderLayer, type ViewName } from './mockupEngine'
 import { pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from './mockupMasks'
-import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, zoneDimensionsCm, type CalibrationAxis } from './mockupCalibration'
+import { artworkFitsZone, calibrationLineToSave, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, zoneDimensionsCm, type CalibrationAxis } from './mockupCalibration'
 import { detectGarment, type GarmentDetection } from './garmentDetection'
 import { PhotoRulers } from './PhotoRulers'
 import { configuredZoneOutline, resizeZoneFromEdge, zoneEdgeHandles, ZONE_EDGE_NAMES, type ZoneGeometry } from './mockupZoneGeometry'
@@ -13,7 +13,8 @@ import { LIBRARY_KEY, photoKey, preferredZone, productIsDirty, restoreProducts, 
 import { loadProductPhoto, type CloudConnection } from './mockupCloud'
 import { useMockupCloud } from './useMockupCloud'
 import { CloudLibraryPanel } from './CloudLibraryPanel'
-import { IconButton } from '../ui/primitives'
+import { IconButton, InlineField } from '../ui/primitives'
+import { PhotoCalibrationControls } from './PhotoCalibrationControls'
 import { notify, useTaskNotice } from '../ui/notifications'
 import { requestConfirmation } from '../ui/confirmation'
 import { MockupLayers } from './MockupLayers'
@@ -372,12 +373,21 @@ export function ProductMockupStudio(){
     if(!previous)return
     setMaskDraft(previous.points);setMaskClosed(previous.closed);setMaskHistory(history=>history.slice(0,-1));setSelectedNode(null)
   }
-  const saveCalibration=()=>{
-    if(!calibrationMode?.first||!calibrationMode.second)return
-    const {view,axis,first,second}=calibrationMode,cm=Number(measureDraft[view+':'+axis]??calibration[axis]?.cm)
-    if(!Number.isFinite(cm)||cm<.1||cm>500){setError('Asigná al tramo una medida entre 0,1 y 500 cm.');return}
-    updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],calibration:{...p.views[view].calibration,[axis]:{from:first,to:second,cm}}}}}))
-    setCalibrationMode(null);setError('');setFeedback('Referencia guardada. Las reglas y los tamaños usan esta escala estimada.')
+  const clearMeasureDraft=(axis:CalibrationAxis)=>setMeasureDraft(old=>{
+    const next={...old};delete next[active+':'+axis];return next
+  })
+  const saveCalibration=(axis:CalibrationAxis)=>{
+    const pending=calibrationMode?.view===active?calibrationMode:null
+    const value=measureDraft[active+':'+axis]??calibration[axis]?.cm.toString()??''
+    const line=calibrationLineToSave(calibration[axis],pending,axis,value)
+    if(!line){setError('Marcá dos puntos y asigná una medida válida entre 0,1 y 500 cm.');return}
+    updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],calibration:{...p.views[active].calibration,[axis]:line}}}}))
+    if(pending?.axis===axis)setCalibrationMode(null)
+    clearMeasureDraft(axis);setFeedback('Referencia guardada. Las reglas y los tamaños usan esta escala estimada.')
+  }
+  const cancelCalibration=(axis:CalibrationAxis)=>{
+    if(calibrationMode?.view===active&&calibrationMode.axis===axis)setCalibrationMode(null)
+    clearMeasureDraft(axis)
   }
   const openUpload=(kind:'photo'|'art',view:ViewName,zid?:string)=>{
     if(busy||cloud.working||loadedId!==selectedId)return
@@ -877,60 +887,25 @@ export function ProductMockupStudio(){
             }}/>{LABELS[v]}</label>)}</div>
             </div>
             <div className="mockup-divider"/>
-            <div className="mockup-calibration">
-              <h3>Calibración de fotografía · {LABELS[active]}</h3>
-              <p className="mockup-note">Marcá dos puntos y asignale al tramo su medida en cm. Una referencia estima ambos ejes; podés añadir la otra para afinar la escala.</p>
-              <div className="mockup-calibration-grid">
-                {(['horizontal','vertical'] as const).map(axis=>{
-                  const line=current?.calibration?.[axis]
-                  const key=active+':'+axis
-                  const value=measureDraft[key]??(line?.cm?.toString()??'')
-                  return <div key={axis} className="mockup-calibration-axis">
-                    <label className="mockup-field">{axis==='horizontal'?'Ancho de referencia (cm)':'Alto de referencia (cm)'}
-                      <input type="number" min=".1" max="500" step=".1" value={value}
-                        onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();saveCalibration()}}}
-                        onChange={e=>{
-                          const input=e.target.value
-                          setMeasureDraft(old=>({...old,[key]:input}))
-                          const cm=Number(input)
-                          if(line&&calibrationMode?.axis!==axis&&input.trim()&&Number.isFinite(cm)&&cm>=.1&&cm<=500){
-                            updateProduct(p=>({...p,views:{...p.views,[active]:{
-                              ...p.views[active],
-                              calibration:{...p.views[active].calibration,[axis]:{...line,cm}},
-                            }}}))
-                          }
-                        }}/>
-                    </label>
-                    <button type="button" disabled={!models[active].photo||busy}
-                      className={calibrationMode?.view===active&&calibrationMode.axis===axis?'is-marking':''}
-                      onClick={()=>{setError('');setZenTool('zone');setInspector('calibration');setCalibrationMode({view:active,axis,first:null});openZen(active,true)}}>
-                      {line?'Volver a marcar':'Marcar en foto'}
-                    </button>
-                    <small>{line?'Referencia marcada':'Sin referencia'}</small>
-                  </div>
-                })}
-              </div>
-              {calibrationMode?.view===active&&<div className="mockup-calibration-prompt" role="status">
-                <span>{calibrationMode.second?'Tramo listo. Escribí sus centímetros y guardá la referencia.':`Marcá ${calibrationMode.first?'el segundo':'el primer'} punto sobre la fotografía.`}</span>
-                {calibrationMode.second&&<button type="button" onClick={saveCalibration}>Guardar referencia</button>}
-                <button type="button" onClick={()=>setCalibrationMode(null)}>Cancelar</button>
-              </div>}
-              <p className="mockup-note">{photoScale?(calibration.horizontal&&calibration.vertical?'Dos referencias: escala estimada por eje.':'Una referencia: escala uniforme estimada en cm. Las medidas de ChatGPT son aproximadas.'):'Sin referencia: las reglas muestran píxeles. Marcá el alto de la prenda, sin incluir el fondo, y asignale una medida conocida o estimada.'}</p>
-            </div>
+            <PhotoCalibrationControls calibration={calibration}
+              values={{horizontal:measureDraft[active+':horizontal'],vertical:measureDraft[active+':vertical']}}
+              pending={calibrationMode?.view===active?calibrationMode:null} disabled={!photo||busy||cloud.working}
+              onValue={(axis,value)=>setMeasureDraft(old=>({...old,[active+':'+axis]:value}))}
+              onMark={axis=>{setZenTool('zone');setInspector('calibration');setCalibrationMode({view:active,axis,first:null});openZen(active,true)}}
+              onSave={saveCalibration} onCancel={cancelCalibration}/>
             <div className="mockup-divider"/>
             <section className="mockup-mask-editor" aria-label="Pluma de silueta o zona">
               <h3>{maskEditing===active&&penTarget==='zone'?'Contorno de zona':'Silueta de la prenda'} · {LABELS[active]}</h3>
-              <p className="mockup-note">{maskEditing===active&&penTarget==='zone'?'Dibujá el límite de esta zona de impresión. Al guardar se activa su recorte visual, conservando el PNG original.':'Marcá el borde de la tela para que el estampado no aparezca fuera de la prenda. El recorte se aplica solamente al mockup.'}</p>
+              <details className="mockup-control-help"><summary>Cómo usar la Pluma</summary><p>Elegí la silueta de tela o la zona de estampado. Tocá para añadir nodos, arrastrá para moverlos y tocá el primero para cerrar. Guardar aplica el recorte al mockup y conserva el PNG original.</p></details>
               <div className="mockup-pen-targets" role="group" aria-label="Objetivo de la Pluma">
-                <button type="button" aria-pressed={maskEditing===active&&penTarget==='zone'} disabled={!photo||busy} onClick={()=>beginMask(active,'zone')}><PenTool size={16}/> Zona de estampado</button>
-                <button type="button" aria-pressed={maskEditing===active&&penTarget==='fabric'} disabled={!photo||busy} onClick={()=>beginMask(active,'fabric')}><Shirt size={16}/> Silueta de la prenda</button>
+                <button type="button" aria-pressed={maskEditing===active&&penTarget==='zone'} disabled={!photo||busy} aria-label="Zona de estampado" onClick={()=>beginMask(active,'zone')}><PenTool size={16}/> Zona</button>
+                <button type="button" aria-pressed={maskEditing===active&&penTarget==='fabric'} disabled={!photo||busy} aria-label="Silueta de la prenda" onClick={()=>beginMask(active,'fabric')}><Shirt size={16}/> Silueta</button>
               </div>
-              <div className="mockup-mask-buttons">
-                <button type="button" disabled={!photo||busy||!!maskEditing&&penTarget==='zone'} onClick={()=>{if(photo)detectPhoto(photo,active)}}><ScanLine size={16}/> Detectar prenda</button>
-              </div>
-              {maskEditing===active&&<p className="mockup-note">Pluma sobre: {penTarget==='fabric'?'silueta de la prenda':current?.zones.find(z=>z.id===penZoneId)?.name??'zona de impresión'}. Segmentos rectos con nodos editables.</p>}
+              {!(maskEditing===active&&penTarget==='zone')&&<div className="mockup-mask-buttons">
+                <button type="button" disabled={!photo||busy} onClick={()=>{if(photo)detectPhoto(photo,active)}}><ScanLine size={16}/> Detectar prenda</button>
+              </div>}
               {maskEditing===active?<div className="mockup-mask-actions">
-                <p role="status">Puntos: {maskDraft.length} de 32 · {maskClosed?'Contorno cerrado':'Contorno abierto'}. {maskClosed?'Tocá un borde para añadir un nodo.':'Tocá el primer nodo para cerrar.'} Arrastrá los nodos para corregir.</p>
+                <p role="status">{penTarget==='fabric'?'Silueta':current?.zones.find(z=>z.id===penZoneId)?.name??'Zona'} · {maskDraft.length}/32 nodos · {maskClosed?'Cerrado':'Tocá el primer nodo para cerrar'}</p>
                 <div className="mockup-mask-buttons">
                   <button type="button" disabled={!maskHistory.length} onClick={undoMask}>Deshacer</button>
                   <button type="button" disabled={selectedNode===null} onClick={()=>{
@@ -967,13 +942,13 @@ export function ProductMockupStudio(){
               }}>Añadir zona sugerida</button>
             </section>}
             <div className="mockup-divider"/>
-            <div className="mockup-zone-heading"><h3>Zonas de estampado · {LABELS[active]}</h3>
-            <button type="button" className="mockup-secondary-full" onClick={()=>{
+            <div className="mockup-zone-heading"><h3>Zonas de estampado</h3>
+            <button type="button" className="mockup-add-zone" aria-label="Añadir zona" title="Añadir zona de estampado" onClick={()=>{
               const z=newZone(active,'Zona '+(current!.zones.length+1))
               updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],defaultZoneId:z.id,zones:[...p.views[active].zones,z]}}}))
               setZoneId(z.id)
-            }}><Plus size={16}/> Añadir zona</button></div>
-          </>:<><h2>Estampados · {LABELS[active]}</h2><p className="mockup-note">Elegí una zona y añadí su PNG. Podés usar varios estampados por vista.</p></>}
+            }}><Plus size={16}/></button></div>
+          </>:<details className="mockup-control-help"><summary>Cómo colocar un estampado</summary><p>Elegí una zona y añadí su PNG. Podés usar varios estampados por vista.</p></details>}
           <section className="mockup-zone-inspector">
           <div className="mockup-zone-tabs">{current?.zones.map(z=><button type="button" key={z.id} className={z.id===selectedZone?.id?'active':''} onClick={()=>{
             if(maskEditing){setInspector('pen');setError('Guardá o cancelá el trazo antes de cambiar de zona.');return}
@@ -982,15 +957,17 @@ export function ProductMockupStudio(){
           }}>{z.name}</button>)}</div>
           {selectedZone&&<div className="mockup-zone-controls">
             {screen==='setup'?<>
-              <label className="mockup-field">Nombre de zona<input value={selectedZone.name} onChange={e=>updateZone(active,selectedZone.id,z=>({...z,name:e.target.value}))}/></label>
-              <button type="button" className="mockup-secondary-full" onClick={()=>beginMask(active,'zone')}><PenTool size={16}/> Editar zona con Pluma</button>
-              {Boolean(selectedZone.polygon?.length)&&<><p className="mockup-note">Zona personalizada: {selectedZone.polygon!.length} nodos. Arrastrá el área para moverla o usá la Pluma para cambiar su forma.</p>
-                <button type="button" className="mockup-secondary-full" onClick={()=>updateZone(active,selectedZone.id,z=>({...z,polygon:[]}))}>Volver a zona rectangular</button></>}
+              <InlineField label="Nombre de zona" htmlFor="mockup-zone-name">
+                <input id="mockup-zone-name" value={selectedZone.name} onChange={e=>updateZone(active,selectedZone.id,z=>({...z,name:e.target.value}))}/>
+                <IconButton icon={PenTool} label="Editar zona con Pluma" title="Editar zona con Pluma" onClick={()=>beginMask(active,'zone')}/>
+              </InlineField>
+              {Boolean(selectedZone.polygon?.length)&&<div className="mockup-inline-summary"><span>{selectedZone.polygon!.length} nodos · zona personalizada</span>
+                <IconButton icon={RotateCcw} label="Volver a zona rectangular" title="Volver a zona rectangular" onClick={()=>updateZone(active,selectedZone.id,z=>({...z,polygon:[]}))}/></div>}
               <label className="mockup-adjustment"><span>Ancho relativo de la zona: {Math.round(selectedZone.placement.width*100)}%</span><input type="range" min="4" max="95" value={Math.round(selectedZone.placement.width*100)} onChange={e=>editPlacement(active,selectedZone,p=>({...p,width:Number(e.target.value)/100}))}/></label>
               {!selectedZone.polygon?.length&&<label className="mockup-adjustment"><span>Proporción (ancho/alto): {selectedZone.aspect.toFixed(2)}</span><input type="range" min="0.25" max="3" step=".05" value={selectedZone.aspect} onChange={e=>updateZone(active,selectedZone.id,z=>({...z,aspect:Number(e.target.value)}))}/></label>}
               {zoneCm&&<p className="mockup-physical-summary">Zona estimada: <strong>{zoneCm.width.toFixed(1)} × {zoneCm.height.toFixed(1)} cm</strong></p>}
               <div className="mockup-seam-settings">
-                <label className="mockup-field">Distancia de seguridad a costuras (cm)
+                <label className="mockup-field mockup-field-inline">Margen a costuras (cm)
                   <input type="number" min="0" max="8" step=".1"
                     value={selectedZone.seamMarginCm??0}
                     onChange={e=>updateZone(active,selectedZone.id,z=>({...z,seamMarginCm:bound(Number(e.target.value)||0,0,8)}))}/>
@@ -1000,9 +977,7 @@ export function ProductMockupStudio(){
                     onChange={e=>updateZone(active,selectedZone.id,z=>({...z,clipToZone:e.target.checked}))}/>
                   Recortar visualmente el estampado a la zona segura
                 </label>
-                <p className="mockup-note">{photoScale
-                  ?'El margen reduce la zona permitida desde sus bordes. El trazo punteado muestra el área segura.'
-                  :'Calibrá primero esta fotografía para configurar márgenes reales en cm.'}</p>
+                {!photoScale&&<p className="mockup-note">Calibrá la foto para usar márgenes en cm.</p>}
                 {safeBoundary?.length===0&&<p className="mockup-print-warning">
                   El margen no es válido: reducí su tamaño o usá un contorno convexo para aplicar un margen positivo.
                 </p>}
@@ -1018,7 +993,7 @@ export function ProductMockupStudio(){
               }}><Trash2 size={15}/> Eliminar zona</button>
             </>:<>
               <div className="mockup-asset-status"><span>Diseño</span><strong>{selectedArt?.name||'Sin cargar'}</strong></div>
-              <p className="mockup-note">El PNG se encaja en la zona del producto conservando su proporción. Si ya tenías un borrador, se restaura su posición. Usá «Encajar en zona del producto» para volver a la referencia configurada.</p>
+              <details className="mockup-control-help"><summary>Encaje y borradores</summary><p>El PNG conserva su proporción al encajarse en la zona. Se restaura su borrador local si existe. «Encajar en zona del producto» vuelve a la referencia configurada.</p></details>
               <div className="mockup-upload-actions">
                 <button type="button" disabled={busy||!models[active].photo} onClick={()=>openUpload('art',active,selectedZone.id)}><Upload size={15}/> PNG del arte</button>
                 <button type="button" disabled={busy||!selectedArt} onClick={()=>removeAsset('art',active,selectedZone.id)}><Trash2 size={15}/> Quitar arte</button>
@@ -1029,8 +1004,9 @@ export function ProductMockupStudio(){
                 <div className="mockup-cm-inputs">
                   {(['horizontal','vertical'] as const).map(axis=>{
                     const length=axis==='horizontal'?printCm.width:printCm.height
-                    return <label className="mockup-field" key={axis}>{axis==='horizontal'?'Ancho (cm)':'Alto (cm)'}
+                    return <label className="mockup-field" key={axis}>{axis==='horizontal'?'Ancho':'Alto'}
                       <input key={active+':'+selectedZone.id+':'+axis+':'+length.toFixed(2)}
+                        aria-label={axis==='horizontal'?'Ancho (cm)':'Alto (cm)'}
                         type="number" min=".1" max="500" step=".1" defaultValue={length.toFixed(1)}
                         onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}}
                         onBlur={e=>{
@@ -1043,13 +1019,13 @@ export function ProductMockupStudio(){
                     </label>
                   })}
                 </div>
-                <p className="mockup-note">Escribí una medida y pulsá Enter. La otra se calcula automáticamente, sin deformar el PNG.</p>
+                <p className="mockup-note">Enter aplica · proporción del PNG conservada.</p>
               </div>}
               {!printFits&&selectedArt&&<p className="mockup-print-warning" role="status">El estampado excede la zona segura o su margen de costura. Reducilo o movelo.</p>}
               {!fabricFits&&selectedArt&&<p className="mockup-print-warning" role="status">Parte del estampado queda fuera de la silueta de tela y será recortada visualmente en el mockup.</p>}
               {selectedArt&&<section className="mockup-sleeve-controls" aria-label="Adaptación curva para mangas">
                 <h3>Adaptación a mangas</h3>
-                <p className="mockup-note">El estampado sigue el volumen de la tela. También podés activar este modo en una fotografía lateral.</p>
+                <details className="mockup-control-help"><summary>Cómo funciona la curvatura</summary><p>Adapta el estampado al volumen de la tela, también en vistas laterales. Los cm se calculan antes de la proyección.</p></details>
                 <div className="mockup-sleeve-toggle" role="group" aria-label="Superficie de impresión">
                   <button type="button" className={!placementFor(active,selectedZone).sleeveCurve?.strength?'active':''}
                     aria-pressed={!placementFor(active,selectedZone).sleeveCurve?.strength}
@@ -1070,7 +1046,7 @@ export function ProductMockupStudio(){
                         {preset.label}
                       </button>)}
                   </div>
-                  <label className="mockup-field">Orientación de la envoltura
+                  <label className="mockup-field mockup-field-inline">Orientación
                     <select value={placementFor(active,selectedZone).sleeveCurve?.axis??'vertical'}
                       onChange={e=>editPlacement(active,selectedZone,p=>({...p,sleeveCurve:{...(p.sleeveCurve??defaultSleeveCurve()),axis:e.target.value==='horizontal'?'horizontal':'vertical'}}))}>
                       <option value="vertical">Vertical</option>
@@ -1088,7 +1064,6 @@ export function ProductMockupStudio(){
                           :(direction===-1?'Curvar arriba':'Curvar abajo')}
                       </button>)}
                   </div>
-                  <p className="mockup-note">La curvatura es visual: los centímetros se calculan antes de proyectar el estampado en la manga.</p>
                 </div>}
               </section>}
               <label className="mockup-adjustment"><span>Rotación: {placementFor(active,selectedZone).rotation}°</span><input type="range" min="-45" max="45" value={placementFor(active,selectedZone).rotation} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,rotation:Number(e.target.value)}))}/></label>

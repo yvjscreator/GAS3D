@@ -4,7 +4,7 @@ import { penFabricOutline } from '../src/components/mockups/mockupPen'
 import { initialViewModes } from '../src/components/mockups/mockupWorkspace'
 import { requestConfirmation, confirmationSnapshot, settleConfirmation, subscribeConfirmation } from '../src/components/ui/confirmation'
 import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
-import { artworkFitsZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
+import { artworkFitsZone, calibrationLineToSave, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
 import { detectGarment } from '../src/components/mockups/garmentDetection'
 import { configuredZoneOutline, resizeZoneFromEdge, zoneEdgeHandles } from '../src/components/mockups/mockupZoneGeometry'
@@ -69,6 +69,17 @@ const widerPen=resizeZoneFromEdge(photo,penZone,1,{x:10,y:0})
 assert.ok(widerPen.polygon!.every(p=>p.x>=0&&p.x<=1),'Extreme resize must stop at the photograph boundary')
 const line={horizontal:{from:{x:.2,y:.3},to:{x:.8,y:.3},cm:60},vertical:{from:{x:.3,y:.1},to:{x:.3,y:.9},cm:80}}
 const calibration=restoreCalibration(line)
+// Compact reference rows explicitly apply a draft; neither incomplete marking nor another axis may overwrite saved points.
+const savedReferences=structuredClone(calibration)
+assert.deepEqual(calibrationLineToSave(calibration.horizontal,null,'horizontal','54'),{...calibration.horizontal,cm:54})
+const pendingReference={axis:'horizontal' as const,first:{x:.2,y:.3},second:{x:.8,y:.3}}
+assert.deepEqual(calibrationLineToSave(calibration.horizontal,pendingReference,'horizontal','54'),{from:pendingReference.first,to:pendingReference.second,cm:54})
+assert.equal(calibrationLineToSave(calibration.horizontal,{axis:'horizontal',first:null},'horizontal','54'),null,'Marking must not silently reuse saved endpoints')
+assert.equal(calibrationLineToSave(calibration.horizontal,{axis:'horizontal',first:{x:.2,y:.3}},'horizontal','54'),null,'Both points are required before applying a marked segment')
+assert.deepEqual(calibrationLineToSave(calibration.vertical,pendingReference,'vertical','70'),{...calibration.vertical,cm:70},'Applying the other axis must preserve its saved points')
+for(const value of ['', '0', '-1', 'Infinity', '501'])assert.equal(calibrationLineToSave(calibration.horizontal,null,'horizontal',value),null,'Reject invalid cm input')
+assert.deepEqual(calibration,savedReferences,'Preparing or cancelling input must not mutate saved calibration')
+assert.equal(calibrationLineToSave(undefined,null,'horizontal','54'),null,'A new measurement needs points')
 const scale=photoPixelsPerCm(photo,calibration)
 assert.ok(scale&&Math.abs(scale.x-10)<1e-8&&Math.abs(scale.y-12)<1e-8,'Calibration references must resolve photo pixels per cm')
 const p={...initialPlacement('back'),x:.5,y:.5,width:.3}
@@ -218,6 +229,11 @@ assert.ok(workspaceCss.includes('grid-template-columns:52px minmax(0,1fr) 320px'
 assert.ok(workspaceCss.includes('.mockup-zen.is-panel-hidden .mockup-layout{grid-template-columns:52px minmax(0,1fr)}'),'Hidden layers must relinquish their grid track')
 assert.ok(workspaceCss.includes('width:min(300px,calc(100% - 54px))')&&workspaceCss.includes('grid-template-columns:48px minmax(0,1fr)'),'Mobile controls must be a toggled drawer while retaining the canvas')
 assert.ok(!productPage.includes('mockup-editor-breadcrumb')&&!productPage.includes('mockup-status'),'The editor must have one compact header and floating transient notifications')
+const calibrationPanel=source('src/components/mockups/PhotoCalibrationControls.tsx')
+assert.ok(calibrationPanel.includes('actionCount={3}')&&calibrationPanel.includes('icon={Check}')&&calibrationPanel.includes('icon={X}'),'Reference input, mark, apply and cancel must be a single shared inline field')
+assert.ok(workspaceCss.includes('grid-template-columns:minmax(64px,1fr) auto 34px 34px')&&workspaceCss.includes('grid-template-columns:minmax(56px,1fr) auto 44px 44px'),'Reference actions must stay horizontal at desktop and touch widths')
+assert.ok(!productPage.includes('mockup-calibration-prompt')&&!workspaceCss.includes('@container (max-width:360px){.mockup-calibration-grid'),'Do not restore tall per-field actions inside narrow sidebars')
+assert.ok(productPage.includes('<InlineField label="Nombre de zona"')&&workspaceCss.includes('.mockup-properties .mockup-adjustment{grid-template-columns:'),'Compact field/actions and label/slider rows must be reused outside calibration')
 const layers=source('src/components/mockups/MockupLayers.tsx')
 assert.ok(layers.includes('role="switch"')&&layers.includes('onMode(view, modes[view]')&&layers.includes('onSelect(view)'),'Every view must have its own working mode switch and selection')
 assert.ok(layers.includes('!photo.bitmap.width')&&layers.includes('!photo.bitmap.height'),'Thumbnail effects must skip bitmaps already detached by product navigation')
