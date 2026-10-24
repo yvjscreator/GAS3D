@@ -4,7 +4,7 @@ import { penFabricOutline } from '../src/components/mockups/mockupPen'
 import { initialViewModes } from '../src/components/mockups/mockupWorkspace'
 import { requestConfirmation, confirmationSnapshot, settleConfirmation, subscribeConfirmation } from '../src/components/ui/confirmation'
 import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
-import { artworkFitsZone, calibrationLineToSave, calibrationScaleAxis, fitPrintToZone, photoPixelsPerCm, photoReferenceScales, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
+import { artworkFitsZone, calibrationLineToSave, calibrationScaleAxis, fitPrintToZone, photoPixelsPerCm, photoReferenceScales, placementWidthForCm, printDimensionsCm, referenceLengthCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, withCalibrationReference, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
 import { detectGarment } from '../src/components/mockups/garmentDetection'
 import { configuredZoneOutline, resizeZoneFromEdge, zoneEdgeHandles } from '../src/components/mockups/mockupZoneGeometry'
@@ -88,6 +88,24 @@ assert.deepEqual(photoPixelsPerCm(photo,restoreCalibration(line)),{x:12,y:12},'O
 assert.equal(calibrationScaleAxis({}),null)
 assert.equal(calibrationScaleAxis({vertical:line.vertical,scaleAxis:'horizontal'}),'vertical','Unavailable selected references fall back to a saved reference')
 assert.deepEqual(restoreCalibration({...line,scaleAxis:'horizontal'}).scaleAxis,'horizontal','The chosen scale reference must persist')
+// A second measurement validates the first; saving it cannot change the scale or drop either set of points.
+for(const primaryAxis of ['horizontal','vertical'] as const){
+  const other=primaryAxis==='horizontal'?'vertical':'horizontal'
+  const first=withCalibrationReference({},primaryAxis,line[primaryAxis],true)
+  const before=photoPixelsPerCm(photo,first)
+  const compared=withCalibrationReference(first,other,{...line[other],cm:37},false)
+  assert.deepEqual(photoPixelsPerCm(photo,compared),before,'Conflicting comparison must not alter either ruler or physical print scale')
+  assert.deepEqual(compared[primaryAxis],line[primaryAxis],'Comparison must preserve primary points and cm')
+  assert.deepEqual(compared[other],{...line[other],cm:37},'Comparison must retain its own entered cm and points')
+  assert.deepEqual(restoreCalibration(JSON.parse(JSON.stringify(compared))),compared,'Primary and comparison must survive reload')
+  assert.ok(Math.abs(referenceLengthCm(photo,first,other,line[other])!-(primaryAxis==='horizontal'?96:50))<1e-8,'Other marked lengths must be derived from the primary scale')
+  const changedPrimary=withCalibrationReference(compared,other,compared[other]!,true)
+  assert.equal(calibrationScaleAxis(changedPrimary),other,'Only an explicit primary change can select the comparison scale')
+}
+const legacyWidthOnly={horizontal:line.horizontal}
+assert.equal(calibrationScaleAxis(withCalibrationReference(legacyWidthOnly,'vertical',line.vertical,false)),'horizontal','Adding a height comparison to a legacy width-only product must not steal the primary scale')
+assert.equal(referenceLengthCm(photo,{},'horizontal',line.horizontal),null,'Never infer cm without calibration')
+assert.deepEqual(calibration,savedReferences,'Saving references must not mutate the previous settings')
 const p={...initialPlacement('back'),x:.5,y:.5,width:.3}
 const cm=printDimensionsCm(photo,art,p,calibration)
 assert.ok(cm&&Math.abs(cm.width-30)<1e-8&&Math.abs(cm.height-40)<1e-8,'Flat print dimensions must preserve PNG aspect even with different X/Y photo scales')
@@ -268,6 +286,8 @@ assert.ok(workspaceCss.includes('width:min(300px,calc(100% - 54px))')&&workspace
 assert.ok(!productPage.includes('mockup-editor-breadcrumb')&&!productPage.includes('mockup-status'),'The editor must have one compact header and floating transient notifications')
 const calibrationPanel=source('src/components/mockups/PhotoCalibrationControls.tsx')
 assert.ok(calibrationPanel.includes('actionCount={3}')&&calibrationPanel.includes('icon={Check}')&&calibrationPanel.includes('icon={X}'),'Reference input, mark, apply and cancel must be a single shared inline field')
+assert.ok(calibrationPanel.includes('referenceRow(primaryAxis, true)')&&calibrationPanel.includes('hasPrimary && <details')&&calibrationPanel.includes('referenceRow(otherAxis, false)'),'Only one primary row is required; comparison must remain optional until calibrated')
+assert.ok(workspaceCss.includes('svg line{vector-effect:non-scaling-stroke;stroke-width:1px}')&&!workspaceCss.includes('stroke-width:2px'),'Photo guide strokes must stay thin at every zoom level')
 assert.ok(workspaceCss.includes('grid-template-columns:minmax(64px,1fr) auto 34px 34px')&&workspaceCss.includes('grid-template-columns:minmax(56px,1fr) auto 44px 44px'),'Reference actions must stay horizontal at desktop and touch widths')
 assert.ok(!productPage.includes('mockup-calibration-prompt')&&!workspaceCss.includes('@container (max-width:360px){.mockup-calibration-grid'),'Do not restore tall per-field actions inside narrow sidebars')
 assert.ok(productPage.includes('<InlineField label="Nombre de zona"')&&workspaceCss.includes('.mockup-properties .mockup-adjustment{grid-template-columns:'),'Compact field/actions and label/slider rows must be reused outside calibration')

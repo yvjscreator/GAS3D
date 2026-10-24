@@ -5,7 +5,7 @@ import { loadMedia, removeMedia, storeMedia, storeMediaMetadata } from '../../ut
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
 import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type RenderLayer, type ViewName } from './mockupEngine'
 import { pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from './mockupMasks'
-import { artworkFitsZone, calibrationLineToSave, fitPrintToZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, zoneDimensionsCm, type CalibrationAxis } from './mockupCalibration'
+import { artworkFitsZone, calibrationLineToSave, fitPrintToZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, withCalibrationReference, zoneDimensionsCm, type CalibrationAxis } from './mockupCalibration'
 import { detectGarment, type GarmentDetection } from './garmentDetection'
 import { PhotoRulers } from './PhotoRulers'
 import { configuredZoneOutline, resizeZoneFromEdge, zoneEdgeHandles, ZONE_EDGE_NAMES, type ZoneGeometry } from './mockupZoneGeometry'
@@ -371,14 +371,14 @@ export function ProductMockupStudio(){
   const clearMeasureDraft=(axis:CalibrationAxis)=>setMeasureDraft(old=>{
     const next={...old};delete next[active+':'+axis];return next
   })
-  const saveCalibration=(axis:CalibrationAxis)=>{
+  const saveCalibration=(axis:CalibrationAxis,primary:boolean)=>{
     const pending=calibrationMode?.view===active?calibrationMode:null
     const value=measureDraft[active+':'+axis]??calibration[axis]?.cm.toString()??''
     const line=calibrationLineToSave(calibration[axis],pending,axis,value)
     if(!line){setError('Marcá dos puntos y asigná una medida válida entre 0,1 y 500 cm.');return}
-    updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],calibration:{...p.views[active].calibration,[axis]:line}}}}))
+    updateProduct(p=>({...p,views:{...p.views,[active]:{...p.views[active],calibration:withCalibrationReference(p.views[active].calibration??{},axis,line,primary)}}}))
     if(pending?.axis===axis)setCalibrationMode(null)
-    clearMeasureDraft(axis);setFeedback('Referencia guardada. Las reglas y los tamaños usan esta escala estimada.')
+    clearMeasureDraft(axis);setFeedback(primary?'Medida principal guardada. La misma escala se usa en ambas direcciones.':'Comprobación guardada. La escala principal se mantiene.')
   }
   const cancelCalibration=(axis:CalibrationAxis)=>{
     if(calibrationMode?.view===active&&calibrationMode.axis===axis)setCalibrationMode(null)
@@ -499,7 +499,7 @@ export function ProductMockupStudio(){
       const delta=Math.abs(axis==='horizontal'?pointOnPhoto.x-first.x:pointOnPhoto.y-first.y)
       if(delta<.005){setError('Los puntos están demasiado cerca. Volvé a marcar la referencia.');return}
       setCalibrationMode({...calibrationMode,second:pointOnPhoto});setError('')
-      setFeedback('Tramo marcado. Asignale centímetros y pulsá Guardar referencia.')
+      setFeedback('Tramo marcado. Revisá su medida en el panel Calibrar.')
       return
     }
     const zone=view===active?selectedZone:product.views[view].zones[0]
@@ -882,7 +882,7 @@ export function ProductMockupStudio(){
             }}/>{LABELS[v]}</label>)}</div>
             </div>
             <div className="mockup-divider"/>
-            <PhotoCalibrationControls calibration={calibration} photo={photo}
+            <PhotoCalibrationControls key={selectedId+':'+active+':'+(current?.photoVersion??'')} calibration={calibration} photo={photo}
               values={{horizontal:measureDraft[active+':horizontal'],vertical:measureDraft[active+':vertical']}}
               pending={calibrationMode?.view===active?calibrationMode:null} disabled={!photo||busy||cloud.working}
               onValue={(axis,value)=>setMeasureDraft(old=>({...old,[active+':'+axis]:value}))}

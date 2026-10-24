@@ -60,6 +60,20 @@ export function calibrationScaleAxis(calibration: PhotoCalibration): Calibration
   return calibration.vertical ? 'vertical' : calibration.horizontal ? 'horizontal' : null
 }
 
+/** A comparison can never silently become the scale, including on old one-reference products. */
+export function withCalibrationReference(calibration: PhotoCalibration, axis: CalibrationAxis, line: CalibrationLine, primary: boolean): PhotoCalibration {
+  return { ...calibration, [axis]: line, scaleAxis: primary ? axis : calibrationScaleAxis(calibration) ?? axis }
+}
+
+/** Read another marked garment segment using the existing uniform scale. */
+export function referenceLengthCm(photo: PhotoSize, calibration: PhotoCalibration, axis: CalibrationAxis, segment: Pick<CalibrationLine, 'from' | 'to'>): number | null {
+  const scale = photoPixelsPerCm(photo, calibration)
+  if (!scale) return null
+  return axis === 'horizontal'
+    ? Math.abs(segment.to.x - segment.from.x) * photo.width / scale.x
+    : Math.abs(segment.to.y - segment.from.y) * photo.height / scale.y
+}
+
 /** Separate estimates are for comparison only, never for nonuniform artwork scaling. */
 export function photoReferenceScales(photo: PhotoSize, calibration: PhotoCalibration): { horizontal: number | null; vertical: number | null } {
   const horizontal = calibration.horizontal, vertical = calibration.vertical
