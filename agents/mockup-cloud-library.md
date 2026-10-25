@@ -8,6 +8,8 @@ The existing GAS3D Python API also serves `/api/mockups`. Cloudinary stores auth
 
 ## Configuration
 
+Production now uses the GAS3D owner login described in `agents/authentication.md`. After login, the catalogue loads automatically using application session access. The Cloudinary URL/key form is retained only for explicitly authentication-disabled development/legacy configurations. Existing cloud products, photographs and ownership checks are unchanged.
+
 In **gas3d-subtitle-api → Environment**, set `CLOUDINARY_URL`, or all three existing account variables: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`. Also set `MOCKUP_LIBRARY_TOKEN` to a random private catalogue access key of at least 24 characters. Preserve the existing Gemini variables and ensure `SUBTITLE_CORS_ORIGINS` includes `https://gas3d.onrender.com`. Deploy the API after updating its environment.
 
 Keep secrets server-side, outside Git, never in `VITE_` variables. No unsigned upload preset is needed. `/api/mockups/health` reports configuration presence without exposing credentials; this alone does not verify external authentication. `/api/subtitles/health` is unchanged.
@@ -16,9 +18,9 @@ The frontend accepts `VITE_MOCKUP_API_URL=https://gas3d-subtitle-api.onrender.co
 
 ## Workflow and recovery
 
-1. Connect in **Productos → Catálogo en Cloudinary** with the GAS3D API URL and access key. Remote products appear and existing local products are retained.
+1. In production, sign in to GAS3D; the catalogue loads automatically. In authentication-disabled development, connect in **Productos → Catálogo en Cloudinary** with the GAS3D API URL and access key. Remote products appear and existing local products are retained.
 2. **Subir pendientes** migrates local products and their photographs. **Guardar en nube** saves one product. A badge identifies unsaved changes. Source images are preserved during migration.
-3. On another device connect with the same URL/key. **Actualizar catálogo** gets later edits; original photos download into IndexedDB as needed, including for full-size export.
+3. On another device, sign in with the GAS3D account. **Actualizar catálogo** gets later edits; original photos download into IndexedDB as needed, including for full-size export. No Cloudinary configuration is required on each device.
 4. After removing/replacing a photo, save the product to delete its obsolete cloud photo. The new snapshot commits before any old photo is removed.
 5. Product deletion confirms the all-devices scope, commits a tiny tombstone and deletes its owned cloud photos. Tombstones prevent stale devices from recreating deleted products. Partial photo deletion stays visible/retryable.
 6. Refresh preserves offline edits; stale saves/deletes return 409. Duplicate local work to keep another version, or explicitly **Recuperar de nube** to discard local product edits. Recovery preserves local artwork PNGs.

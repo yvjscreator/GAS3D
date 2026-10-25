@@ -19,4 +19,4 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r services/subtitle_engine/requirements.txt httpx
-      - run: PYTHONPATH=services python -m unittest subtitle_engine.test_mockup_library -v
+      - run: PYTHONPATH=services python -m unittest subtitle_engine.test_mockup_library subtitle_engine.test_auth -v

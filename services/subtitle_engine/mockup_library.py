@@ -24,6 +24,7 @@ import cloudinary.utils
 from cloudinary.exceptions import Error as CloudinaryError
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import Response
+from .auth import session_user
 
 # Deliberately fixed: sharing credentials with SolutionSuite never shares its assets.
 PREFIX = "gas3d/mockup-studio/v1"
@@ -50,6 +51,8 @@ def photo_id(product_id: str, view: str, digest: str) -> str:
 
 
 def authorize(authorization: str | None = Header(default=None)) -> None:
+    if session_user(authorization):
+        return
     token = os.getenv("MOCKUP_LIBRARY_TOKEN", "")
     if len(token) < 24:
         raise HTTPException(503, "Falta configurar la clave privada del catálogo en el servidor.")

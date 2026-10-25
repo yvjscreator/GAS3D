@@ -84,6 +84,13 @@ Canonical requirements: `agents/mockup-studio-plan.md` and `agents/mockup-studio
 - Use the shared AppLauncher compact header; keep mobile/desktop editing reachable without controls covering exports.
 - Test with `npm run qa:mockups`; do not claim actual device validation until browser testing.
 
+## GAS3D authentication
+
+- See `agents/authentication.md`. All modules are gated by the GAS3D login; API access must also be enforced server-side, independently of the UI.
+- In production, keep Cloudinary credentials, the catalogue key, password hashes and signing secrets on the server. `VITE_` variables may hold only public flags/origins. Never publish owner credentials in Git, logs or screenshots.
+- GAS3D sessions automatically connect the existing private catalogue. Preserve local original media, saved projects, remote revisions and the legacy catalogue key's limited scope. Login/logout must not erase source files or reset the library.
+- Run `npm run qa:auth` plus the backend authentication/catalogue tests when modifying access control. Do not claim visual/device validation without browser review.
+
 ## Collage Creator (mobile-first)
 
 Canonical implementation notes: `agents/collage-creator.md`.

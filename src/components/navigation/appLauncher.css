@@ -43,3 +43,8 @@
   .gas-app-launcher-dialog { top:calc(54px + env(safe-area-inset-top,0px)); }
 }
 @media (prefers-reduced-motion:reduce) { .gas-app-launcher-backdrop { backdrop-filter:none; } }
+
+.gas-app-launcher-session{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-top:1px solid #34495a;min-width:0;color:#a5bfd3;font-size:12px}
+.gas-app-launcher-session>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.gas-app-launcher-session>button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:8px 12px;border:1px solid #52758f;border-radius:7px;background:#1b3347;color:#e3f2fc;font:inherit;cursor:pointer}
+.gas-app-launcher-session>button:focus-visible{outline:2px solid #8ad5ff;outline-offset:3px}

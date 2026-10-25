@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Clapperboard, Images, Layers3, LayoutGrid, Mic2, SlidersHorizontal, Shirt, X } from 'lucide-react'
+import { Clapperboard, Images, Layers3, LayoutGrid, LogOut, Mic2, SlidersHorizontal, Shirt, X } from 'lucide-react'
+import { appAuthRequired, readAppSession, signOut } from '../auth/session'
+import { requestConfirmation } from '../ui/confirmation'
 import './appLauncher.css'
 
 export type GasModule = 'garment' | 'images' | 'collage' | 'subtitles' | 'halftone' | 'mockups'
@@ -95,6 +97,9 @@ export function AppLauncher({ active }: { active: GasModule }) {
             </button>
           )}
         </nav>
+        {appAuthRequired()&&<div className="gas-app-launcher-session"><span>{readAppSession()?.user}</span><button type="button" onClick={()=>void(async()=>{
+          if(await requestConfirmation({title:'Cerrar sesión',description:'Los archivos y cambios guardados en este navegador se conservarán. Los cambios que todavía no aplicaste se perderán.',accept:'Cerrar sesión'}))signOut()
+        })()}><LogOut size={16}/>Cerrar sesión</button></div>}
       </div>
     </>, document.body)}
   </div>

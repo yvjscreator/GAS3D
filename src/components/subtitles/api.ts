@@ -1,3 +1,4 @@
+import { appApiRoot, appFetch } from '../auth/session'
 import type {
   AiLogResponse,
   GeminiVoiceCatalog,
@@ -7,7 +8,7 @@ import type {
   VoiceStyleId,
 } from './types'
 
-const apiRoot = (import.meta.env.VITE_SUBTITLE_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
+const apiRoot = appApiRoot()
 const apiBase = `${apiRoot}/api/subtitles`
 const AI_SESSION_KEY = 'gas3d.ai.session.v1'
 const VOICE_CATALOG_CACHE_KEY = 'gas3d.ai.voice-catalog.v1'
@@ -45,7 +46,7 @@ export async function createSubtitleJob(file: File, language: string) {
   const body = new FormData()
   body.append('video', file)
   if (language !== 'auto') body.append('language', language)
-  return expectJson<SubtitleJob>(await fetch(`${apiBase}/jobs`, {
+  return expectJson<SubtitleJob>(await appFetch(`${apiBase}/jobs`, {
     method: 'POST',
     headers: aiHeaders(),
     body,
@@ -53,7 +54,7 @@ export async function createSubtitleJob(file: File, language: string) {
 }
 
 export async function getSubtitleJob(jobId: string) {
-  return expectJson<SubtitleJob>(await fetch(`${apiBase}/jobs/${jobId}`, {
+  return expectJson<SubtitleJob>(await appFetch(`${apiBase}/jobs/${jobId}`, {
     headers: aiHeaders(),
   }))
 }
@@ -68,7 +69,7 @@ export async function generatePresentationScript(file: File, form: PresentationF
   body.append('cta', form.cta)
   body.append('language', form.language)
 
-  return expectJson<PresentationScript>(await fetch(`${apiBase}/presentation/script`, {
+  return expectJson<PresentationScript>(await appFetch(`${apiBase}/presentation/script`, {
     method: 'POST',
     headers: aiHeaders(),
     body,
@@ -98,7 +99,7 @@ export async function getPresentationVoices(forceRefresh = false) {
   }
 
   try {
-    const catalog = await expectJson<GeminiVoiceCatalog>(await fetch(`${apiBase}/presentation/voices`, {
+    const catalog = await expectJson<GeminiVoiceCatalog>(await appFetch(`${apiBase}/presentation/voices`, {
       headers: aiHeaders(),
     }))
 
@@ -132,7 +133,7 @@ export async function mixPresentationAudioFallback(
   }))
   body.append('duration', String(duration))
 
-  const response = await fetch(`${apiBase}/presentation/mix-audio`, {
+  const response = await appFetch(`${apiBase}/presentation/mix-audio`, {
     method: 'POST',
     headers: aiHeaders(),
     body,
@@ -151,7 +152,7 @@ export async function generatePresentationVoice(
   styleId: VoiceStyleId,
   language: string,
 ) {
-  const response = await fetch(`${apiBase}/presentation/tts`, {
+  const response = await appFetch(`${apiBase}/presentation/tts`, {
     method: 'POST',
     headers: {
       ...aiHeaders(),
@@ -172,14 +173,14 @@ export async function generatePresentationVoice(
 
 export async function getAiLogs() {
   const sessionId = getAiSessionId()
-  return expectJson<AiLogResponse>(await fetch(`${apiBase}/ai/logs/${encodeURIComponent(sessionId)}`, {
+  return expectJson<AiLogResponse>(await appFetch(`${apiBase}/ai/logs/${encodeURIComponent(sessionId)}`, {
     headers: aiHeaders(),
   }))
 }
 
 export async function clearAiLogs() {
   const sessionId = getAiSessionId()
-  return expectJson<{ ok: boolean }>(await fetch(`${apiBase}/ai/logs/${encodeURIComponent(sessionId)}`, {
+  return expectJson<{ ok: boolean }>(await appFetch(`${apiBase}/ai/logs/${encodeURIComponent(sessionId)}`, {
     method: 'DELETE',
     headers: aiHeaders(),
   }))

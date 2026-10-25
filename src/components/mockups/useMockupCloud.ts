@@ -32,7 +32,10 @@ export function useMockupCloud(setProducts:Dispatch<SetStateAction<Product[]>>){
     const saved=readCloudConnection()
     if(saved)void connect(saved)
   },[connect])
-  const refresh=()=>connection?connect(connection):Promise.resolve()
+  const refresh=()=>{
+    const current=readCloudConnection()??connection
+    return current?connect(current):Promise.resolve()
+  }
   const disconnect=()=>{
     if(running.current)return
     rememberCloudConnection(null);setConnection(null);setIssue('');setMessage('Desconectado. Los productos descargados siguen disponibles en este navegador.')

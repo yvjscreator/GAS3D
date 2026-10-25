@@ -1,19 +1,28 @@
 import { loadMedia, loadMediaMetadata, storeMedia, storeMediaMetadata } from '../../utils/mediaStorage'
 import type { ViewName } from './mockupEngine'
 import { photoKey, productFingerprint, productIsDirty, productSnapshot, restoreProducts, VIEWS, type CloudPhoto, type Product } from './mockupProduct'
+import { appApiRoot, appAuthRequired, appFetch, readAppSession } from '../auth/session'
 
-export type CloudConnection = { url:string; token:string; cloudName?:string }
+export type CloudConnection = { url:string; token:string; cloudName?:string; managed?:boolean }
 export type CloudRecord = { product:Product; revision:string; cloudName:string; photos:Partial<Record<ViewName,CloudPhoto>>; deleted:boolean; cleanupPending:boolean }
 export type CloudCatalogue = { cloudName:string; records:CloudRecord[] }
 const CONNECTION_KEY='gas3d.mockup-cloud.session.v1'
 export const defaultCloudUrl=()=>String(import.meta.env.VITE_MOCKUP_API_URL??import.meta.env.VITE_SUBTITLE_API_URL??'').replace(/\/$/,'')
 export function readCloudConnection():CloudConnection|null{
+  if(appAuthRequired()){
+    const session=readAppSession()
+    return session?{url:appApiRoot(),token:session.token,managed:true}:null
+  }
   try{
     const value=JSON.parse(sessionStorage.getItem(CONNECTION_KEY)??'null') as CloudConnection|null
     return value&&typeof value.url==='string'&&typeof value.token==='string'?value:null
   }catch{return null}
 }
 export function rememberCloudConnection(connection:CloudConnection|null){
+  if(connection?.managed){
+    try{sessionStorage.removeItem(CONNECTION_KEY)}catch{/* App access has its own storage. */}
+    return
+  }
   try{if(connection)sessionStorage.setItem(CONNECTION_KEY,JSON.stringify(connection));else sessionStorage.removeItem(CONNECTION_KEY)}catch{/* Session memory still works. */}
 }
 export function normalizeConnection(connection:CloudConnection):CloudConnection{
@@ -29,7 +38,8 @@ export function normalizeConnection(connection:CloudConnection):CloudConnection{
   return {...connection,url,token:connection.token.trim()}
 }
 async function cloudRequest(connection:CloudConnection,path:string,options:RequestInit={}):Promise<Response>{
-  const response=await fetch(`${connection.url}/api/mockups${path}`,{
+  if(connection.managed&&connection.url!==appApiRoot())throw new Error('El catálogo debe usar el servidor de GAS3D.')
+  const response=await (connection.managed?appFetch:fetch)(`${connection.url}/api/mockups${path}`,{
     ...options,cache:'no-store',signal:AbortSignal.timeout(300_000),
     headers:{...options.headers,Authorization:`Bearer ${connection.token}`},
   })

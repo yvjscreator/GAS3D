@@ -17,6 +17,7 @@ import { IconButton, InlineField } from '../ui/primitives'
 import { PhotoCalibrationControls } from './PhotoCalibrationControls'
 import { notify, useTaskNotice } from '../ui/notifications'
 import { requestConfirmation } from '../ui/confirmation'
+import { appAuthRequired } from '../auth/session'
 import { MockupLayers } from './MockupLayers'
 import { initialViewModes, type ViewMode } from './mockupWorkspace'
 import { penFabricOutline } from './mockupPen'
@@ -730,7 +731,7 @@ export function ProductMockupStudio(){
         </article>)}
         {!products.length&&<div className="mockup-library-empty"><Shirt size={32}/><strong>Aún no hay productos.</strong><p>Creá el primero para configurar sus fotos, vistas y zonas de estampado.</p></div>}
       </div>
-      <p className="mockup-note">Las ediciones se conservan en este navegador. Usá «Guardar en nube» para sincronizar el producto y sus fotos originales. En otro dispositivo, conectá el mismo catálogo y pulsá «Actualizar catálogo».</p>
+      <p className="mockup-note">Las ediciones se conservan en este navegador. Usá «Guardar en nube» para sincronizar el producto y sus fotos originales.{appAuthRequired()?' En otro dispositivo, iniciá sesión en GAS3D para recuperar tu catálogo.':' En otro dispositivo, conectá el mismo catálogo y pulsá «Actualizar catálogo».'}</p>
     </section>:<div className="mockup-editor-shell">
       <div className="mockup-layout">
         <nav className="mockup-tool-rail" role="toolbar" aria-label="Herramientas del lienzo" aria-orientation="vertical">

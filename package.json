@@ -5,14 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run qa:images && npm run qa:roadmap && npm run qa:collage && npm run qa:mockups",
+    "build": "tsc -b && vite build && npm run qa:images && npm run qa:roadmap && npm run qa:collage && npm run qa:mockups && npm run qa:auth",
     "lint": "eslint .",
     "qa:images": "esbuild scripts/images-print-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-images-print-qa.mjs && node /tmp/gas3d-images-print-qa.mjs",
     "qa:roadmap": "esbuild scripts/roadmap-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-roadmap-qa.mjs && node /tmp/gas3d-roadmap-qa.mjs",
     "subtitles:api": "python -m uvicorn subtitle_engine.app:app --app-dir services --host 127.0.0.1 --port 8787",
     "qa:collage": "esbuild scripts/collage-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-collage-qa.mjs && node /tmp/gas3d-collage-qa.mjs",
     "qa:mockups": "esbuild scripts/mockup-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-mockup-qa.mjs && node /tmp/gas3d-mockup-qa.mjs && npm run qa:mockup-cloud",
-    "qa:mockup-cloud": "esbuild scripts/mockup-cloud-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-mockup-cloud-qa.mjs && node /tmp/gas3d-mockup-cloud-qa.mjs"
+    "qa:mockup-cloud": "esbuild scripts/mockup-cloud-qa.ts --bundle --platform=node --format=esm --outfile=/tmp/gas3d-mockup-cloud-qa.mjs && node /tmp/gas3d-mockup-cloud-qa.mjs",
+    "qa:auth": "esbuild scripts/auth-qa.ts --bundle --platform=node --format=esm --define:import.meta.env='{\"VITE_GAS3D_AUTH_REQUIRED\":\"true\",\"VITE_SUBTITLE_API_URL\":\"https://api.gas3d.example\"}' --outfile=/tmp/gas3d-auth-qa.mjs && node /tmp/gas3d-auth-qa.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
