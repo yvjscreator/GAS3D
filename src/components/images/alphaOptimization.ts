@@ -10,6 +10,8 @@ export type AlphaOptimizationSettings = {
   cellPixels: number
   /** Halftone distribution. Stochastic avoids visible ordered-grid/cross artifacts. */
   pattern?: DtfPattern
+  /** Screen rotation in degrees, used by round dots and lines. */
+  angle?: number
   /** How strongly local high-contrast contours are protected (0..100). */
   detailProtection?: number
 }
@@ -19,6 +21,7 @@ export const DEFAULT_ALPHA_SETTINGS: AlphaOptimizationSettings = {
   cleanupPercent: 10,
   cellPixels: 8,
   pattern: 'stochastic',
+  angle: 45,
   detailProtection: 85,
 }
 
@@ -44,12 +47,17 @@ const bayer4 = [
   15, 7, 13, 5,
 ]
 
-const dot4 = [
-  15, 9, 10, 16,
-  8, 2, 3, 11,
-  7, 1, 4, 12,
-  14, 6, 5, 13,
-]
+// Area inside a circle clipped by a unit square. Using area, rather than
+// radius alone, keeps dot coverage proportional to alpha even above 50%.
+// A lookup avoids inverse trig in the native-resolution pixel loop.
+const roundCoverage = Float32Array.from({ length: 2049 }, (_, index) => {
+  const radiusSquared = index / 4096
+  if (radiusSquared <= 0.25) return Math.PI * radiusSquared
+  return Math.PI * radiusSquared - 4 * (
+    radiusSquared * Math.acos(0.5 / Math.sqrt(radiusSquared))
+    - 0.5 * Math.sqrt(radiusSquared - 0.25)
+  )
+})
 
 function hash01(x: number, y: number) {
   let value = Math.imul(x ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(y ^ 0xc2b2ae35, 0x27d4eb2f)
@@ -61,33 +69,47 @@ function hash01(x: number, y: number) {
   return (value >>> 0) / 0x1_0000_0000
 }
 
-function patternCutoff(pattern: DtfPattern, x: number, y: number, cellPixels: number) {
+function createPatternSampler(settings: AlphaOptimizationSettings) {
+  const pattern = settings.pattern ?? 'stochastic'
+  const pitch = Math.max(1, Number.isFinite(settings.cellPixels) ? settings.cellPixels : 8)
+  const angle = (Number.isFinite(settings.angle) ? settings.angle! : 45) * Math.PI / 180
+  const cosine = Math.cos(angle)
+  const sine = Math.sin(angle)
   // Preserve the existing three dot-size choices while changing only the
   // spatial distribution. A block is 2/3/4 px for fine/medium/coarse.
-  const block = Math.max(1, Math.min(8, Math.round(cellPixels / 4)))
-  const px = Math.floor(x / block)
-  const py = Math.floor(y / block)
+  const block = Math.max(1, Math.min(8, Math.round(pitch / 4)))
+  return (x: number, y: number) => {
+    const px = Math.floor(x / block)
+    const py = Math.floor(y / block)
 
-  if (pattern === 'stochastic') return Math.max(1 / 256, hash01(px, py))
+    if (pattern === 'stochastic') return Math.max(1 / 256, hash01(px, py))
 
-  const localX = ((px % 4) + 4) & 3
-  const localY = ((py % 4) + 4) & 3
-  if (pattern === 'ordered') return (bayer4[localY * 4 + localX] + 0.5) / 16
-  if (pattern === 'dots') return (dot4[localY * 4 + localX] - 0.5) / 16
+    const localX = ((px % 4) + 4) & 3
+    const localY = ((py % 4) + 4) & 3
+    if (pattern === 'ordered') return (bayer4[localY * 4 + localX] + 0.5) / 16
 
-  // Diagonal line screen: coverage expands the stripe instead of creating
-  // checker/cross intersections.
-  return ((((px + py) & 3) + 0.5) / 4)
+    // Evaluate in source coordinates: cropping, panning and export strips
+    // must all sample exactly the same screen, including negative rotations.
+    const u = (x * cosine + y * sine) / pitch
+    const v = (-x * sine + y * cosine) / pitch
+    const dx = u - Math.floor(u) - 0.5
+    if (pattern === 'lines') return Math.abs(dx) * 2
+    const dy = v - Math.floor(v) - 0.5
+    return roundCoverage[Math.min(2048, Math.round((dx * dx + dy * dy) * 4096))]
+  }
 }
 
 /**
- * Apply treatment at final print size. Per-pixel operations use global Y to
- * prevent pattern seams between export strips. Output alpha is 0/255.
+ * Native output has binary alpha. Global source origins keep cropped detail
+ * and export strips aligned. pixelScale > 1 is ONLY for the reduced overview:
+ * subpixel patterns are filtered to coverage instead of showing oversized dots.
  */
 export function optimizeImageAlpha(
   image: ImageData,
   settings: AlphaOptimizationSettings,
   globalY = 0,
+  globalX = 0,
+  pixelScale = 1,
 ): ImageData {
   if (!shouldOptimizeAlpha(settings)) return image
 
@@ -107,16 +129,20 @@ export function optimizeImageAlpha(
   // never blends RGB values from neighboring pixels or modifies opaque artwork.
   // It only quantizes PARTIAL ALPHA at the location of each original pixel.
   // Full-opacity areas, internal lines and local color texture remain intact.
-  const source = new Uint8ClampedArray(data)
   const protection = settings.dtfMode === 'aggressive' ? 0
     : Math.max(0, Math.min(1, (settings.detailProtection ?? 85) / 100))
-  const pattern = settings.pattern ?? 'stochastic'
+  const source = protection > 0 ? new Uint8ClampedArray(data) : data
+  const sample = createPatternSampler(settings)
+  const scale = Math.max(1, pixelScale)
+  const spacing = settings.pattern === 'stochastic' || !settings.pattern
+    ? Math.max(1, Math.round(settings.cellPixels / 4)) : settings.cellPixels
+  const filteredOverview = scale > 1 && spacing < scale * 2
   const solidAlpha = 255 - Math.round(82 * protection)
   const edgeAlpha = 160 - Math.round(80 * protection)
   const rgbEdgeThreshold = 72 - Math.round(49 * protection)
 
   for (let y = 0; y < height; y++) {
-    const patternY = globalY + y
+    const patternY = globalY + (y + 0.5) * scale
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4
       const alpha = source[i + 3]
@@ -154,7 +180,8 @@ export function optimizeImageAlpha(
         continue
       }
 
-      const cutoff = patternCutoff(pattern, x, patternY, settings.cellPixels)
+      if (filteredOverview) continue
+      const cutoff = sample(globalX + (x + 0.5) * scale, patternY)
       if (alpha / 255 >= cutoff) {
         data[i + 3] = 255
       } else {

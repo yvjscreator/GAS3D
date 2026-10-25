@@ -28,46 +28,39 @@ La tercera pestaña de GAS3D (`#/images`) prepara arte creado sobre fondos negro
 - Los PNG conservan la resolución y las proporciones originales. El ZIP utiliza almacenamiento sin recomprimir los PNG (ya comprimidos), sin dependencias externas.
 - Los nombres terminan en `-black-tee-ready.png` o `-white-tee-ready.png`; los duplicados se renombran dentro del ZIP.
 
-### Lienzos de exportación para estampado
+### Resolución de exportación
 
-**Images → Lienzo de impresión** ofrece estos formatos (sin IA ni recorte):
+**02 / Exportación** conserva los píxeles originales y recorta únicamente los márgenes transparentes exteriores. Los presets 40 × 53 y 35 × 40 agregan metadatos de **300 ppp**, sin redimensionar el arte. Original y Companion conservan las dimensiones sin imponer densidad. Los nombres históricos de presets siguen siendo compatibles; no garantizan por sí solos esas medidas físicas.
 
-| Formato | PNG final | Resolución física |
-| --- | --- | --- |
-| Original | Píxeles de entrada | Sin densidad de impresión impuesta |
-| 40 × 53 cm | **4724 × 6260 px** | **300 ppp**, escritos en el PNG mediante `pHYs` |
-| 35 × 40 cm | **4134 × 4724 px** | **300 ppp**, escritos en el PNG mediante `pHYs` |
-| Companion ×2 | Ancho ×2 y alto ×2 | Sin dimensión física forzada |
+**Auto** sugiere un preset por proporción y dimensiones, individualmente para cada archivo del lote. Exportar PNG y ZIP comparten el tratamiento a resolución nativa, los límites de memoria y la exportación por franjas para PNG grandes. Nunca se reduce silenciosamente la resolución del archivo final.
 
-Por defecto se usa **Auto**. La sugerencia por relación de aspecto distingue 40:53, 35:40 y los companion icons aproximadamente cuadrados de unos 2000 px; ante imágenes poco reconocibles conserva el tamaño original. Puedes elegir otro preset manualmente en cualquier momento. En lotes, Auto evalúa **cada archivo** individualmente; un preset manual aplica el mismo tamaño de salida a todos.
+### Transparencias DTG/DTF
 
-La imagen ya procesada se coloca en el centro de un **lienzo transparente** con ajuste *contain* (encajar completa); nunca se estira de forma desproporcionada ni se recortan los cuatro extremos. La opción **Permitir ampliar para encajar** controla si los formatos de impresión pueden escalar imágenes pequeñas; Companion siempre escala exactamente ×2. Ampliar ráster no crea detalle real. Mantener los 300 ppp requiere tanto los píxeles suficientes como la metadata `pHYs`, que se inserta después de codificar el PNG sin recompresión del arte.
+La sección **03 / Método de impresión** aplica el acabado después de limpiar el color de fondo, siempre sobre los píxeles originales antes de recortar márgenes:
 
-La nueva resolución se aplica por igual a **Exportar PNG** y al contenido de **Exportar ZIP**, sin modificar el preview ni los archivos originales. Los nombres distinguen el formato de salida (por ejemplo `-40x53-300ppp-black-tee-ready.png`).
+- **DTG (predeterminado):** conserva los degradados y semitransparencias del arte limpio.
+- **DTF · Protegido:** trama las transparencias y refuerza contornos de contraste. Protección predeterminada: 85%. Conserva los píxeles opacos y el RGB de cada píxel que permanece visible; exporta alfa 0/255.
+- **DTF · Completo:** trama cualquier transparencia sin reforzar los contornos.
+- **DTF · Sólido:** convierte el alfa con un umbral del 50%.
+- **DTF · Conservar alfa:** mantiene las semitransparencias para un RIP compatible.
 
-### Print Production Pipeline — sRGB y semitransparencias DTG/DTF
+El selector muestra cuatro texturas generadas por el mismo algoritmo de exportación: **Orgánico**, **Puntos** redondos, **Líneas** continuas y **Ordenado** clásico. Puntos y Líneas admiten un ángulo de 0–90°. La escala Fina / Media / Gruesa representa una separación de 8 / 12 / 16 píxeles originales; el grano orgánico usa bloques menores de 2 / 3 / 4 px. Son píxeles, no medidas físicas certificadas. La escala de impresión real debe acordarse con el taller.
 
-La sección **03 / Método de impresión** elige el tratamiento de alfa, aplicado **después de** encajar el arte procesado en el lienzo final, para no redimensionar luego el tramado:
+**Proteger detalles** y **Limpiar restos** ajustan el acabado sin promediar los colores. Si aparecen puntos no deseados en caras o sombras, revisa también «Eliminar sombras» o el preset «Negro puro»: la limpieza de color puede introducir transparencias antes del tramado.
 
-- **DTG (predeterminado):** conserva los 256 niveles originales de alfa.
-- **DTF · Tramado protegido (predeterminado):** conserva el RGB exacto de cada píxel sólido, prioriza contornos y cambios locales de color y tramará únicamente las transparencias que queden sin proteger. Los píxeles opacos se respetan; el alfa final es 0/255. Por defecto, protección al 85% y punto **Fino** (paso aproximado de 2 px a 300 ppp).
-- **DTF · Alfa sólido:** umbral del 50% con alfa 0/255; recomendado para logos y elementos planos.
-- **DTF · Conservar alfa:** deja las semitransparencias existentes para flujos RIP compatibles.
-- **DTF · Tramado completo:** opción de mayor intervención que trama cualquier alfa parcial sin proteger los contornos; para casos especiales, no recomendada como ajuste inicial para ilustraciones.
+La vista general filtra las texturas menores que sus píxeles para evitar puntos exagerados. **Ver trama a tamaño real · 1:1** abre el detalle a escala de píxel original; el indicador **DETALLE NATIVO** confirma cuándo se está mostrando el recorte original procesado. La trama mantiene su posición al desplazar el lienzo y coincide con la exportación. En PNG grandes se decodifica solo el recorte solicitado, sujeto a los límites del navegador. Una decodificación fallida se comunica mediante un popup y conserva la vista general.
 
-**Fases de mejora DTF:** fase 1 eliminó el promediado destructivo de colores por celdas; fase 2 añadió protección de contornos y un halo de 1 px entre las franjas de exportación; fase 3 añadió controles de **Proteger contornos y detalles (0–100%)**, **Tamaño de punto** Fino / Medio / Grueso y **Limpiar restos de alfa**, y pruebas para preservar color, detalles y continuidad entre franjas. Cuanto menor sea el porcentaje de alfa original, mayor puede ser la dispersión residual del tramado: revisar también el control de eliminación de sombras (preset `Negro puro` cuando no se desee erosionar las sombras del personaje).
-
-La vista previa procesada incluye una aproximación del DTF. El tamaño real de los puntos se calcula sobre los píxeles del PNG **después** del ajuste 40×53, 35×40 o Companion ×2. En Companion, como el tamaño se define en píxeles y no en centímetros, es necesario confirmar con el taller la escala de impresión para interpretar físicamente los puntos.
+El diagnóstico DTF estima trazos e islas sobre la vista general. Distingue la cobertura filtrada de la vista previa del alfa binario que generará el PNG; no sustituye la revisión 1:1 ni una prueba física.
 
 La sección **04 / Gestión de color** aplica el camino de dibujo sRGB del navegador (decodificación con gestión ICC cuando el navegador admite el perfil → Canvas2D sRGB). Permite **incrustar un perfil ICC sRGB real** como chunk \`iCCP\` comprimido, activado por defecto. Esto es distinto de limitarse a etiquetar un archivo arbitrario como sRGB. El PNG se verifica como **RGBA de 8 bits por canal**, y se valida que la incrustación ICC y los **300 ppp** solicitados estén presentes. La conversión de perfiles de entrada no reconocidos depende del soporte del navegador; no se garantiza una equivalencia exacta con el motor ICC de Photoshop para todos los perfiles.
 
-Las opciones se aplican tanto a **Exportar PNG** como a cada archivo del **ZIP por lotes**, preservando la relación de aspecto, los márgenes transparentes y el ajuste centrado del lienzo. Los cambios de impresión/color invalidan la indicación de estado de un lote anterior. Los PNG pueden ser voluminosos por sus dimensiones aunque sean de 8 bits.
+Las opciones se aplican tanto a **Exportar PNG** como a cada archivo del **ZIP por lotes**, preservando la relación de aspecto y recortando solo los márgenes transparentes exteriores. Los cambios de impresión/color invalidan la indicación de estado de un lote anterior. Los PNG pueden ser voluminosos por sus dimensiones aunque sean de 8 bits.
 
-QA técnico: ejecutar \`npm run qa:images\` para comprobar geometría, salida alfa binaria, integridad real del perfil ICC sRGB descomprimido, profundidad de 8 bits RGBA y densidad 300 ppp. Ejecutar además \`npm run build\` antes del deploy. Las pruebas de RIP y de impresión física son necesarias para calibrar el tramado y no se sustituyen por este QA.
+QA técnico: ejecutar \`npm run qa:images\` para comprobar geometría nativa, cobertura de los puntos, continuidad de recortes y franjas con rotación, alfa binaria de exportación, estructura compacta de controles, integridad real del perfil ICC sRGB descomprimido, profundidad de 8 bits RGBA y densidad 300 ppp. Ejecutar además \`npm run build\` antes del deploy. Las pruebas de RIP y de impresión física son necesarias para calibrar el tramado y no se sustituyen por este QA.
 
 ### Compresión PNG sin pérdida — Oxipng
 
-La sección **05 / Optimización PNG** incorpora **Oxipng WebAssembly** local, activado por defecto. Tras limpiar la imagen, ajustar el lienzo, procesar la transparencia DTG/DTF, agregar los metadatos de 300 ppp (\`pHYs\`) e incrustar el ICC sRGB (\`iCCP\`), el PNG se entrega al compresor mediante un **Web Worker**.
+La sección **05 / Optimización PNG** incorpora **Oxipng WebAssembly** local, activado por defecto. Tras limpiar la imagen, procesar la transparencia DTG/DTF, agregar los metadatos de 300 ppp (\`pHYs\`) e incrustar el ICC sRGB (\`iCCP\`), el PNG se entrega al compresor mediante un **Web Worker**.
 
 - Compresión **sin cuantización ni cambios deliberados de los píxeles**, con \`optimiseAlpha: false\` (no modifica RGB de píxeles invisibles). Nivel 3 para equilibrar tiempo y peso.
 - El archivo optimizado se acepta **solo si es más pequeño** y mantiene dimensiones, RGBA 8 bits por canal, presencia ICC y los ppp del original. Cualquier fallo, agotamiento de tiempo o resultado incompatible **conserva el PNG anterior**.
@@ -79,7 +72,7 @@ La sección **05 / Optimización PNG** incorpora **Oxipng WebAssembly** local, a
 
 ### Inspección del preview
 
-- Rueda del mouse sobre la imagen: zoom **centrado en el punto del cursor**, desde 100% (ajustado) hasta 1000%.
+- Rueda del mouse sobre la imagen: zoom **centrado en el punto del cursor**, desde 100% (ajustado) hasta 6400%; el porcentaje es relativo al encuadre inicial. El botón 1:1 calcula aparte la escala nativa.
 - Con zoom mayor a 100%, arrastra el lienzo con el botón izquierdo.
 - El botón **Ajustar** restablece el encuadre; también se reinicia al cambiar de imagen.
 - Al acercar, se reconstruye **solo la región visible desde los píxeles de la imagen original**: en una imagen 4K el zoom no se limita al preview reducido de 1300 px (850 px en móvil).

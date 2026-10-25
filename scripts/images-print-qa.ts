@@ -4,6 +4,20 @@ import { getExportGeometry } from '../src/components/images/printExport'
 import { DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, analyzeAlpha, type AlphaOptimizationSettings, type DtfPattern } from '../src/components/images/alphaOptimization'
 import { embedSrgbIcc, inspectPng, verifyPrintPng } from '../src/components/images/colorManagement'
 import { assertStreamedDimensions, isLargeImage, readPngSourceSize } from '../src/components/images/largeImageExport'
+import { analyzeDtfPrintability } from '../src/components/images/dtfAnalysis'
+
+// The streamed path begins above, not instead of, the existing memory caps.
+let mobileViewport = false
+Object.defineProperty(globalThis, 'window', { configurable: true, value: { matchMedia: () => ({ matches: mobileViewport }) } })
+assert.equal(isLargeImage({ width: 6000, height: 5000 }), false)
+assert.equal(isLargeImage({ width: 6001, height: 5000 }), true)
+mobileViewport = true
+assert.equal(isLargeImage({ width: 4500, height: 4000 }), false)
+assert.equal(isLargeImage({ width: 4501, height: 4000 }), true)
+Reflect.deleteProperty(globalThis, 'window')
+Object.defineProperty(globalThis, 'ImageData', { configurable: true, value: class {
+  constructor(public data: Uint8ClampedArray, public width: number, public height: number) {}
+} })
 
 const profile: AlphaOptimizationSettings = { method: 'dtf', dtfMode: 'halftone', cleanupPercent: 10, cellPixels: 8 }
 assert.equal(DEFAULT_ALPHA_SETTINGS.pattern, 'stochastic')
@@ -56,6 +70,65 @@ for (const pattern of ['stochastic', 'dots', 'lines', 'ordered'] as DtfPattern[]
   optimizeImageAlpha(sample, { ...profile, pattern, detailProtection: 0 })
   assert.equal(analyzeAlpha(sample).partial, 0, pattern + ' must quantize alpha to 0/255')
 }
+
+const flatAlpha = (width: number, height: number, alpha: number) => {
+  const sample = { width, height, data: new Uint8ClampedArray(width * height * 4) } as ImageData
+  for (let i = 0; i < sample.data.length; i += 4) sample.data.set([180, 90, 210, alpha], i)
+  return sample
+}
+// Round dots / continuous stripes should follow the fade, rather than jump
+// between the four old line-screen levels. Coverage is checked, not a snapshot.
+for (const pattern of ['stochastic', 'dots', 'lines'] as DtfPattern[]) {
+  for (const alpha of [20, 64, 128, 192, 235]) {
+    const sample = flatAlpha(512, 512, alpha)
+    optimizeImageAlpha(sample, { ...profile, pattern, cellPixels: 16, cleanupPercent: 0, detailProtection: 0, angle: 45 })
+    const coverage = analyzeAlpha(sample).opaque / (sample.width * sample.height)
+    assert.ok(Math.abs(coverage - alpha / 255) < 0.015, `${pattern}: ${alpha} coverage = ${coverage}`)
+  }
+}
+const roundDot = flatAlpha(32, 32, 128)
+optimizeImageAlpha(roundDot, { ...profile, pattern: 'dots', cellPixels: 32, angle: 0, detailProtection: 0 })
+assert.equal(roundDot.data[3], 0, 'Round dots leave the cell corners empty')
+assert.equal(roundDot.data[(16 * 32 + 16) * 4 + 3], 255, 'Round dots fill their center')
+assert.equal(roundDot.data[(3 * 32 + 16) * 4 + 3], 255, 'Round dot extends towards its axis')
+assert.equal(roundDot.data[(3 * 32 + 3) * 4 + 3], 0, 'Round dot does not form a square')
+for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+  assert.equal(roundDot.data[(y * 32 + x) * 4 + 3], roundDot.data[(x * 32 + y) * 4 + 3], 'Dot symmetry')
+}
+// A panned native crop must match the same pixels of the final full frame.
+// Test non-aligned X/Y origins, all pitches and rotated screens, with detail halos.
+for (const pattern of ['stochastic', 'dots', 'lines', 'ordered'] as DtfPattern[]) {
+  for (const cellPixels of [8, 12, 16]) for (const angle of [0, 45, 70]) {
+    const full = flatAlpha(137, 113, 128)
+    for (let y = 0; y < full.height; y++) for (let x = 0; x < full.width; x++) {
+      full.data.set([(x * 7) % 256, (y * 11) % 256, 160, 35 + (x + y * 7) % 220], (y * full.width + x) * 4)
+    }
+    const crop = flatAlpha(53, 61, 0)
+    const sx = 37, sy = 23
+    for (let y = 0; y < crop.height; y++) {
+      const offset = ((sy + y) * full.width + sx) * 4
+      crop.data.set(full.data.subarray(offset, offset + crop.width * 4), y * crop.width * 4)
+    }
+    const settings = { ...profile, pattern, cellPixels, angle, detailProtection: 85 }
+    optimizeImageAlpha(full, settings)
+    optimizeImageAlpha(crop, settings, sy, sx)
+    for (let y = 1; y < crop.height - 1; y++) {
+      const expected = full.data.subarray(((sy + y) * full.width + sx + 1) * 4, ((sy + y) * full.width + sx + crop.width - 1) * 4)
+      const actual = crop.data.subarray((y * crop.width + 1) * 4, (y * crop.width + crop.width - 1) * 4)
+      assert.deepEqual(actual, expected, `${pattern}/${cellPixels}/${angle}: cropped native detail must match export`)
+    }
+  }
+}
+const overview = flatAlpha(24, 24, 128)
+optimizeImageAlpha(overview, { ...profile, detailProtection: 0 }, 0, 0, 6)
+assert.equal(analyzeAlpha(overview).partial, 24 * 24, 'A reduced overview filters subpixel grain instead of exaggerating it')
+const overviewAnalysis = analyzeDtfPrintability(overview, { widthCm: 10, heightCm: 10 }, { width: 144, height: 144 }, 0.4, 0.5, true)
+assert.equal(overviewAnalysis.alphaBinary, true, 'Filtered overview coverage must not become a false final-alpha warning')
+const preservedAnalysis = analyzeDtfPrintability(overview, { widthCm: 10, heightCm: 10 }, { width: 144, height: 144 })
+assert.equal(preservedAnalysis.alphaBinary, false, 'Preserve-alpha mode still diagnoses actual semitransparency')
+const native = flatAlpha(24, 24, 128)
+optimizeImageAlpha(native, { ...profile, detailProtection: 0 })
+assert.equal(analyzeAlpha(native).partial, 0, 'Native exports always keep binary alpha')
 
 // Processing chunks with a one-row halo must match a full-frame DTF pass.
 const continuous = { width: 13, height: 11, data: new Uint8ClampedArray(13 * 11 * 4) } as ImageData
@@ -125,8 +198,19 @@ assert.throws(() => assertStreamedDimensions({ width: 18_000, height: 4_000 }), 
 assert.throws(() => assertStreamedDimensions({ width: 15_000, height: 8_000 }), 'Protect browsers from pathological huge inputs')
 const browserSource = (await import('node:fs')).readFileSync('src/components/images/ImagesStudio.tsx','utf8')
 const streamSource = (await import('node:fs')).readFileSync('src/components/images/largeImageExport.ts','utf8')
+const detailSource = (await import('node:fs')).readFileSync('src/components/images/detailPreview.ts','utf8')
+const halftoneUi = (await import('node:fs')).readFileSync('src/components/images/DtfHalftoneControls.tsx','utf8')
+const imagesCss = (await import('node:fs')).readFileSync('src/components/images/imagesStudio.css','utf8')
 assert.ok(browserSource.includes('await renderLargeTransparentPng(currentFile, sourceDimensions') && browserSource.includes('await renderLargeTransparentPng(item.file, dimensions'))
 assert.ok(streamSource.includes('createImageBitmap(input, 0, sourceTop') && streamSource.includes("new CompressionStream('deflate')"))
+assert.ok(detailSource.includes('alphaSettings, sy, sx') && detailSource.includes('createImageBitmap(file, sx, sy, sw, sh'), 'Native detail must use the original crop and both screen origins')
+assert.ok(detailSource.includes('signal.aborted') && detailSource.includes('crop?.close()'), 'Stale native crops must be discarded and released')
+assert.ok(browserSource.includes('const controller = new AbortController()') && browserSource.includes('controller.abort()'))
+assert.ok(halftoneUi.includes('PatternSwatch') && halftoneUi.includes('onInspect') && halftoneUi.includes('aria-pressed') && halftoneUi.includes('Ángulo de trama'))
+assert.match(imagesCss, /\.images-halftone-patterns\s*\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
+assert.match(imagesCss, /@container \(min-width:460px\)/)
+assert.match(imagesCss, /\.images-halftone-segments button\s*\{[^}]*min-height:44px/)
+assert.match(imagesCss, /\.images-preview.native-detail-active[^}]*opacity:0/, 'Native alpha holes must not reveal the filtered overview')
 const withProfile = await embedSrgbIcc(new Blob([new Uint8Array(png)], {type:'image/png'}))
 const details = await verifyPrintPng(withProfile, { width:1, height:1, dpi:300, icc:true })
 assert.deepEqual(details, {width:1,height:1,bitDepth:8,colorType:6,icc:true,dpi:300})
@@ -144,4 +228,4 @@ assert.equal(icc.toString('ascii', 36, 40), 'acsp')
 assert.equal(icc.toString('ascii', 16, 20), 'RGB ')
 assert.deepEqual(await inspectPng(withProfile), details)
 textResult()
-function textResult() { process.stdout.write('Images Studio print QA: no-resample geometry, DTF detail preservation / strip continuity, RGBA8, 300 ppp and real ICC sRGB passed.\n') }
+function textResult() { process.stdout.write('Images Studio print QA: native geometry, round-dot coverage, rotated/cropped DTF continuity, filtered overview, compact control structure, RGBA8, 300 ppp and ICC sRGB passed.\n') }

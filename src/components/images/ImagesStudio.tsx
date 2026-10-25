@@ -13,12 +13,14 @@ import { assertStreamedDimensions, isLargeImage, readPngSourceSize, renderLargeT
 import { createZipArchive } from './zipExport'
 import { paintNativeDetail } from './detailPreview'
 import { ImagesBatchSidebar } from './ImagesBatchSidebar'
+import { DtfHalftoneControls } from './DtfHalftoneControls'
 import { EXPORT_PRESETS, getExportGeometry, resolveExportPreset, type ExportPreset } from './printExport'
 import { describeCompression, type CompressionResult } from './pngOptimization'
 import { analyzeAlpha, DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings, type PrintMethod, type DtfAlphaMode, type DtfPattern, type AlphaStatistics } from './alphaOptimization'
 import { analyzeDtfPrintability, buildDtfPromptBlock, DTF_PRINT_SIZES, resolveDtfPrintSize, type DtfPrintabilityAnalysis, type DtfPrintSizePreset } from './dtfAnalysis'
 import './imagesStudio.css'
 import { AppLauncher } from '../navigation/AppLauncher'
+import { notify } from '../ui/notifications'
 
 const MAX_IMAGE_BYTES = 60 * 1024 * 1024
 const PREVIEW_MAX_EDGE = 1300
@@ -35,6 +37,7 @@ const ALPHA_CLEANUP_KEY = 'gas3d.images.alpha-cleanup.v1'
 const DETAIL_PROTECTION_KEY = 'gas3d.images.detail-protection.v1'
 const DTF_DOT_SIZE_KEY = 'gas3d.images.dtf-dot-size.v1'
 const DTF_PATTERN_KEY = 'gas3d.images.dtf-pattern.v1'
+const DTF_ANGLE_KEY = 'gas3d.images.dtf-angle.v1'
 const DTF_PRINT_SIZE_KEY = 'gas3d.images.dtf-print-size.v1'
 const DTF_CUSTOM_WIDTH_KEY = 'gas3d.images.dtf-custom-width.v1'
 const DTF_CUSTOM_HEIGHT_KEY = 'gas3d.images.dtf-custom-height.v1'
@@ -106,6 +109,7 @@ export function ImagesStudio() {
   const batchIdRef = useRef(0)
   const previewRef = useRef<HTMLDivElement | null>(null)
   const detailCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const detailFailureRef = useRef<File | null>(null)
   const riskOverlayRef = useRef<HTMLCanvasElement | null>(null)
   const zoomRef = useRef<ZoomPosition>({ ...initialZoom })
   const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
@@ -114,9 +118,10 @@ export function ImagesStudio() {
   const [file, setFile] = useState<File | null>(null)
   const [sourcePreview, setSourcePreview] = useState<ImageData | null>(null)
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null)
+  const [streamedSource, setStreamedSource] = useState(false)
   const [inkMode, setInkMode] = useState<InkRemovalMode>(initialInkMode)
   const [outputPreset, setOutputPreset] = useState<ExportPreset>(readOutputPreset)
-  const [allowUpscale, setAllowUpscale] = useState(() => readPreference(UPSCALE_KEY, true))
+  const [allowUpscale] = useState(() => readPreference(UPSCALE_KEY, true))
   const [printMethod, setPrintMethod] = useState<PrintMethod>(() => {
     try { return window.localStorage.getItem(PRINT_METHOD_KEY) === 'dtf' ? 'dtf' : 'dtg' }
     catch { return 'dtg' }
@@ -149,6 +154,13 @@ export function ImagesStudio() {
       const stored = window.localStorage.getItem(DTF_PATTERN_KEY)
       return stored === 'dots' || stored === 'lines' || stored === 'ordered' ? stored : 'stochastic'
     } catch { return 'stochastic' }
+  })
+  const [dtfAngle, setDtfAngle] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(DTF_ANGLE_KEY)
+      const angle = saved === null ? 45 : Number(saved)
+      return Number.isFinite(angle) ? clamp(angle, 0, 90) : 45
+    } catch { return 45 }
   })
   const [dtfPrintSizePreset, setDtfPrintSizePreset] = useState<DtfPrintSizePreset>(() => {
     try {
@@ -198,8 +210,9 @@ export function ImagesStudio() {
     cleanupPercent: alphaCleanup,
     cellPixels: dtfDotSize,
     pattern: dtfPattern,
+    angle: dtfAngle,
     detailProtection,
-  }), [printMethod, dtfAlphaMode, alphaCleanup, dtfDotSize, dtfPattern, detailProtection])
+  }), [printMethod, dtfAlphaMode, alphaCleanup, dtfDotSize, dtfPattern, dtfAngle, detailProtection])
   const exportGeometry = dimensions ? getExportGeometry(dimensions.width, dimensions.height, outputPreset, allowUpscale) : null
   const dtfPrintSize = useMemo(() => resolveDtfPrintSize(dtfPrintSizePreset, dtfCustomWidth, dtfCustomHeight), [dtfPrintSizePreset, dtfCustomWidth, dtfCustomHeight])
 
@@ -256,10 +269,11 @@ export function ImagesStudio() {
       window.localStorage.setItem(DETAIL_PROTECTION_KEY, String(detailProtection))
       window.localStorage.setItem(DTF_DOT_SIZE_KEY, String(dtfDotSize))
       window.localStorage.setItem(DTF_PATTERN_KEY, dtfPattern)
+      window.localStorage.setItem(DTF_ANGLE_KEY, String(dtfAngle))
     } catch {
       // The print pipeline works without localStorage.
     }
-  }, [printMethod, dtfAlphaMode, embedProfile, optimizePng, alphaCleanup, detailProtection, dtfDotSize, dtfPattern])
+  }, [printMethod, dtfAlphaMode, embedProfile, optimizePng, alphaCleanup, detailProtection, dtfDotSize, dtfPattern, dtfAngle])
 
   useEffect(() => {
     try {
@@ -330,16 +344,25 @@ export function ImagesStudio() {
     setZoomPosition({ ...initialZoom })
   }
 
+  const inspectNativeDetail = () => {
+    const image = canvasRef.current
+    if (!image || !dimensions) return
+    const rect = image.getBoundingClientRect()
+    const current = zoomRef.current
+    const scale = dimensions.width / Math.max(1, rect.width / current.scale)
+    setZoomPosition({ scale: clamp(scale, 1, 64), x: 0, y: 0 })
+  }
+
   useEffect(() => {
     const node = previewRef.current
     if (!node) return
 
     const onWheel = (event: WheelEvent) => {
-      if (!bitmapRef.current || event.ctrlKey) return
+      if (!canvasRef.current || event.ctrlKey) return
       event.preventDefault()
 
       const current = zoomRef.current
-      const nextScale = clamp(current.scale * Math.exp(-event.deltaY * 0.0016), 1, 10)
+      const nextScale = clamp(current.scale * Math.exp(-event.deltaY * 0.0016), 1, 64)
       if (nextScale === current.scale) return
       if (nextScale <= 1.001) {
         setZoomPosition({ ...initialZoom })
@@ -363,7 +386,7 @@ export function ImagesStudio() {
   }, [])
 
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (zoomRef.current.scale <= 1 || !bitmapRef.current || event.button !== 0) return
+    if (zoomRef.current.scale <= 1 || !canvasRef.current || event.button !== 0) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
@@ -402,7 +425,7 @@ export function ImagesStudio() {
       if (!ctx) return
       const before = analyzeAlpha(result.image)
       const optimizedPreview = shouldOptimizeAlpha(alphaSettings)
-        ? optimizeImageAlpha(result.image, alphaSettings) : result.image
+        ? optimizeImageAlpha(result.image, alphaSettings, 0, 0, dimensions ? dimensions.width / sourcePreview.width : 1) : result.image
       const after = analyzeAlpha(optimizedPreview)
       ctx.putImageData(originalVisible ? sourcePreview : optimizedPreview, 0, 0)
       setAlphaStats({ original: before, result: after })
@@ -411,7 +434,7 @@ export function ImagesStudio() {
     })
 
     return () => cancelAnimationFrame(frame)
-  }, [sourcePreview, settings, originalVisible, previewMode, inkMode, alphaSettings])
+  }, [sourcePreview, dimensions, settings, originalVisible, previewMode, inkMode, alphaSettings])
 
   useEffect(() => {
     if (printMethod !== 'dtf' || !dtfAnalysisSource || !dimensions) {
@@ -419,10 +442,10 @@ export function ImagesStudio() {
       return
     }
     const timer = window.setTimeout(() => {
-      setDtfAnalysis(analyzeDtfPrintability(dtfAnalysisSource, dtfPrintSize, dimensions))
+      setDtfAnalysis(analyzeDtfPrintability(dtfAnalysisSource, dtfPrintSize, dimensions, 0.4, 0.5, shouldOptimizeAlpha(alphaSettings)))
     }, 120)
     return () => window.clearTimeout(timer)
-  }, [printMethod, dtfAnalysisSource, dimensions, dtfPrintSize])
+  }, [printMethod, dtfAnalysisSource, dimensions, dtfPrintSize, alphaSettings])
 
   useEffect(() => {
     const overlay = riskOverlayRef.current
@@ -457,18 +480,22 @@ export function ImagesStudio() {
     overlayContext?.clearRect(0, 0, overlay.width, overlay.height)
     setNativeDetailActive(false)
 
-    if (!viewport || !sourcePreview || zoom.scale <= 1.05) return
+    if (!viewport || !sourcePreview || !file || !dimensions || zoom.scale <= 1.05) return
 
+    const controller = new AbortController()
     let animationFrame = 0
     const timeout = window.setTimeout(() => {
-      animationFrame = window.requestAnimationFrame(() => {
+      animationFrame = window.requestAnimationFrame(async () => {
         const bitmap = bitmapRef.current
         const image = canvasRef.current
-        if (!bitmap || !image || !detailCanvasRef.current) return
+        if (!image || !detailCanvasRef.current) return
         // Viewports and canvases can be replaced as the user switches modes;
         // always resolve the DOM node at the moment the detail is rendered.
-        const rendered = paintNativeDetail({
+        const rendered = await paintNativeDetail({
           bitmap,
+          file,
+          dimensions,
+          signal: controller.signal,
           viewport,
           image,
           overlay: detailCanvasRef.current,
@@ -476,16 +503,23 @@ export function ImagesStudio() {
           inkMode,
           showOriginal: originalVisible,
           alphaSettings,
+        }).catch(() => {
+          if (!controller.signal.aborted && detailFailureRef.current !== file) {
+            detailFailureRef.current = file
+            notify('error', 'El navegador no pudo abrir el detalle original. La vista general sigue disponible.')
+          }
+          return false
         })
-        setNativeDetailActive(rendered)
+        if (!controller.signal.aborted) setNativeDetailActive(rendered)
       })
     }, 110)
 
     return () => {
+      controller.abort()
       window.clearTimeout(timeout)
       if (animationFrame) window.cancelAnimationFrame(animationFrame)
     }
-  }, [zoom, sourcePreview, settings, inkMode, originalVisible, previewMode, previewResize, alphaSettings])
+  }, [zoom, sourcePreview, file, dimensions, settings, inkMode, originalVisible, previewMode, previewResize, alphaSettings])
 
   const loadImage = async (incoming: File) => {
     const id = ++uploadIdRef.current
@@ -532,6 +566,7 @@ export function ImagesStudio() {
           setAlphaStats(null)
           resetZoom()
           setDimensions(pngDimensions)
+          setStreamedSource(true)
           setShowOriginal(false)
           setFile(incoming)
         } finally {
@@ -570,6 +605,7 @@ export function ImagesStudio() {
       setAlphaStats(null)
       resetZoom()
       setDimensions({ width: bitmap.width, height: bitmap.height })
+      setStreamedSource(false)
       setShowOriginal(false)
       setFile(incoming)
     } catch (cause) {
@@ -710,6 +746,7 @@ export function ImagesStudio() {
     setShowDtfRiskOverlay(false)
     setAlphaStats(null)
     setDimensions(null)
+    setStreamedSource(false)
     setFile(null)
     setRemovedPercent(0)
     setError(null)
@@ -965,7 +1002,7 @@ export function ImagesStudio() {
             </button>
           </div>
 
-          <div ref={previewRef} className={'images-preview images-preview-' + previewMode + ' ink-' + inkMode + (dragging ? ' dragging' : '') + (zoom.scale > 1 ? ' zoomed' : '')}
+          <div ref={previewRef} className={'images-preview images-preview-' + previewMode + ' ink-' + inkMode + (dragging ? ' dragging' : '') + (zoom.scale > 1 ? ' zoomed' : '') + (nativeDetailActive ? ' native-detail-active' : '')}
             onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
             <div className="images-zoom-surface" style={{ transform: 'translate(' + zoom.x + 'px, ' + zoom.y + 'px) scale(' + zoom.scale + ')' }}>
             {sourcePreview ? <>
@@ -993,7 +1030,7 @@ export function ImagesStudio() {
           {file && <div className="images-preview-footer">
             <div className="images-file-info">
               <strong title={file.name}>{file.name}</strong>
-              <small>{(file.size / (1024 * 1024)).toFixed(1)} MB · {removedPercent}% de píxeles totalmente transparentes en preview{dimensions && !bitmapRef.current ? ' · PNG grande: exportación por franjas a resolución original' : ''}</small>
+              <small>{(file.size / (1024 * 1024)).toFixed(1)} MB · {removedPercent}% de píxeles totalmente transparentes en preview{streamedSource ? ' · PNG grande: exportación por franjas a resolución original' : ''}</small>
             </div>
             <button className={originalVisible ? 'images-before active' : 'images-before'} onClick={() => setShowOriginal((value) => !value)} aria-pressed={showOriginal}
               title="Ver antes/después. Pulsa dos veces Ctrl y mantén la segunda pulsación para ver el original temporalmente.">
@@ -1120,64 +1157,16 @@ export function ImagesStudio() {
             {printMethod === 'dtg' ? <p className="images-production-explain">
               DTG: conserva los degradados y semitransparencias originales del diseño limpio.
             </p> : <>
-              <div className="images-dtf-modes" role="group" aria-label="Tratamiento de transparencia DTF">
-                {([
-                  ['halftone', 'Tramado protegido', 'Respeta colores y contornos; trama solo transparencias necesarias.'],
-                  ['solid', 'Alfa sólido', 'Umbral de 50%: bordes definidos, sin semitransparencias.'],
-                  ['preserve', 'Conservar alfa', 'No modifica las semitransparencias; para un RIP compatible.'],
-                  ['aggressive', 'Tramado completo', 'Trama todas las transparencias; usar solo si el arte lo admite.'],
-                ] as const).map(([id, name, detail]) => <button key={id} type="button"
-                  className={dtfAlphaMode === id ? 'active' : ''}
-                  disabled={busy === 'batch' || busy === 'exporting'}
-                  aria-pressed={dtfAlphaMode === id}
-                  onClick={() => { setDtfAlphaMode(id); invalidateBatch() }}>
-                  <span className="images-mode-radio" aria-hidden="true" />
-                  <span><strong>{name}</strong><small>{detail}</small></span>
-                </button>)}
-              </div>
-              {(dtfAlphaMode === 'halftone' || dtfAlphaMode === 'aggressive') && <div className="images-dtf-options">
-                {dtfAlphaMode === 'halftone' && <label className="images-cleanup-slider">
-                  <span><strong>Proteger contornos y detalles</strong><output>{detailProtection}%</output></span>
-                  <input type="range" min={0} max={100} step={5} value={detailProtection}
-                    disabled={busy === 'batch' || busy === 'exporting'}
-                    onChange={(event) => { setDetailProtection(Number(event.currentTarget.value)); invalidateBatch() }}/>
-                </label>}
-                <div className="images-dtf-pitch images-dtf-pattern">
-                  <strong>Patrón de trama</strong>
-                  <div role="group" aria-label="Patrón de trama DTF">
-                    {([
-                      ['Orgánico', 'stochastic'],
-                      ['Puntos', 'dots'],
-                      ['Líneas', 'lines'],
-                      ['Ordenado', 'ordered'],
-                    ] as const).map(([label, id]) =>
-                      <button type="button" key={id} className={dtfPattern === id ? 'active' : ''}
-                        aria-pressed={dtfPattern === id} disabled={busy === 'batch' || busy === 'exporting'}
-                        onClick={() => { setDtfPattern(id); invalidateBatch() }}>{label}</button>)}
-                  </div>
-                </div>
-                <div className="images-dtf-pitch">
-                  <strong>Tamaño de punto</strong>
-                  <div role="group" aria-label="Tamaño de punto de trama DTF">
-                    {([['Fino', 8], ['Medio', 12], ['Grueso', 16]] as const).map(([label, size]) =>
-                      <button type="button" key={size} className={dtfDotSize === size ? 'active' : ''}
-                        aria-pressed={dtfDotSize === size} disabled={busy === 'batch' || busy === 'exporting'}
-                        onClick={() => { setDtfDotSize(size); invalidateBatch() }}>{label}</button>)}
-                  </div>
-                </div>
-                <label className="images-cleanup-slider">
-                  <span><strong>Limpiar restos de alfa</strong><output>{alphaCleanup}%</output></span>
-                  <input type="range" min={0} max={30} step={1} value={alphaCleanup}
-                    disabled={busy === 'batch' || busy === 'exporting'}
-                    onChange={(event) => { setAlphaCleanup(Number(event.currentTarget.value)); invalidateBatch() }}/>
-                </label>
-              </div>}
-              <p className="images-production-explain">
-                DTF: conserva colores originales y sólidos; la trama se genera a tamaño final.
-                Orgánico evita cuadrículas y cruces visibles; «Ordenado» conserva el patrón clásico.
-                El modo protegido prioriza detalles de contraste. Verifica el tamaño mínimo del punto
-                y el resultado del RIP con el taller. Usa zoom para evaluar trazos finos.
-              </p>
+              <DtfHalftoneControls settings={alphaSettings} disabled={busy === 'batch' || busy === 'exporting'}
+                canInspect={!!file} onInspect={inspectNativeDetail} onChange={(change) => {
+                  if (change.dtfMode !== undefined) setDtfAlphaMode(change.dtfMode)
+                  if (change.pattern !== undefined) setDtfPattern(change.pattern)
+                  if (change.angle !== undefined) setDtfAngle(change.angle)
+                  if (change.cellPixels !== undefined) setDtfDotSize(change.cellPixels)
+                  if (change.detailProtection !== undefined) setDetailProtection(change.detailProtection)
+                  if (change.cleanupPercent !== undefined) setAlphaCleanup(change.cleanupPercent)
+                  invalidateBatch()
+                }} />
               {inkMode === 'black' && settings.shadowThreshold > 85 && <p className="images-dtf-warning">
                 Si aún ves puntitos en la cara o sombras del personaje, reduce
                 «Eliminar sombras» o prueba el preset «Negro puro»: ese ajuste puede
@@ -1185,9 +1174,9 @@ export function ImagesStudio() {
               </p>}
             </>}
             {alphaStats && <p className="images-alpha-diagnostic">
-              Alfa parcial: <strong>{(alphaStats.original.partial / Math.max(1, alphaStats.original.total) * 100).toFixed(1)}%</strong>
-              {' '}→ <strong>{(alphaStats.result.partial / Math.max(1, alphaStats.result.total) * 100).toFixed(1)}%</strong> en vista previa.
-              {shouldOptimizeAlpha(alphaSettings) && <span>La exportación DTF tendrá alfa 0 o 255.</span>}
+              Alfa parcial en vista general: <strong>{(alphaStats.original.partial / Math.max(1, alphaStats.original.total) * 100).toFixed(1)}%</strong>
+              {' '}→ <strong>{(alphaStats.result.partial / Math.max(1, alphaStats.result.total) * 100).toFixed(1)}%</strong>.
+              {shouldOptimizeAlpha(alphaSettings) && <span>Vista reducida filtrada. El PNG exportado tendrá alfa 0 o 255.</span>}
             </p>}
           </section>
           <section className="images-production-section" aria-label="Gestión del color PNG">
@@ -1257,8 +1246,8 @@ export function ImagesStudio() {
                 onChange={(event) => setDtfCustomHeight(Math.max(0.1, Number(event.currentTarget.value) || 0.1))}/></label>
             </div>}
             <p className="images-production-explain">
-              Se analiza el arte procesado a <strong>{dtfPrintSize.widthCm} × {dtfPrintSize.heightCm} cm</strong>.
-              Línea mínima objetivo: <strong>0,4 mm</strong>. El diagnóstico no modifica el PNG.
+              Estimación sobre la vista general a <strong>{dtfPrintSize.widthCm} × {dtfPrintSize.heightCm} cm</strong>.
+              Línea objetivo: <strong>0,4 mm</strong>. Revisa los puntos y trazos en 1:1.
             </p>
             {dtfAnalysis ? <>
               <div className="images-dtf-analysis-grid">

@@ -71,6 +71,7 @@ export function analyzeDtfPrintability(
   originalDimensions: { width: number; height: number },
   minLineMm = 0.4,
   minDetailMm = 0.5,
+  binaryExport = false,
 ): DtfPrintabilityAnalysis {
   const width = image.width
   const height = image.height
@@ -94,7 +95,9 @@ export function analyzeDtfPrintability(
       printed[index] = 1
       printedCount++
     }
-    if (alpha > 0 && alpha < 255) {
+    // A filtered overview has partial coverage even when the native screen
+    // exports binary alpha. Do not diagnose display filtering as a print fault.
+    if (!binaryExport && alpha > 0 && alpha < 255) {
       partialAlphaPixels++
       paint(overlay, index, 245, 196, 72, 112)
     }
@@ -120,7 +123,7 @@ export function analyzeDtfPrintability(
   for (let x = 0; x < width; x++) {
     let y = 0
     while (y < height) {
-      let index = y * width + x
+      const index = y * width + x
       if (!printed[index]) { y++; continue }
       const start = y
       while (y < height && printed[y * width + x]) y++

@@ -2,7 +2,10 @@ import { removeFabricInk, type InkRemovalMode, type InkRemovalSettings } from '.
 import { optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings } from './alphaOptimization'
 
 type DetailPreview = {
-  bitmap: ImageBitmap
+  bitmap: ImageBitmap | null
+  file: Blob
+  dimensions: { width: number; height: number }
+  signal: AbortSignal
   viewport: HTMLElement
   image: HTMLCanvasElement
   overlay: HTMLCanvasElement
@@ -24,9 +27,9 @@ const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n
  * instead of downsampling it first. That prevents the creamy/soft appearance
  * caused by processing already-interpolated pixels.
  */
-export function paintNativeDetail({
-  bitmap, viewport, image, overlay, settings, inkMode, showOriginal, alphaSettings,
-}: DetailPreview): boolean {
+export async function paintNativeDetail({
+  bitmap, file, dimensions, signal, viewport, image, overlay, settings, inkMode, showOriginal, alphaSettings,
+}: DetailPreview): Promise<boolean> {
   const frame = viewport.getBoundingClientRect()
   const art = image.getBoundingClientRect()
   if (!frame.width || !frame.height || !art.width || !art.height) return false
@@ -42,22 +45,16 @@ export function paintNativeDetail({
     0.7,
     2,
   )
-  overlay.width = Math.max(1, Math.round(frame.width * pixelRatio))
-  overlay.height = Math.max(1, Math.round(frame.height * pixelRatio))
-  const output = overlay.getContext('2d')
-  if (!output) return false
-  output.clearRect(0, 0, overlay.width, overlay.height)
-
-  const sourceL = (left - art.left) * bitmap.width / art.width
-  const sourceT = (top - art.top) * bitmap.height / art.height
-  const sourceR = (right - art.left) * bitmap.width / art.width
-  const sourceB = (bottom - art.top) * bitmap.height / art.height
+  const sourceL = (left - art.left) * dimensions.width / art.width
+  const sourceT = (top - art.top) * dimensions.height / art.height
+  const sourceR = (right - art.left) * dimensions.width / art.width
+  const sourceB = (bottom - art.top) * dimensions.height / art.height
 
   // Keep a tiny native halo so edge/detail protection has neighboring pixels.
-  const sx = clamp(Math.floor(sourceL) - 2, 0, bitmap.width - 1)
-  const sy = clamp(Math.floor(sourceT) - 2, 0, bitmap.height - 1)
-  const ex = clamp(Math.ceil(sourceR) + 2, sx + 1, bitmap.width)
-  const ey = clamp(Math.ceil(sourceB) + 2, sy + 1, bitmap.height)
+  const sx = clamp(Math.floor(sourceL) - 2, 0, dimensions.width - 1)
+  const sy = clamp(Math.floor(sourceT) - 2, 0, dimensions.height - 1)
+  const ex = clamp(Math.ceil(sourceR) + 2, sx + 1, dimensions.width)
+  const ey = clamp(Math.ceil(sourceB) + 2, sy + 1, dimensions.height)
   const sw = ex - sx
   const sh = ey - sy
 
@@ -67,23 +64,34 @@ export function paintNativeDetail({
   const work = document.createElement('canvas')
   work.width = sw
   work.height = sh
+  let crop: ImageBitmap | null = null
   try {
+    // Large-image mode retains the Blob instead of a full native bitmap.
+    // Decode only this bounded crop; failure leaves the general preview usable.
+    if (!bitmap) crop = await createImageBitmap(file, sx, sy, sw, sh, { colorSpaceConversion: 'default' })
+    if (signal.aborted) return false
+    overlay.width = Math.max(1, Math.round(frame.width * pixelRatio))
+    overlay.height = Math.max(1, Math.round(frame.height * pixelRatio))
+    const output = overlay.getContext('2d')
+    if (!output) return false
+    output.clearRect(0, 0, overlay.width, overlay.height)
     const ctx = work.getContext('2d', { willReadFrequently: !showOriginal })
     if (!ctx) return false
     ctx.imageSmoothingEnabled = false
-    ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh)
+    if (crop) ctx.drawImage(crop, 0, 0)
+    else if (bitmap) ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh)
 
     if (!showOriginal) {
       const pixels = ctx.getImageData(0, 0, sw, sh)
       const processed = removeFabricInk(pixels, settings, inkMode)
-      if (shouldOptimizeAlpha(alphaSettings)) optimizeImageAlpha(processed.image, alphaSettings, sy)
+      if (shouldOptimizeAlpha(alphaSettings)) optimizeImageAlpha(processed.image, alphaSettings, sy, sx)
       ctx.putImageData(processed.image, 0, 0)
     }
 
-    const destLeft = (art.left - frame.left + sx * art.width / bitmap.width) * pixelRatio
-    const destTop = (art.top - frame.top + sy * art.height / bitmap.height) * pixelRatio
-    const destWidth = sw * art.width / bitmap.width * pixelRatio
-    const destHeight = sh * art.height / bitmap.height * pixelRatio
+    const destLeft = (art.left - frame.left + sx * art.width / dimensions.width) * pixelRatio
+    const destTop = (art.top - frame.top + sy * art.height / dimensions.height) * pixelRatio
+    const destWidth = sw * art.width / dimensions.width * pixelRatio
+    const destHeight = sh * art.height / dimensions.height * pixelRatio
 
     // When source pixels are being enlarged, keep them crisp. Only use high
     // quality filtering when the native crop is being reduced to the display.
@@ -93,6 +101,7 @@ export function paintNativeDetail({
     output.drawImage(work, destLeft, destTop, destWidth, destHeight)
     return true
   } finally {
+    crop?.close()
     work.width = 0
     work.height = 0
   }
