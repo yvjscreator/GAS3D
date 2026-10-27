@@ -340,10 +340,10 @@
 }
 
 
-/* Two-way preparation: dark fabric removes blacks; light fabric removes whites. */
+/* Background removal presets plus a sampled custom color. */
 .images-ink-mode {
   display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-columns:repeat(3,minmax(0,1fr));
   gap:5px;
   padding:4px;
   margin-bottom:16px;
@@ -353,7 +353,7 @@
 }
 .images-ink-mode button {
   min-width:0;
-  min-height:38px;
+  min-height:44px;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -387,6 +387,26 @@
 }
 .images-ink-dot.black { background:#040404; }
 .images-ink-dot.white { background:#f7f9fb; }
+.images-ink-mode button:disabled { opacity:.5; cursor:default; }
+.images-key-color { margin:0 0 16px; min-width:0; }
+.images-key-color .ui-inline-field-controls { grid-template-columns:minmax(0,1fr) 44px 44px; }
+.images-key-color input,.images-key-color button { height:44px; border:1px solid #3a5260; border-radius:8px; background:#101d26; color:#d8eaf2; }
+.images-key-color input[type=text] { width:100%; min-width:0; padding:0 10px; font:13px 'DM Mono',monospace; }
+.images-key-color input[type=color] { width:44px; padding:5px; cursor:pointer; }
+.images-key-color button { display:grid; place-items:center; width:44px; padding:0; cursor:pointer; }
+.images-key-color button[aria-pressed=true] { background:#255341; border-color:var(--images-accent); color:#d7ffeb; }
+.images-key-color button:hover:not(:disabled) { border-color:var(--images-accent); }
+.images-key-color :is(input,button):focus-visible { outline:2px solid var(--images-accent); outline-offset:3px; }
+.images-key-color :disabled { opacity:.5; cursor:default; }
+.images-key-color p { margin:7px 0 0; color:#9bb4c0; font-size:11px; line-height:1.5; }
+.images-key-error { display:block; margin-top:6px; color:#ffbdad; font-size:11px; line-height:1.5; }
+.images-key-color input[aria-invalid=true] { border-color:#d98b7d; }
+.images-preview-custom { background:var(--images-key-color); }
+.images-preview-shirt.ink-custom .images-shirt-preview { background:linear-gradient(110deg,#0004,transparent 48%,#0004),var(--images-key-color); border-color:#687a8c; }
+.images-preview-shirt.ink-custom .images-shirt-neck { background:var(--images-key-color); border-bottom-color:#8798a588; }
+.images-preview.sampling-color { cursor:crosshair; }
+.images-preview.sampling-color .images-zoom-surface { cursor:crosshair; }
+.images-color-sampling-hint { position:absolute; z-index:5; top:10px; left:50%; transform:translateX(-50%); max-width:calc(100% - 24px); padding:8px 12px; border:1px solid #6a9d90; border-radius:8px; color:#d8f5ee; background:#152923ed; box-shadow:0 6px 16px #0005; font-size:12px; line-height:1.4; text-align:center; pointer-events:none; }
 .images-preview-white { background:#fff; }
 .images-preview-shirt.ink-white {
   background:radial-gradient(circle at 50% 37%,#cad1d7,#7d8993 69%,#333d46);
@@ -405,10 +425,10 @@
   padding:3px;
 }
 .images-studio.is-zen .images-ink-mode button {
-  min-height:31px;
+  min-height:44px;
 }
 @media (max-width:720px) {
-  .images-ink-mode button { min-height:35px; font-size:10px; }
+  .images-ink-mode button { min-height:44px; font-size:11px; }
   .images-preview-modes { gap:2px; padding:2px; }
   .images-preview-modes button { min-width:41px; padding:0 4px; font-size:8px; }
   .images-studio.is-zen .images-preview-modes button { min-width:40px; }

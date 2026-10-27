@@ -5,6 +5,8 @@ import { DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, analyzeAlpha, type AlphaOpt
 import { embedSrgbIcc, inspectPng, verifyPrintPng } from '../src/components/images/colorManagement'
 import { assertStreamedDimensions, isLargeImage, readPngSourceSize } from '../src/components/images/largeImageExport'
 import { analyzeDtfPrintability } from '../src/components/images/dtfAnalysis'
+import { imagePresets, normalizeKeyColor, removeFabricInk, type InkRemovalSettings } from '../src/components/images/imageProcessor'
+import { sourcePixelAt } from '../src/components/images/sampleImageColor'
 
 // The streamed path begins above, not instead of, the existing memory caps.
 let mobileViewport = false
@@ -18,6 +20,76 @@ Reflect.deleteProperty(globalThis, 'window')
 Object.defineProperty(globalThis, 'ImageData', { configurable: true, value: class {
   constructor(public data: Uint8ClampedArray, public width: number, public height: number) {}
 } })
+
+assert.equal(normalizeKeyColor(' 061C3D '), '#061c3d')
+assert.equal(normalizeKeyColor('#abc'), '#aabbcc')
+assert.equal(normalizeKeyColor('#12zz00'), null)
+assert.equal(normalizeKeyColor(''), null)
+// The eyedropper maps the displayed (possibly zoomed/panned) rectangle back
+// to original source pixels; outside taps do not change the selected color.
+const sourceSize = { width: 1089, height: 1445 }
+const previewRect = { left: -200, top: -300, width: 2178, height: 2890 }
+assert.deepEqual(sourcePixelAt(0, 0, previewRect, sourceSize), { x: 100, y: 150 })
+assert.deepEqual(sourcePixelAt(1977.9, 2589.9, previewRect, sourceSize), { x: 1088, y: 1444 })
+assert.equal(sourcePixelAt(-201, 0, previewRect, sourceSize), null)
+assert.equal(sourcePixelAt(1978, 0, previewRect, sourceSize), null)
+assert.equal(sourcePixelAt(0, 2590, previewRect, sourceSize), null)
+assert.equal(sourcePixelAt(0, 0, { ...previewRect, width: 0 }, sourceSize), null)
+
+const palette = new Uint8ClampedArray([
+  6, 28, 61, 255, 7, 30, 63, 255, 0, 0, 0, 255,
+  0, 210, 255, 255, 255, 35, 30, 255, 245, 246, 250, 255,
+  20, 70, 180, 120, 6, 28, 61, 70, 6, 28, 61, 0,
+])
+const paletteImage = () => new ImageData(palette.slice(), 9, 1)
+const exactColor: InkRemovalSettings = { ...imagePresets.custom.pure.settings, keyColor: '#061c3d' }
+const exactResult = removeFabricInk(paletteImage(), exactColor, 'custom').image
+assert.equal(exactResult.data[3], 0, 'Selected navy color must disappear')
+assert.equal(exactResult.data[7 * 4 + 3], 0, 'Selected color is removed even with preexisting partial alpha')
+for (const x of [1, 2, 3, 4, 5, 6]) {
+  assert.deepEqual(exactResult.data.slice(x * 4, x * 4 + 4), palette.slice(x * 4, x * 4 + 4), 'Exact keying preserves unrelated colors and existing alpha')
+}
+const balancedColor = { ...imagePresets.custom.balanced.settings, keyColor: '#061c3d' }
+const balancedResult = removeFabricInk(paletteImage(), balancedColor, 'custom').image
+assert.equal(balancedResult.data[7], 0, 'Tolerance removes small background variations')
+for (const x of [2, 3, 4, 5]) {
+  assert.deepEqual(balancedResult.data.slice(x * 4, x * 4 + 4), palette.slice(x * 4, x * 4 + 4), 'Navy keying must preserve black ink, cyan, red and highlights')
+}
+assert.deepEqual(paletteImage().data, palette, 'Processing must not mutate source bytes')
+// The selected color affects only custom mode. Old black/white settings have
+// exactly the same results whether the new optional field exists or not.
+for (const mode of ['black', 'white'] as const) for (const preset of ['pure', 'balanced', 'deep'] as const) {
+  const settings = imagePresets[mode][preset].settings
+  assert.deepEqual(removeFabricInk(paletteImage(), { ...settings, keyColor: '#ff00ff' }, mode).image.data,
+    removeFabricInk(paletteImage(), settings, mode).image.data)
+}
+// Different selected chromatic backgrounds recover mixed edge colors from
+// their own matte, rather than incorrectly dividing as if they were black.
+for (const matte of [[6, 28, 61], [0, 180, 60], [210, 160, 240]]) {
+  const color = '#' + matte.map((value) => value.toString(16).padStart(2, '0')).join('')
+  const input = new ImageData(new Uint8ClampedArray([matte[0] + 3, matte[1] + 5, matte[2] - 4, 170]), 1, 1)
+  const output = removeFabricInk(input, { ...balancedColor, keyColor: color, blackThreshold: 0, shadowThreshold: 40 }, 'custom').image
+  assert.ok(output.data[3] > 0 && output.data[3] <= 170, 'Custom cleanup must never increase original alpha')
+  const opacity = output.data[3] / 170
+  for (let c = 0; c < 3; c++) assert.ok(Math.abs(output.data[c] * opacity + matte[c] * (1 - opacity) - input.data[c]) < 1.5, 'Unmatte edges should reconstruct the source on the selected background')
+}
+// Custom keying and DTF must also agree across native strips with source halos.
+const keyedSource = new ImageData(Uint8ClampedArray.from({ length: 17 * 13 * 4 }, (_, i) => {
+  const pixel = Math.floor(i / 4), c = i % 4
+  return c === 3 ? 90 + pixel % 166 : [6, 28, 61][c] + (pixel * (c + 3)) % 100
+}), 17, 13)
+const keyedWhole = removeFabricInk(keyedSource, balancedColor, 'custom').image
+const dtfKeyProfile: AlphaOptimizationSettings = { method: 'dtf', dtfMode: 'halftone', cleanupPercent: 10, cellPixels: 8 }
+optimizeImageAlpha(keyedWhole, dtfKeyProfile)
+const keyedStrips = new Uint8ClampedArray(keyedSource.data.length)
+for (let y = 0; y < 13; y += 3) {
+  const count = Math.min(3, 13 - y), top = Math.max(0, y - 2), bottom = Math.min(13, y + count + 2), stride = 17 * 4
+  const input = new ImageData(keyedSource.data.slice(top * stride, bottom * stride), 17, bottom - top)
+  const output = removeFabricInk(input, balancedColor, 'custom').image
+  optimizeImageAlpha(output, dtfKeyProfile, top)
+  keyedStrips.set(output.data.subarray((y - top) * stride, (y - top + count) * stride), y * stride)
+}
+assert.deepEqual(keyedStrips, keyedWhole.data, 'Custom color and halftone must keep streamed/full-frame parity')
 
 const profile: AlphaOptimizationSettings = { method: 'dtf', dtfMode: 'halftone', cleanupPercent: 10, cellPixels: 8 }
 assert.equal(DEFAULT_ALPHA_SETTINGS.pattern, 'stochastic')
@@ -201,6 +273,8 @@ const streamSource = (await import('node:fs')).readFileSync('src/components/imag
 const detailSource = (await import('node:fs')).readFileSync('src/components/images/detailPreview.ts','utf8')
 const halftoneUi = (await import('node:fs')).readFileSync('src/components/images/DtfHalftoneControls.tsx','utf8')
 const imagesCss = (await import('node:fs')).readFileSync('src/components/images/imagesStudio.css','utf8')
+const keyUi = (await import('node:fs')).readFileSync('src/components/images/BackgroundColorControls.tsx','utf8')
+const sampler = (await import('node:fs')).readFileSync('src/components/images/sampleImageColor.ts','utf8')
 assert.ok(browserSource.includes('await renderLargeTransparentPng(currentFile, sourceDimensions') && browserSource.includes('await renderLargeTransparentPng(item.file, dimensions'))
 assert.ok(streamSource.includes('createImageBitmap(input, 0, sourceTop') && streamSource.includes("new CompressionStream('deflate')"))
 assert.ok(detailSource.includes('alphaSettings, sy, sx') && detailSource.includes('createImageBitmap(file, sx, sy, sw, sh'), 'Native detail must use the original crop and both screen origins')
@@ -211,6 +285,11 @@ assert.match(imagesCss, /\.images-halftone-patterns\s*\{[^}]*grid-template-colum
 assert.match(imagesCss, /@container \(min-width:460px\)/)
 assert.match(imagesCss, /\.images-halftone-segments button\s*\{[^}]*min-height:44px/)
 assert.match(imagesCss, /\.images-preview.native-detail-active[^}]*opacity:0/, 'Native alpha holes must not reveal the filtered overview')
+assert.ok(keyUi.includes('InlineField') && keyUi.includes('Tomar color de la imagen') && keyUi.includes('aria-invalid'), 'Custom color uses an accessible compact field/eyedropper')
+assert.ok(sampler.includes('createImageBitmap(file, x, y, 1, 1') && sampler.includes('crop?.close()'), 'Large-image sampling reads only an original pixel and releases it')
+assert.ok(browserSource.includes('showOriginal || holdOriginal || samplingColor') && browserSource.includes('uploadId !== uploadIdRef.current'), 'Sampling shows the original and discards results from a replaced source')
+assert.ok(browserSource.includes('sourceDimensions, processingSettings, inkMode') && browserSource.includes('dimensions, processingSettings, inkMode'), 'Individual and batch export must receive the selected color')
+assert.match(imagesCss, /\.images-key-color \.ui-inline-field-controls\s*\{[^}]*minmax\(0,1fr\) 44px 44px/, 'HEX/swatch/eyedropper stay on one row with 44px actions')
 const withProfile = await embedSrgbIcc(new Blob([new Uint8Array(png)], {type:'image/png'}))
 const details = await verifyPrintPng(withProfile, { width:1, height:1, dpi:300, icc:true })
 assert.deepEqual(details, {width:1,height:1,bitDepth:8,colorType:6,icc:true,dpi:300})
@@ -228,4 +307,4 @@ assert.equal(icc.toString('ascii', 36, 40), 'acsp')
 assert.equal(icc.toString('ascii', 16, 20), 'RGB ')
 assert.deepEqual(await inspectPng(withProfile), details)
 textResult()
-function textResult() { process.stdout.write('Images Studio print QA: native geometry, round-dot coverage, rotated/cropped DTF continuity, filtered overview, compact control structure, RGBA8, 300 ppp and ICC sRGB passed.\n') }
+function textResult() { process.stdout.write('Images Studio print QA: custom-color removal / matte recovery, source eyedropper coordinates, legacy black/white, native geometry, DTF coverage / continuity, compact controls, RGBA8, 300 ppp and ICC sRGB passed.\n') }

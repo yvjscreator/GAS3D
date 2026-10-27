@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { Copy, Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, ShieldCheck, Shirt, Upload, X, List, Scan, Layers3 } from 'lucide-react'
 import {
   imagePresets,
+  DEFAULT_KEY_COLOR,
+  normalizeKeyColor,
+  type InkAdjustment,
   removeFabricInk,
   type InkRemovalMode,
   type InkRemovalSettings,
@@ -14,6 +17,8 @@ import { createZipArchive } from './zipExport'
 import { paintNativeDetail } from './detailPreview'
 import { ImagesBatchSidebar } from './ImagesBatchSidebar'
 import { DtfHalftoneControls } from './DtfHalftoneControls'
+import { BackgroundColorControls } from './BackgroundColorControls'
+import { sampleImageColor, sourcePixelAt } from './sampleImageColor'
 import { EXPORT_PRESETS, getExportGeometry, resolveExportPreset, type ExportPreset } from './printExport'
 import { describeCompression, type CompressionResult } from './pngOptimization'
 import { analyzeAlpha, DEFAULT_ALPHA_SETTINGS, optimizeImageAlpha, shouldOptimizeAlpha, type AlphaOptimizationSettings, type PrintMethod, type DtfAlphaMode, type DtfPattern, type AlphaStatistics } from './alphaOptimization'
@@ -27,6 +32,7 @@ const PREVIEW_MAX_EDGE = 1300
 const ZEN_KEY = 'gas3d.images.zen.v1'
 const CONTROLS_KEY = 'gas3d.images.zen.controls.v1'
 const INK_MODE_KEY = 'gas3d.images.ink-mode.v1'
+const KEY_COLOR_KEY = 'gas3d.images.key-color.v1'
 const OUTPUT_PRESET_KEY = 'gas3d.images.output-preset.v1'
 const UPSCALE_KEY = 'gas3d.images.output-upscale.v1'
 const PRINT_METHOD_KEY = 'gas3d.images.print-method.v1'
@@ -53,7 +59,8 @@ const readOutputPreset = (): ExportPreset => {
 
 const initialInkMode = (): InkRemovalMode => {
   try {
-    return window.localStorage.getItem(INK_MODE_KEY) === 'white' ? 'white' : 'black'
+    const mode = window.localStorage.getItem(INK_MODE_KEY)
+    return mode === 'custom' || mode === 'white' ? mode : 'black'
   } catch {
     return 'black'
   }
@@ -77,7 +84,7 @@ const initialZoom: ZoomPosition = { scale: 1, x: 0, y: 0 }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
 const controls: Array<{
-  key: keyof InkRemovalSettings
+  key: InkAdjustment
   title: string
   hint: string
   min: number
@@ -98,7 +105,7 @@ const downloadName = (fileName: string, mode: InkRemovalMode, output: ExportPres
     : preset === 'print-35x40' ? '-35x40-300ppp'
       : preset === 'companion-2x' ? '-companion-x2' : ''
   const cleanSuffix = preset === 'companion-2x' ? '-companion' : suffix
-  return stem + cleanSuffix + (mode === 'black' ? '-black-tee-ready.png' : '-white-tee-ready.png')
+  return stem + cleanSuffix + (mode === 'custom' ? '-custom-color-ready.png' : mode === 'black' ? '-black-tee-ready.png' : '-white-tee-ready.png')
 }
 
 export function ImagesStudio() {
@@ -114,12 +121,18 @@ export function ImagesStudio() {
   const zoomRef = useRef<ZoomPosition>({ ...initialZoom })
   const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
   const lastCtrlPressRef = useRef(0)
+  const colorPickIdRef = useRef(0)
 
   const [file, setFile] = useState<File | null>(null)
   const [sourcePreview, setSourcePreview] = useState<ImageData | null>(null)
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null)
   const [streamedSource, setStreamedSource] = useState(false)
   const [inkMode, setInkMode] = useState<InkRemovalMode>(initialInkMode)
+  const [keyColor, setKeyColor] = useState(() => {
+    try { return normalizeKeyColor(window.localStorage.getItem(KEY_COLOR_KEY) ?? '') ?? DEFAULT_KEY_COLOR }
+    catch { return DEFAULT_KEY_COLOR }
+  })
+  const [samplingColor, setSamplingColor] = useState(false)
   const [outputPreset, setOutputPreset] = useState<ExportPreset>(readOutputPreset)
   const [allowUpscale] = useState(() => readPreference(UPSCALE_KEY, true))
   const [printMethod, setPrintMethod] = useState<PrintMethod>(() => {
@@ -202,7 +215,8 @@ export function ImagesStudio() {
   const [zoom, setZoom] = useState<ZoomPosition>({ ...initialZoom })
   const [previewResize, setPreviewResize] = useState(0)
   const [nativeDetailActive, setNativeDetailActive] = useState(false)
-  const originalVisible = showOriginal || holdOriginal
+  const originalVisible = showOriginal || holdOriginal || samplingColor
+  const processingSettings = useMemo(() => ({ ...settings, keyColor }), [settings, keyColor])
   const alphaSettings: AlphaOptimizationSettings = useMemo(() => ({
     ...DEFAULT_ALPHA_SETTINGS,
     method: printMethod,
@@ -215,6 +229,24 @@ export function ImagesStudio() {
   }), [printMethod, dtfAlphaMode, alphaCleanup, dtfDotSize, dtfPattern, dtfAngle, detailProtection])
   const exportGeometry = dimensions ? getExportGeometry(dimensions.width, dimensions.height, outputPreset, allowUpscale) : null
   const dtfPrintSize = useMemo(() => resolveDtfPrintSize(dtfPrintSizePreset, dtfCustomWidth, dtfCustomHeight), [dtfPrintSizePreset, dtfCustomWidth, dtfCustomHeight])
+
+  useEffect(() => {
+    if (!samplingColor) return
+    const pickSequence = colorPickIdRef
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        pickSequence.current++
+        setSamplingColor(false)
+      }
+    }
+    window.addEventListener('keydown', cancel, true)
+    return () => {
+      pickSequence.current++
+      window.removeEventListener('keydown', cancel, true)
+    }
+  }, [samplingColor])
 
   useEffect(() => {
     return () => {
@@ -245,10 +277,11 @@ export function ImagesStudio() {
   useEffect(() => {
     try {
       window.localStorage.setItem(INK_MODE_KEY, inkMode)
+      window.localStorage.setItem(KEY_COLOR_KEY, keyColor)
     } catch {
       // The processor works without persistence.
     }
-  }, [inkMode])
+  }, [inkMode, keyColor])
 
   useEffect(() => {
     try {
@@ -386,6 +419,11 @@ export function ImagesStudio() {
   }, [])
 
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (samplingColor && event.button === 0) {
+      event.preventDefault()
+      void pickImageColor(event.clientX, event.clientY)
+      return
+    }
     if (zoomRef.current.scale <= 1 || !canvasRef.current || event.button !== 0) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -416,7 +454,7 @@ export function ImagesStudio() {
 
     // Work on a downscaled copy when editing. Export always processes original pixels.
     const frame = requestAnimationFrame(() => {
-      const result = removeFabricInk(sourcePreview, settings, inkMode)
+      const result = removeFabricInk(sourcePreview, processingSettings, inkMode)
       const canvas = canvasRef.current
       if (!canvas) return
       if (canvas.width !== sourcePreview.width) canvas.width = sourcePreview.width
@@ -434,7 +472,7 @@ export function ImagesStudio() {
     })
 
     return () => cancelAnimationFrame(frame)
-  }, [sourcePreview, dimensions, settings, originalVisible, previewMode, inkMode, alphaSettings])
+  }, [sourcePreview, dimensions, processingSettings, originalVisible, previewMode, inkMode, alphaSettings])
 
   useEffect(() => {
     if (printMethod !== 'dtf' || !dtfAnalysisSource || !dimensions) {
@@ -499,7 +537,7 @@ export function ImagesStudio() {
           viewport,
           image,
           overlay: detailCanvasRef.current,
-          settings,
+          settings: processingSettings,
           inkMode,
           showOriginal: originalVisible,
           alphaSettings,
@@ -519,10 +557,11 @@ export function ImagesStudio() {
       window.clearTimeout(timeout)
       if (animationFrame) window.cancelAnimationFrame(animationFrame)
     }
-  }, [zoom, sourcePreview, file, dimensions, settings, inkMode, originalVisible, previewMode, previewResize, alphaSettings])
+  }, [zoom, sourcePreview, file, dimensions, processingSettings, inkMode, originalVisible, previewMode, previewResize, alphaSettings])
 
   const loadImage = async (incoming: File) => {
     const id = ++uploadIdRef.current
+    setSamplingColor(false)
     setError(null)
     setDragging(false)
 
@@ -697,11 +736,40 @@ export function ImagesStudio() {
     setBatchSummary(null)
   }
 
-  const changeSetting = (key: keyof InkRemovalSettings, value: number) => {
+  const changeSetting = (key: InkAdjustment, value: number) => {
     if (busy === 'batch') return
     setPreset(null)
     setSettings((current) => ({ ...current, [key]: value }))
     invalidateBatch()
+  }
+
+  const changeKeyColor = (color: string) => {
+    setKeyColor(color)
+    invalidateBatch()
+  }
+
+  const pickImageColor = async (clientX: number, clientY: number) => {
+    const image = canvasRef.current
+    if (!image || !dimensions || !file || busy !== null) return
+    const point = sourcePixelAt(clientX, clientY, image.getBoundingClientRect(), dimensions)
+    if (!point) {
+      notify('info', 'Tocá un punto dentro de la imagen para tomar su color.')
+      return
+    }
+    const id = ++colorPickIdRef.current
+    const uploadId = uploadIdRef.current
+    try {
+      const color = await sampleImageColor(file, bitmapRef.current, point.x, point.y)
+      if (id !== colorPickIdRef.current || uploadId !== uploadIdRef.current) return
+      changeKeyColor(color)
+      setSamplingColor(false)
+      setShowOriginal(false)
+      notify('success', 'Color seleccionado: ' + color)
+    } catch (cause) {
+      if (id === colorPickIdRef.current && uploadId === uploadIdRef.current) {
+        notify('error', cause instanceof Error ? cause.message : 'No se pudo tomar el color.')
+      }
+    }
   }
 
   const applyPreset = (next: ImagePreset) => {
@@ -712,7 +780,8 @@ export function ImagesStudio() {
   }
 
   const changeInkMode = (next: InkRemovalMode) => {
-    if (next === inkMode || busy === 'batch') return
+    if (next === inkMode || busy !== null) return
+    setSamplingColor(false)
     setInkMode(next)
     invalidateBatch()
     resetZoom()
@@ -724,6 +793,7 @@ export function ImagesStudio() {
   }
 
   const reset = () => {
+    setSamplingColor(false)
     applyPreset('balanced')
     setShowOriginal(false)
     setPreviewMode(inkMode)
@@ -736,6 +806,7 @@ export function ImagesStudio() {
   }
 
   const clear = () => {
+    setSamplingColor(false)
     resetZoom()
     uploadIdRef.current++
     bitmapRef.current?.close()
@@ -826,8 +897,8 @@ export function ImagesStudio() {
           }
         }
         const png = highResolution
-          ? await renderLargeTransparentPng(item.file, dimensions, settings, inkMode, updateProgress, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
-          : await renderTransparentPng(bitmap!, settings, inkMode, updateProgress, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
+          ? await renderLargeTransparentPng(item.file, dimensions, processingSettings, inkMode, updateProgress, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
+          : await renderTransparentPng(bitmap!, processingSettings, inkMode, updateProgress, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
 
         const base = downloadName(item.file.name, inkMode, outputPreset, dimensions.width, dimensions.height)
         let uniqueName = base
@@ -894,9 +965,9 @@ export function ImagesStudio() {
     try {
       const onCompression = (result: CompressionResult) => setCompressionReport(describeCompression(result))
       const png = bitmap
-        ? await renderTransparentPng(bitmap, settings, inkMode, setProgress, outputPreset, allowUpscale,
+        ? await renderTransparentPng(bitmap, processingSettings, inkMode, setProgress, outputPreset, allowUpscale,
           alphaSettings, embedProfile, optimizePng, onCompression)
-        : await renderLargeTransparentPng(currentFile, sourceDimensions, settings, inkMode, setProgress,
+        : await renderLargeTransparentPng(currentFile, sourceDimensions, processingSettings, inkMode, setProgress,
           outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
       downloadBlob(png, downloadName(currentFile.name, inkMode, outputPreset, sourceDimensions.width, sourceDimensions.height))
     } catch (cause) {
@@ -915,7 +986,7 @@ export function ImagesStudio() {
         <div>
           <span className="images-eyebrow">GAS3D / Preparación de estampados</span>
           <h1>Images <span>Studio</span></h1>
-          <p>{inkMode === 'black' ? 'Quita negros y sombras para estampados sobre negro.' : 'Quita blancos e iluminaciones para estampados sobre blanco.'}</p>
+          <p>{inkMode === 'custom' ? 'Quita un color elegido desde tu imagen.' : inkMode === 'black' ? 'Quita negros y sombras para estampados sobre negro.' : 'Quita blancos e iluminaciones para estampados sobre blanco.'}</p>
         </div>
         <div className="images-heading-actions">
           {zenMode && <button
@@ -984,6 +1055,7 @@ export function ImagesStudio() {
                 ['transparent', 'Alfa'],
                 ['black', 'Negro'],
                 ['white', 'Blanco'],
+                ...(inkMode === 'custom' ? [['custom', 'Color'] as const] : []),
                 ['shirt', 'Remera'],
               ] as const).map(([mode, label]) => <button
                 key={mode}
@@ -1002,14 +1074,14 @@ export function ImagesStudio() {
             </button>
           </div>
 
-          <div ref={previewRef} className={'images-preview images-preview-' + previewMode + ' ink-' + inkMode + (dragging ? ' dragging' : '') + (zoom.scale > 1 ? ' zoomed' : '') + (nativeDetailActive ? ' native-detail-active' : '')}
+          <div ref={previewRef} style={{ '--images-key-color': keyColor } as CSSProperties} className={'images-preview images-preview-' + previewMode + ' ink-' + inkMode + (dragging ? ' dragging' : '') + (zoom.scale > 1 ? ' zoomed' : '') + (nativeDetailActive ? ' native-detail-active' : '') + (samplingColor ? ' sampling-color' : '')}
             onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
             <div className="images-zoom-surface" style={{ transform: 'translate(' + zoom.x + 'px, ' + zoom.y + 'px) scale(' + zoom.scale + ')' }}>
             {sourcePreview ? <>
               {previewMode === 'shirt' ? <div className="images-shirt-preview">
                 <div className="images-shirt-neck" />
                 <div className="images-shirt-print">
-                  <canvas ref={canvasRef} aria-label={`Arte procesado sobre tela ${inkMode === 'black' ? 'negra' : 'blanca'}`} />
+                  <canvas ref={canvasRef} aria-label="Arte procesado sobre tela" />
                   {printMethod === 'dtf' && showDtfRiskOverlay && <canvas ref={riskOverlayRef} className="images-dtf-risk-overlay" aria-label="Zonas de riesgo DTF" />}
                 </div>
               </div> : <div className="images-art">
@@ -1023,6 +1095,7 @@ export function ImagesStudio() {
               <span className="images-upload-cta"><Upload size={14} /> Elegir imagen</span>
             </button>}
             </div>
+            {samplingColor && <span className="images-color-sampling-hint" role="status">Tocá el fondo para tomar su color · Esc cancela</span>}
             <canvas ref={detailCanvasRef} className="images-native-detail" aria-hidden="true" />
             {dragging && <div className="images-drop-overlay">Suelta aquí la imagen</div>}
           </div>
@@ -1052,22 +1125,28 @@ export function ImagesStudio() {
               <List size={15} /> Por lotes
             </button>
           </div>
-          <div className="images-ink-mode" role="group" aria-label="Color de la prenda para retirar fondo">
-            <button type="button" className={inkMode === 'black' ? 'active' : ''} aria-pressed={inkMode === 'black'} onClick={() => changeInkMode('black')}>
+          <div className="images-ink-mode" role="group" aria-label="Color a retirar del fondo">
+            <button type="button" aria-label="Prenda negra" className={inkMode === 'black' ? 'active' : ''} aria-pressed={inkMode === 'black'} disabled={busy !== null} onClick={() => changeInkMode('black')}>
               <i className="images-ink-dot black" aria-hidden="true" />
-              Prenda negra
+              Negro
             </button>
-            <button type="button" className={inkMode === 'white' ? 'active' : ''} aria-pressed={inkMode === 'white'} onClick={() => changeInkMode('white')}>
+            <button type="button" aria-label="Prenda blanca" className={inkMode === 'white' ? 'active' : ''} aria-pressed={inkMode === 'white'} disabled={busy !== null} onClick={() => changeInkMode('white')}>
               <i className="images-ink-dot white" aria-hidden="true" />
-              Prenda blanca
+              Blanco
+            </button>
+            <button type="button" className={inkMode === 'custom' ? 'active' : ''} aria-pressed={inkMode === 'custom'}
+              disabled={busy !== null} onClick={() => changeInkMode('custom')}>
+              <i className="images-ink-dot" style={{ backgroundColor: keyColor }} aria-hidden="true" />Otro color
             </button>
           </div>
+          {inkMode === 'custom' && <BackgroundColorControls color={keyColor} sampling={samplingColor} disabled={busy !== null}
+            canSample={!!file} onChange={changeKeyColor} onToggleSample={() => setSamplingColor((value) => !value)} />}
           <div className="images-section-title">
-            <div><span>01 / PROCESAMIENTO</span><h2>{inkMode === 'black' ? 'Eliminar negros' : 'Eliminar blancos'}</h2></div>
+            <div><span>01 / PROCESAMIENTO</span><h2>{inkMode === 'custom' ? 'Eliminar color' : inkMode === 'black' ? 'Eliminar negros' : 'Eliminar blancos'}</h2></div>
             <button className="images-reset" onClick={reset} title="Restablecer ajustes"><RotateCcw size={15} /> Reiniciar</button>
           </div>
           <p className="images-controls-intro">
-            {inkMode === 'black'
+            {inkMode === 'custom' ? 'Elimina el color elegido en toda la imagen, también dentro del dibujo. Ajustá la tolerancia para incluir tonos cercanos.' : inkMode === 'black'
               ? 'El negro desaparece en toda la imagen, también dentro del dibujo.'
               : 'El blanco desaparece en toda la imagen, también en luces y detalles interiores.'}
             {' '}No altera la composición.
@@ -1088,7 +1167,7 @@ export function ImagesStudio() {
           <div className="images-slider-list">
             {controls.map((control) => <label key={control.key} className="images-slider">
               <span className="images-slider-heading">
-                <strong>{inkMode === 'white' && control.key === 'blackThreshold' ? 'Eliminar blanco' : inkMode === 'white' && control.key === 'shadowThreshold' ? 'Eliminar iluminaciones' : control.title}</strong>
+                <strong>{inkMode === 'custom' && control.key === 'blackThreshold' ? 'Tolerancia de color' : inkMode === 'custom' && control.key === 'shadowThreshold' ? 'Tonos cercanos' : inkMode === 'white' && control.key === 'blackThreshold' ? 'Eliminar blanco' : inkMode === 'white' && control.key === 'shadowThreshold' ? 'Eliminar iluminaciones' : control.title}</strong>
                 <output>{settings[control.key]}{control.key === 'detailProtection' ? '%' : ''}</output>
               </span>
               <input
@@ -1099,7 +1178,7 @@ export function ImagesStudio() {
                 value={settings[control.key]}
                 onChange={(event) => changeSetting(control.key, Number(event.target.value))}
               />
-              <span className="images-slider-description">{inkMode === 'white' && control.key === 'blackThreshold'
+              <span className="images-slider-description">{inkMode === 'custom' && control.key === 'blackThreshold' ? 'Distancia al color elegido que se elimina.' : inkMode === 'custom' && control.key === 'shadowThreshold' ? 'Amplía la transición a colores parecidos.' : inkMode === 'custom' && control.key === 'softness' ? 'Suaviza la transición al color elegido.' : inkMode === 'white' && control.key === 'blackThreshold'
                 ? 'Umbral de blanco puro y casi blanco.'
                 : inkMode === 'white' && control.key === 'shadowThreshold'
                   ? 'Extiende la transparencia a reflejos y luces claras.'
@@ -1303,8 +1382,8 @@ export function ImagesStudio() {
           <div className="images-print-note">
             <Shirt size={17} />
             <p>
-              <strong>Preparado para tela {inkMode === 'black' ? 'negra' : 'blanca'}.</strong>
-              {' '}La vista sobre {inkMode === 'black' ? 'negro' : 'blanco'} simula cómo se integran las transparencias.
+              <strong>{inkMode === 'custom' ? 'Color seleccionado: ' + keyColor + '.' : `Preparado para tela ${inkMode === 'black' ? 'negra' : 'blanca'}.`}</strong>
+              {' '}{inkMode === 'custom' ? 'La eliminación se aplica también a las zonas interiores del mismo color.' : `La vista sobre ${inkMode === 'black' ? 'negro' : 'blanco'} simula cómo se integran las transparencias.`}
               Verifica el PNG sobre una cuadrícula antes de enviarlo al taller; el resultado físico depende del proceso de impresión.
             </p>
           </div>

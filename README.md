@@ -15,6 +15,9 @@ La tercera pestaña de GAS3D (`#/images`) prepara arte creado sobre fondos negro
 
 - **Prenda negra:** retira negro, casi negro y sombras de todo el dibujo.
 - **Prenda blanca:** retira blanco, casi blanco e iluminaciones de todo el dibujo.
+- **Otro color:** usa el cuentagotas para tocar el fondo de la imagen original, con mouse o desde el teléfono. También admite selector y código HEX. Se conserva el color elegido al volver a abrir el módulo.
+- Mientras el cuentagotas está activo se muestra el original; Esc o el mismo botón cancela sin cambiar el color. La muestra usa coordenadas de resolución original incluso con zoom. Las zonas transparentes no se pueden muestrear.
+- En Otro color, **Color exacto / Equilibrado / Ampliado**, **Tolerancia de color** y **Tonos cercanos** controlan qué variantes se eliminan. Se retira ese color también dentro del dibujo; no es una selección por objeto. La limpieza de bordes compensa el fondo seleccionado. Negro y blanco mantienen su comportamiento anterior.
 - Presets (puro, negros/sombras o blancos/luces, agresivo) y cinco controles para ajuste fino.
 - Preview sobre alfa, negro, blanco y remera del color elegido; antes/después.
 - **Comparar rápidamente:** pulsa dos veces `Ctrl` (en menos de 370 ms) y mantén presionada la segunda pulsación para ver la imagen original; al soltar vuelve al resultado. El botón de antes/después sigue disponible.
@@ -27,6 +30,7 @@ La tercera pestaña de GAS3D (`#/images`) prepara arte creado sobre fondos negro
 - **Exportar ZIP:** procesa las imágenes una por una para limitar el consumo de memoria, con porcentaje y estado por archivo; si falla alguna, continúa con las demás y entrega las exitosas en el ZIP.
 - Los PNG conservan la resolución y las proporciones originales. El ZIP utiliza almacenamiento sin recomprimir los PNG (ya comprimidos), sin dependencias externas.
 - Los nombres terminan en `-black-tee-ready.png` o `-white-tee-ready.png`; los duplicados se renombran dentro del ZIP.
+- Otro color exporta `-custom-color-ready.png` y usa el mismo color y tratamiento para cada archivo del ZIP, incluyendo PNG grandes procesados por franjas. La vista **Color** permite comprobarlo sobre el tono elegido; Alfa, Negro y Blanco siguen disponibles.
 
 ### Resolución de exportación
 
