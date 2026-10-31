@@ -192,6 +192,30 @@ for (const rgb of [[150, 140, 160], [235, 235, 235], [210, 35, 70]]) {
     }
   }
 }
+// End-to-end dark-matte regression: unmatting brightens straight RGB to
+// compensate for reduced alpha. DTF must retain that coverage, otherwise the
+// recovered color becomes an artificially light solid border. Synthetic
+// neutral swatches reproduce the reported failure without storing source art.
+const darkMatte: [number, number, number] = [3, 4, 2]
+for (const rgb of [[18, 17, 18], [20, 19, 20], [24, 22, 24], [30, 28, 30], [41, 38, 39]]) {
+  const input = flatAlpha(256, 256, 255)
+  for (let i = 0; i < input.data.length; i += 4) input.data.set([...rgb, 255], i)
+  const cleaned = removeFabricInk(input, { ...imagePresets.custom.balanced.settings, keyColor: '#030402' }, 'custom').image
+  const expectedCoverage = cleaned.data[3] / 255
+  optimizeImageAlpha(cleaned, { ...profile, pattern: 'dots', cellPixels: 12, angle: 45, detailProtection: 85 }, 3000, 2100)
+  const stats = analyzeAlpha(cleaned)
+  assert.equal(stats.partial, 0, 'Dark-background removal followed by DTF must export binary alpha')
+  assert.ok(Math.abs(stats.opaque / stats.total - expectedCoverage) < 0.015, 'Unmatte coverage must survive protected DTF screening')
+  for (let c = 0; c < 3; c++) {
+    let total = 0
+    for (let i = 0; i < cleaned.data.length; i += 4) {
+      const a = cleaned.data[i + 3] / 255
+      total += cleaned.data[i + c] * a + darkMatte[c] * (1 - a)
+    }
+    assert.ok(Math.abs(total / stats.total - rgb[c]) < 1.5,
+      `Dark matte must reconstruct the source brightness, not a lighter rim: ${rgb}/${c}`)
+  }
+}
 const roundDot = flatAlpha(32, 32, 128)
 optimizeImageAlpha(roundDot, { ...profile, pattern: 'dots', cellPixels: 32, angle: 0, detailProtection: 0 })
 assert.equal(roundDot.data[3], 0, 'Round dots leave the cell corners empty')
