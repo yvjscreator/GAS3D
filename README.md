@@ -43,14 +43,14 @@ La tercera pestaña de GAS3D (`#/images`) prepara arte creado sobre fondos negro
 La sección **03 / Método de impresión** aplica el acabado después de limpiar el color de fondo, siempre sobre los píxeles originales antes de recortar márgenes:
 
 - **DTG (predeterminado):** conserva los degradados y semitransparencias del arte limpio.
-- **DTF · Protegido:** trama las transparencias y refuerza contornos de contraste. Protección predeterminada: 85%. Conserva los píxeles opacos y el RGB de cada píxel que permanece visible; exporta alfa 0/255.
-- **DTF · Completo:** trama cualquier transparencia sin reforzar los contornos.
+- **DTF · Protegido:** trama las transparencias con grano más fino en contornos de contraste, sin aumentar su cobertura. Protección predeterminada: 85%. Conserva los píxeles opacos y el RGB de cada píxel que permanece visible; exporta alfa 0/255.
+- **DTF · Completo:** trama cualquier transparencia con una escala uniforme.
 - **DTF · Sólido:** convierte el alfa con un umbral del 50%.
 - **DTF · Conservar alfa:** mantiene las semitransparencias para un RIP compatible.
 
 El selector muestra cuatro texturas generadas por el mismo algoritmo de exportación: **Orgánico**, **Puntos** redondos, **Líneas** continuas y **Ordenado** clásico. Puntos y Líneas admiten un ángulo de 0–90°. La escala Fina / Media / Gruesa representa una separación de 8 / 12 / 16 píxeles originales; el grano orgánico usa bloques menores de 2 / 3 / 4 px. Son píxeles, no medidas físicas certificadas. La escala de impresión real debe acordarse con el taller.
 
-**Proteger detalles** y **Limpiar restos** ajustan el acabado sin promediar los colores. Si aparecen puntos no deseados en caras o sombras, revisa también «Eliminar sombras» o el preset «Negro puro»: la limpieza de color puede introducir transparencias antes del tramado.
+**Proteger detalles** afina la trama localmente sin convertir alfa parcial en relleno sólido: un degradado al 75% mantiene aproximadamente un 75% de cobertura, en lugar de formar una franja opaca. **Limpiar restos** descarta coberturas por debajo del umbral elegido. Ninguno promedia los colores. Si aparecen puntos no deseados en caras o sombras, revisa también «Eliminar sombras» o el preset «Negro puro»: la limpieza de color puede introducir transparencias antes del tramado. El tamaño mínimo imprimible debe validarse también en los contornos de trama más fina.
 
 La vista general filtra las texturas menores que sus píxeles para evitar puntos exagerados. **Ver trama a tamaño real · 1:1** abre el detalle a escala de píxel original; el indicador **DETALLE NATIVO** confirma cuándo se está mostrando el recorte original procesado. La trama mantiene su posición al desplazar el lienzo y coincide con la exportación. En PNG grandes se decodifica solo el recorte solicitado, sujeto a los límites del navegador. Una decodificación fallida se comunica mediante un popup y conserva la vista general.
 
