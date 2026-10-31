@@ -12,7 +12,7 @@ export type AlphaOptimizationSettings = {
   pattern?: DtfPattern
   /** Screen rotation in degrees, used by round dots and lines. */
   angle?: number
-  /** How strongly local high-contrast contours are protected (0..100). */
+  /** How much to refine the screen at high-contrast contours (0..100), without increasing coverage. */
   detailProtection?: number
 }
 export const DEFAULT_ALPHA_SETTINGS: AlphaOptimizationSettings = {
@@ -133,11 +133,17 @@ export function optimizeImageAlpha(
     : Math.max(0, Math.min(1, (settings.detailProtection ?? 85) / 100))
   const source = protection > 0 ? new Uint8ClampedArray(data) : data
   const sample = createPatternSampler(settings)
+  // Protect narrow contours with a finer screen, never with extra opacity.
+  // Promoting partial alpha to 255 creates a solid/light band in soft fades,
+  // even though the RGB channels themselves have not changed.
+  const detailPitch = Math.max(1, settings.cellPixels * (1 - 0.75 * protection))
+  const detailSample = protection > 0
+    ? createPatternSampler({ ...settings, cellPixels: detailPitch }) : sample
   const scale = Math.max(1, pixelScale)
   const spacing = settings.pattern === 'stochastic' || !settings.pattern
     ? Math.max(1, Math.round(settings.cellPixels / 4)) : settings.cellPixels
-  const filteredOverview = scale > 1 && spacing < scale * 2
-  const solidAlpha = 255 - Math.round(82 * protection)
+  const detailSpacing = settings.pattern === 'stochastic' || !settings.pattern
+    ? Math.max(1, Math.round(detailPitch / 4)) : detailPitch
   const edgeAlpha = 160 - Math.round(80 * protection)
   const rgbEdgeThreshold = 72 - Math.round(49 * protection)
 
@@ -152,10 +158,10 @@ export function optimizeImageAlpha(
         continue
       }
 
-      // Solidify already-visible regions, plus high-contrast details such as
-      // eyes, contour ink and facial marks. Flat fades still use dithering.
-      let protect = protection > 0 && alpha >= solidAlpha
-      if (!protect && protection > 0 && alpha >= edgeAlpha) {
+      // Flat fades always retain their original coverage, including high
+      // alpha. Only actual RGB edges qualify for the finer detail screen.
+      let protect = false
+      if (protection > 0 && alpha >= edgeAlpha) {
         const neighbors = [
           x > 0 ? i - 4 : -1,
           x + 1 < width ? i + 4 : -1,
@@ -175,13 +181,9 @@ export function optimizeImageAlpha(
           }
         }
       }
-      if (protect) {
-        data[i + 3] = 255
-        continue
-      }
-
+      const filteredOverview = scale > 1 && (protect ? detailSpacing : spacing) < scale * 2
       if (filteredOverview) continue
-      const cutoff = sample(globalX + (x + 0.5) * scale, patternY)
+      const cutoff = (protect ? detailSample : sample)(globalX + (x + 0.5) * scale, patternY)
       if (alpha / 255 >= cutoff) {
         data[i + 3] = 255
       } else {

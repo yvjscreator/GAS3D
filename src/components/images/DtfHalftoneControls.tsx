@@ -11,8 +11,8 @@ const patterns = [
 ] satisfies { id: DtfPattern; name: string; detail: string }[]
 
 const modes = [
-  { id: 'halftone', name: 'Protegido', icon: ShieldCheck, detail: 'Trama las transparencias y refuerza los contornos de contraste.' },
-  { id: 'aggressive', name: 'Completo', icon: Waves, detail: 'Trama todas las transparencias, sin reforzar los detalles.' },
+  { id: 'halftone', name: 'Protegido', icon: ShieldCheck, detail: 'Trama las transparencias con grano más fino en los contornos, sin aumentar la cobertura.' },
+  { id: 'aggressive', name: 'Completo', icon: Waves, detail: 'Trama todas las transparencias con una escala uniforme.' },
   { id: 'solid', name: 'Sólido', icon: Square, detail: 'Convierte la transparencia con un umbral del 50%.' },
   { id: 'preserve', name: 'Conservar alfa', icon: Layers3, detail: 'Mantiene las semitransparencias para un RIP compatible.' },
 ] as const
@@ -94,7 +94,8 @@ export function DtfHalftoneControls({ settings, disabled, canInspect, onInspect,
         <summary>Cómo evaluar la trama</summary>
         <p>La vista general filtra los puntos pequeños. Usa 1:1 para revisar los píxeles originales.
           La escala indica la separación del patrón; en Orgánico, el tamaño de grano es menor.
-          Los sólidos y sus colores se conservan. Valida el tamaño mínimo imprimible con tu taller.</p>
+          Los sólidos y sus colores se conservan. Proteger detalles afina la trama en los contornos;
+          no vuelve opacos los degradados. Valida el tamaño mínimo imprimible con tu taller.</p>
       </details>
     </>}
   </div>
