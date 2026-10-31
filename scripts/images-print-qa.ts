@@ -116,19 +116,24 @@ assert.ok(before.partial > 0)
 optimizeImageAlpha(img, profile)
 assert.equal(analyzeAlpha(img).partial, 0)
 assert.ok(img.data.every((byte, i) => i % 4 !== 3 || byte === 0 || byte === 255))
-// DTF regression: high-contrast face/eye details must not become flat averaged dots.
+// DTF regression: visible face/eye details must keep their own color, while
+// partial alpha is screened rather than made completely opaque.
 const artwork = { width: 8, height: 8, data: new Uint8ClampedArray(8 * 8 * 4) } as ImageData
 for (let i = 0; i < artwork.data.length; i += 4) {
   artwork.data.set([65, 61, 83, 160], i)
 }
 const eye = (3 * 8 + 3) * 4
-artwork.data.set([230, 28, 45, 160], eye)
+for (let y = 2; y <= 4; y++) for (let x = 2; x <= 4; x++) {
+  artwork.data.set([230, 28, 45, 160], (y * 8 + x) * 4)
+}
 const solidPixel = (2 * 8 + 2) * 4
 artwork.data.set([254, 240, 226, 255], solidPixel)
 const inputColors = new Uint8ClampedArray(artwork.data)
 optimizeImageAlpha(artwork, { ...profile, detailProtection: 100 })
 assert.deepEqual(Array.from(artwork.data.slice(solidPixel, solidPixel + 4)), [254, 240, 226, 255])
-assert.deepEqual(Array.from(artwork.data.slice(eye, eye + 4)), [230, 28, 45, 255])
+assert.ok(Array.from({ length: 9 }, (_, n) => ((2 + Math.floor(n / 3)) * 8 + 2 + n % 3) * 4)
+  .some((i) => artwork.data[i] === 230 && artwork.data[i + 3] === 255), 'Fine screen retains visible eye detail')
+assert.deepEqual(Array.from(inputColors.slice(eye, eye + 4)), [230, 28, 45, 160])
 for (let i = 0; i < artwork.data.length; i += 4) {
   if (artwork.data[i + 3] === 255) {
     assert.deepEqual(Array.from(artwork.data.slice(i, i + 3)), Array.from(inputColors.slice(i, i + 3)))
@@ -148,14 +153,67 @@ const flatAlpha = (width: number, height: number, alpha: number) => {
   for (let i = 0; i < sample.data.length; i += 4) sample.data.set([180, 90, 210, alpha], i)
   return sample
 }
-// Round dots / continuous stripes should follow the fade, rather than jump
-// between the four old line-screen levels. Coverage is checked, not a snapshot.
-for (const pattern of ['stochastic', 'dots', 'lines'] as DtfPattern[]) {
-  for (const alpha of [20, 64, 128, 192, 235]) {
-    const sample = flatAlpha(512, 512, alpha)
-    optimizeImageAlpha(sample, { ...profile, pattern, cellPixels: 16, cleanupPercent: 0, detailProtection: 0, angle: 45 })
-    const coverage = analyzeAlpha(sample).opaque / (sample.width * sample.height)
-    assert.ok(Math.abs(coverage - alpha / 255) < 0.015, `${pattern}: ${alpha} coverage = ${coverage}`)
+// Check coverage with the REAL default protection and its maximum, including
+// the old 173/185-alpha discontinuities. Previously these became solid bands.
+// Include contrasting texture so the contour branch cannot inflate coverage.
+for (const pattern of ['stochastic', 'dots', 'lines', 'ordered'] as DtfPattern[]) {
+  for (const detailProtection of [0, 85, 100]) for (const textured of [false, true]) {
+    for (const alpha of [20, 64, 128, 173, 184, 185, 192, 220, 235, 254]) {
+      const sample = flatAlpha(512, 512, alpha)
+      if (textured) for (let y = 0; y < sample.height; y++) for (let x = 0; x < sample.width; x++) {
+        if ((x + y) % 2) sample.data.set([35, 210, 75, alpha], (y * sample.width + x) * 4)
+      }
+      optimizeImageAlpha(sample, { ...profile, pattern, cellPixels: 16, cleanupPercent: 0, detailProtection, angle: 45 })
+      const coverage = analyzeAlpha(sample).opaque / (sample.width * sample.height)
+      const tolerance = pattern === 'ordered' ? 0.035 : 0.015
+      assert.ok(Math.abs(coverage - alpha / 255) < tolerance,
+        `${pattern}/${detailProtection}/${textured}: ${alpha} coverage = ${coverage}`)
+      assert.equal(analyzeAlpha(sample).partial, 0)
+    }
+  }
+}
+// Mean composite brightness on multiple substrates must track the input fade,
+// including the light-gray case that exposes a light band on a dark garment.
+for (const rgb of [[150, 140, 160], [235, 235, 235], [210, 35, 70]]) {
+  const sample = flatAlpha(512, 512, 192)
+  for (let i = 0; i < sample.data.length; i += 4) sample.data.set([...rgb, 192], i)
+  optimizeImageAlpha(sample, { ...profile, detailProtection: 85 })
+  const coverage = analyzeAlpha(sample).opaque / (sample.width * sample.height)
+  for (const background of [[0, 0, 0], [6, 28, 61], [151, 155, 159], [255, 255, 255]]) {
+    for (let c = 0; c < 3; c++) {
+      const expected = rgb[c] * (192 / 255) + background[c] * (1 - 192 / 255)
+      let total = 0
+      for (let i = 0; i < sample.data.length; i += 4) {
+        const a = sample.data[i + 3] / 255
+        total += sample.data[i + c] * a + background[c] * (1 - a)
+      }
+      assert.ok(Math.abs(total / (sample.width * sample.height) - expected) < 3,
+        `Halftone composite must preserve fade brightness: ${rgb}/${background}/${c}, coverage ${coverage}`)
+    }
+  }
+}
+// End-to-end dark-matte regression: unmatting brightens straight RGB to
+// compensate for reduced alpha. DTF must retain that coverage, otherwise the
+// recovered color becomes an artificially light solid border. Synthetic
+// neutral swatches reproduce the reported failure without storing source art.
+const darkMatte: [number, number, number] = [3, 4, 2]
+for (const rgb of [[18, 17, 18], [20, 19, 20], [24, 22, 24], [30, 28, 30], [41, 38, 39]]) {
+  const input = flatAlpha(256, 256, 255)
+  for (let i = 0; i < input.data.length; i += 4) input.data.set([...rgb, 255], i)
+  const cleaned = removeFabricInk(input, { ...imagePresets.custom.balanced.settings, keyColor: '#030402' }, 'custom').image
+  const expectedCoverage = cleaned.data[3] / 255
+  optimizeImageAlpha(cleaned, { ...profile, pattern: 'dots', cellPixels: 12, angle: 45, detailProtection: 85 }, 3000, 2100)
+  const stats = analyzeAlpha(cleaned)
+  assert.equal(stats.partial, 0, 'Dark-background removal followed by DTF must export binary alpha')
+  assert.ok(Math.abs(stats.opaque / stats.total - expectedCoverage) < 0.015, 'Unmatte coverage must survive protected DTF screening')
+  for (let c = 0; c < 3; c++) {
+    let total = 0
+    for (let i = 0; i < cleaned.data.length; i += 4) {
+      const a = cleaned.data[i + 3] / 255
+      total += cleaned.data[i + c] * a + darkMatte[c] * (1 - a)
+    }
+    assert.ok(Math.abs(total / stats.total - rgb[c]) < 1.5,
+      `Dark matte must reconstruct the source brightness, not a lighter rim: ${rgb}/${c}`)
   }
 }
 const roundDot = flatAlpha(32, 32, 128)
@@ -192,8 +250,12 @@ for (const pattern of ['stochastic', 'dots', 'lines', 'ordered'] as DtfPattern[]
   }
 }
 const overview = flatAlpha(24, 24, 128)
-optimizeImageAlpha(overview, { ...profile, detailProtection: 0 }, 0, 0, 6)
+optimizeImageAlpha(overview, { ...profile, detailProtection: 85 }, 0, 0, 6)
 assert.equal(analyzeAlpha(overview).partial, 24 * 24, 'A reduced overview filters subpixel grain instead of exaggerating it')
+const highAlphaOverview = flatAlpha(24, 24, 192)
+optimizeImageAlpha(highAlphaOverview, { ...profile, detailProtection: 85 }, 0, 0, 6)
+assert.equal(analyzeAlpha(highAlphaOverview).partial, 24 * 24, 'Protected overview must not turn a 75% fade into a solid band')
+assert.equal(highAlphaOverview.data[3], 192)
 const overviewAnalysis = analyzeDtfPrintability(overview, { widthCm: 10, heightCm: 10 }, { width: 144, height: 144 }, 0.4, 0.5, true)
 assert.equal(overviewAnalysis.alphaBinary, true, 'Filtered overview coverage must not become a false final-alpha warning')
 const preservedAnalysis = analyzeDtfPrintability(overview, { widthCm: 10, heightCm: 10 }, { width: 144, height: 144 })
