@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Copy, Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, RotateCcw, ShieldCheck, Shirt, Upload, X, List, Scan, Layers3 } from 'lucide-react'
+import { Copy, Download, Eye, ImagePlus, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, Pencil, RotateCcw, ShieldCheck, Shirt, Upload, X, List, Scan, Layers3 } from 'lucide-react'
 import {
   imagePresets,
   DEFAULT_KEY_COLOR,
@@ -78,7 +78,7 @@ const numberFormatter = new Intl.NumberFormat('es')
 const MAX_BATCH_FILES = 40
 type WorkspaceMode = 'single' | 'batch'
 type BatchStatus = 'pending' | 'processing' | 'ready' | 'error'
-type BatchItem = { id: number; file: File; status: BatchStatus; detail?: string; progress?: number }
+type BatchItem = { id: number; file: File; status: BatchStatus; exportName?: string; detail?: string; progress?: number }
 type ZoomPosition = { scale: number; x: number; y: number }
 const initialZoom: ZoomPosition = { scale: 1, x: 0, y: 0 }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
@@ -108,8 +108,17 @@ const downloadName = (fileName: string, mode: InkRemovalMode, output: ExportPres
   return stem + cleanSuffix + (mode === 'custom' ? '-custom-color-ready.png' : mode === 'black' ? '-black-tee-ready.png' : '-white-tee-ready.png')
 }
 
+function editedPngName(value: string) {
+  const stem = value.trim().replace(/(?:\.png)+$/i, '')
+    .replace(/[<>:"/\\|?*]/g, '-').replace(/^[. ]+|[. ]+$/g, '')
+  if (!stem) return null
+  const reserved = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)
+  return (reserved ? '_' : '') + stem + '.png'
+}
+
 export function ImagesStudio() {
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const exportNameButtonRef = useRef<HTMLButtonElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const bitmapRef = useRef<ImageBitmap | null>(null)
   const uploadIdRef = useRef(0)
@@ -124,6 +133,8 @@ export function ImagesStudio() {
   const colorPickIdRef = useRef(0)
 
   const [file, setFile] = useState<File | null>(null)
+  const [singleExportName, setSingleExportName] = useState<string | null>(null)
+  const [exportNameDraft, setExportNameDraft] = useState<string | null>(null)
   const [sourcePreview, setSourcePreview] = useState<ImageData | null>(null)
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null)
   const [streamedSource, setStreamedSource] = useState(false)
@@ -215,6 +226,12 @@ export function ImagesStudio() {
   const [zoom, setZoom] = useState<ZoomPosition>({ ...initialZoom })
   const [previewResize, setPreviewResize] = useState(0)
   const [nativeDetailActive, setNativeDetailActive] = useState(false)
+  const activeBatchItem = batchItems.find((item) => item.id === batchSelectedId && item.file === file)
+  const customExportName = workspaceMode === 'batch' ? activeBatchItem?.exportName : singleExportName
+  const currentExportName = file && dimensions
+    ? customExportName ?? downloadName(file.name, inkMode, outputPreset, dimensions.width, dimensions.height)
+    : ''
+  const uploadLabel = workspaceMode === 'batch' ? 'Añadir al lote' : file ? 'Cambiar imagen' : 'Cargar imagen'
   const originalVisible = showOriginal || holdOriginal || samplingColor
   const processingSettings = useMemo(() => ({ ...settings, keyColor }), [settings, keyColor])
   const alphaSettings: AlphaOptimizationSettings = useMemo(() => ({
@@ -561,6 +578,7 @@ export function ImagesStudio() {
 
   const loadImage = async (incoming: File) => {
     const id = ++uploadIdRef.current
+    setExportNameDraft(null)
     setSamplingColor(false)
     setError(null)
     setDragging(false)
@@ -607,6 +625,7 @@ export function ImagesStudio() {
           setDimensions(pngDimensions)
           setStreamedSource(true)
           setShowOriginal(false)
+          setSingleExportName(null)
           setFile(incoming)
         } finally {
           previewBitmap.close()
@@ -646,6 +665,7 @@ export function ImagesStudio() {
       setDimensions({ width: bitmap.width, height: bitmap.height })
       setStreamedSource(false)
       setShowOriginal(false)
+      setSingleExportName(null)
       setFile(incoming)
     } catch (cause) {
       if (id === uploadIdRef.current) {
@@ -693,13 +713,17 @@ export function ImagesStudio() {
 
   const setWorkspace = (next: WorkspaceMode) => {
     if (busy) return
+    setExportNameDraft(null)
+    if (next === 'single' && workspaceMode === 'batch') {
+      setSingleExportName(activeBatchItem?.exportName ?? null)
+    }
     setWorkspaceMode(next)
     setBatchPanelOpen(next === 'batch')
     setBatchSummary(null)
     if (next === 'batch') {
       if (batchItems.length === 0 && file) {
         const id = ++batchIdRef.current
-        setBatchItems([{ id, file, status: 'pending' }])
+        setBatchItems([{ id, file, status: 'pending', exportName: singleExportName ?? undefined }])
         setBatchSelectedId(id)
       } else if (batchItems.length) {
         const selected = batchItems.find((item) => item.id === batchSelectedId) ?? batchItems[0]
@@ -807,6 +831,8 @@ export function ImagesStudio() {
 
   const clear = () => {
     setSamplingColor(false)
+    setSingleExportName(null)
+    setExportNameDraft(null)
     resetZoom()
     uploadIdRef.current++
     bitmapRef.current?.close()
@@ -846,9 +872,22 @@ export function ImagesStudio() {
     clear()
   }
 
+  const saveExportName = (value: string) => {
+    const name = editedPngName(value)
+    setExportNameDraft(null)
+    if (!name || name === currentExportName) return name
+    if (workspaceMode === 'batch' && activeBatchItem) {
+      setBatchItems((items) => items.map((item) => item.id === activeBatchItem.id ? { ...item, exportName: name } : item))
+    } else if (workspaceMode === 'single') {
+      setSingleExportName(name)
+    }
+    return name
+  }
+
   const exportBatch = async () => {
     if (busy || !batchItems.length) return
-    const snapshot = [...batchItems]
+    const editedName = exportNameDraft === null ? null : saveExportName(exportNameDraft)
+    const snapshot = batchItems.map((item) => editedName && item === activeBatchItem ? { ...item, exportName: editedName } : item)
     const results: Array<{ name: string; blob: Blob }> = []
     const usedNames = new Set<string>()
     let failures = 0
@@ -900,7 +939,7 @@ export function ImagesStudio() {
           ? await renderLargeTransparentPng(item.file, dimensions, processingSettings, inkMode, updateProgress, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
           : await renderTransparentPng(bitmap!, processingSettings, inkMode, updateProgress, outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
 
-        const base = downloadName(item.file.name, inkMode, outputPreset, dimensions.width, dimensions.height)
+        const base = item.exportName ?? downloadName(item.file.name, inkMode, outputPreset, dimensions.width, dimensions.height)
         let uniqueName = base
         let count = 2
         while (usedNames.has(uniqueName.toLowerCase())) {
@@ -957,6 +996,7 @@ export function ImagesStudio() {
     const currentFile = file
     const sourceDimensions = dimensions
     if (!currentFile || !sourceDimensions || busy) return
+    const editedName = exportNameDraft === null ? null : saveExportName(exportNameDraft)
     setError(null)
     setBusy('exporting')
     setProgress(0)
@@ -969,13 +1009,14 @@ export function ImagesStudio() {
           alphaSettings, embedProfile, optimizePng, onCompression)
         : await renderLargeTransparentPng(currentFile, sourceDimensions, processingSettings, inkMode, setProgress,
           outputPreset, allowUpscale, alphaSettings, embedProfile, optimizePng, onCompression)
-      downloadBlob(png, downloadName(currentFile.name, inkMode, outputPreset, sourceDimensions.width, sourceDimensions.height))
+      downloadBlob(png, editedName ?? currentExportName)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falló la exportación PNG.')
     } finally {
       setBusy(null)
     }
   }
+
   return (
     <main className={'images-studio' + (zenMode ? ' is-zen' : '') + (workspaceMode === 'batch' ? ' is-batch' : '')} onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false)
@@ -989,6 +1030,10 @@ export function ImagesStudio() {
           <p>{inkMode === 'custom' ? 'Quita un color elegido desde tu imagen.' : inkMode === 'black' ? 'Quita negros y sombras para estampados sobre negro.' : 'Quita blancos e iluminaciones para estampados sobre blanco.'}</p>
         </div>
         <div className="images-heading-actions">
+          <button type="button" className="images-load-button" onClick={() => inputRef.current?.click()}
+            disabled={busy !== null} aria-label={uploadLabel} title={uploadLabel}>
+            <Upload size={17} /><span>{uploadLabel}</span>
+          </button>
           {zenMode && <button
             type="button"
             className="images-zen-panel-button"
@@ -1102,7 +1147,28 @@ export function ImagesStudio() {
 
           {file && <div className="images-preview-footer">
             <div className="images-file-info">
-              <strong title={file.name}>{file.name}</strong>
+              {exportNameDraft !== null ? <div className="images-name-editor">
+                <input type="text" aria-label="Nombre de descarga sin extensión" value={exportNameDraft}
+                  autoFocus enterKeyHint="done" spellCheck={false}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onChange={(event) => setExportNameDraft(event.currentTarget.value)}
+                  onBlur={(event) => saveExportName(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing || (event.key !== 'Enter' && event.key !== 'Escape')) return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (event.key === 'Enter') event.currentTarget.blur()
+                    else setExportNameDraft(null)
+                    requestAnimationFrame(() => exportNameButtonRef.current?.focus())
+                  }} />
+                <span aria-hidden="true">.png</span>
+              </div> : <button ref={exportNameButtonRef} type="button" className="images-export-name"
+                disabled={busy !== null || (workspaceMode === 'batch' && !activeBatchItem)}
+                aria-label={'Editar nombre de descarga: ' + currentExportName}
+                title={'Editar nombre de descarga · ' + currentExportName}
+                onClick={() => setExportNameDraft(currentExportName.slice(0, -4))}>
+                <span>{currentExportName}</span><Pencil size={13} />
+              </button>}
               <small>{(file.size / (1024 * 1024)).toFixed(1)} MB · {removedPercent}% de píxeles totalmente transparentes en preview{streamedSource ? ' · PNG grande: exportación por franjas a resolución original' : ''}</small>
             </div>
             <button className={originalVisible ? 'images-before active' : 'images-before'} onClick={() => setShowOriginal((value) => !value)} aria-pressed={showOriginal}
@@ -1368,17 +1434,14 @@ export function ImagesStudio() {
             </> : <p className="images-alpha-diagnostic">Carga una imagen para calcular el diagnóstico DTF.</p>}
           </section>}
 
-          <div className="images-bottom-actions">
-            <button onClick={() => inputRef.current?.click()} className="images-replace" disabled={busy === 'batch' || busy === 'exporting'}>
-              <Upload size={16} /> {workspaceMode === 'batch' ? 'Añadir al lote' : file ? 'Cambiar imagen' : 'Subir imagen'}
-            </button>
-            {(workspaceMode === 'batch' ? batchItems.length > 0 : Boolean(file)) && <button
+          {(workspaceMode === 'batch' ? batchItems.length > 0 : Boolean(file)) && <div className="images-bottom-actions">
+            <button type="button"
               className="images-clear" disabled={busy !== null}
               onClick={workspaceMode === 'batch' ? clearBatch : clear}
               title={workspaceMode === 'batch' ? 'Vaciar lote' : 'Cerrar imagen'}>
               <X size={16} />
-            </button>}
-          </div>
+            </button>
+          </div>}
           <div className="images-print-note">
             <Shirt size={17} />
             <p>
