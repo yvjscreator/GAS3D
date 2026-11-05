@@ -337,6 +337,11 @@ const halftoneUi = (await import('node:fs')).readFileSync('src/components/images
 const imagesCss = (await import('node:fs')).readFileSync('src/components/images/imagesStudio.css','utf8')
 const keyUi = (await import('node:fs')).readFileSync('src/components/images/BackgroundColorControls.tsx','utf8')
 const sampler = (await import('node:fs')).readFileSync('src/components/images/sampleImageColor.ts','utf8')
+const headerActions = browserSource.slice(browserSource.indexOf('className="images-heading-actions"'), browserSource.indexOf("className={'images-layout'"))
+assert.ok(headerActions.includes('className="images-load-button"'), 'The file picker must remain reachable from the header, including when Zen hides adjustments')
+const previewFooter = browserSource.slice(browserSource.indexOf('className="images-preview-footer"'), browserSource.indexOf('<aside id="images-adjustments"'))
+assert.ok(previewFooter.includes('className="images-name-editor"') && previewFooter.includes('<span aria-hidden="true">.png</span>'),
+  'Download names are edited in the preview footer with a separate fixed PNG extension')
 assert.ok(browserSource.includes('await renderLargeTransparentPng(currentFile, sourceDimensions') && browserSource.includes('await renderLargeTransparentPng(item.file, dimensions'))
 assert.ok(streamSource.includes('createImageBitmap(input, 0, sourceTop') && streamSource.includes("new CompressionStream('deflate')"))
 assert.ok(detailSource.includes('alphaSettings, sy, sx') && detailSource.includes('createImageBitmap(file, sx, sy, sw, sh'), 'Native detail must use the original crop and both screen origins')
