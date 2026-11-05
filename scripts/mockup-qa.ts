@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { penFabricOutline } from '../src/components/mockups/mockupPen'
 import { initialViewModes } from '../src/components/mockups/mockupWorkspace'
 import { requestConfirmation, confirmationSnapshot, settleConfirmation, subscribeConfirmation } from '../src/components/ui/confirmation'
-import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner } from '../src/components/mockups/mockupEngine'
+import { artworkOutline, curvedArtworkPoint, defaultSleeveCurve, initialPlacement, placementQuad, pointInArtwork, pointInQuad, restorePlacement, restoreSleeveCurve, ensurePhotoSize, scaleFromCorner, renderGarmentLayers } from '../src/components/mockups/mockupEngine'
 import { artworkFitsZone, calibrationLineToSave, calibrationScaleAxis, fitPrintToZone, photoPixelsPerCm, photoReferenceScales, placementWidthForCm, printDimensionsCm, referenceLengthCm, resizePrintPreservingWarp, restoreCalibration, rulerTicks, withCalibrationReference, zoneDimensionsCm } from '../src/components/mockups/mockupCalibration'
 import { outlineInsidePolygon, pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from '../src/components/mockups/mockupMasks'
 import { detectGarment } from '../src/components/mockups/garmentDetection'
@@ -220,6 +220,46 @@ assert.equal(restorePlacement({ ...p },'leftSleeve').sleeveCurve,undefined,'Old 
 assert.deepEqual(restorePlacement({...p,sleeveCurve:softCurve},'leftSleeve').sleeveCurve,softCurve,'Sleeve curve must survive settings restoration')
 assert.equal(restoreSleeveCurve({strength:999,axis:'bad',direction:99})?.strength,100,'Invalid sleeve values must be clamped')
 assert.ok(Math.abs(curvedArtworkPoint(sleeveQuad,.2,.35,{...softCurve,strength:0}).x-curvedArtworkPoint(sleeveQuad,.2,.35).x)<1e-9,'Zero curvature must be strictly equivalent to flat projection')
+
+// An affine print must not have internal clips. For a curved print, each
+// interior pixel must belong to exactly one triangle, including shared edges.
+const rasterSize={width:159,height:143}
+const fixture={...rasterSize,name:'fixture',bitmap:{} as ImageBitmap}
+const target={getContext:()=>({clearRect(){},drawImage(){}})} as unknown as HTMLCanvasElement
+const flatPrint={...initialPlacement('back'),x:.49,y:.46,width:.64,rotation:17,lighting:0}
+for(const sleeveCurve of [undefined,softCurve]){
+  const placement={...flatPrint,sleeveCurve}
+  const pixels=new Uint8Array(rasterSize.width*rasterSize.height)
+  let draws=0
+  let spans:Array<[number,number,number,number]>=[]
+  const overlay={width:0,height:0,getContext:()=>({
+    canvas:overlay,
+    save(){},restore(){},transform(){},clip(){},
+    beginPath(){spans=[]},
+    rect(x:number,y:number,w:number,h:number){spans.push([x,y,w,h])},
+    drawImage(){
+      draws++
+      for(const [left,top,width,height] of spans){
+        for(let y=top;y<top+height;y++)for(let x=left;x<left+width;x++)pixels[y*rasterSize.width+x]++
+      }
+    },
+  })}
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{createElement:()=>overlay}})
+  try{
+    renderGarmentLayers(target,fixture,[{art:fixture,placement}],rasterSize.width)
+  }finally{
+    Reflect.deleteProperty(globalThis,'document')
+  }
+  if(!sleeveCurve){
+    assert.equal(draws,1,'An affine print should have no triangle joins')
+    continue
+  }
+  const outline=artworkOutline(rasterSize,fixture,placement)
+  for(let y=2;y<rasterSize.height-2;y++)for(let x=2;x<rasterSize.width-2;x++){
+    const interior=[[-2,0],[2,0],[0,-2],[0,2]].every(([dx,dy])=>pointInArtwork({x:(x+dx+.5)/rasterSize.width,y:(y+dy+.5)/rasterSize.height},outline))
+    if(interior)assert.equal(pixels[y*rasterSize.width+x],1,'Mesh seams must neither leave gaps nor stack the print')
+  }
+}
 
 // Fabric clipping is opt-in per photo and seam clipping opt-in per print zone.
 const rectangularMask=restoreGarmentMask([

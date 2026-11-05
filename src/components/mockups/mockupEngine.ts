@@ -120,7 +120,44 @@ export function pointInArtwork(point: Point, outline: ReadonlyArray<Point>): boo
   return inside
 }
 
-function paintTriangle(ctx:CanvasRenderingContext2D, art:ImageBitmap, sx:Point, sy:Point, sz:Point, dx:Point,dy:Point,dz:Point){
+/** Assign shared mesh edges to whole pixels. Independent antialiased clips
+ * leave a translucent seam when their fractional coverage is composited.
+ * The transformed bitmap supplies the exterior edges of the artwork. */
+function clipMeshTriangle(ctx:CanvasRenderingContext2D, points:[Point,Point,Point], internal:[boolean,boolean,boolean]){
+  const [a,b,c]=points
+  const clockwise=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x)>0
+  const edges=points.flatMap((point,i)=>{
+    if(!internal[i])return []
+    const next=points[(i+1)%3]
+    return [clockwise?[point,next]:[next,point]]
+  })
+  const left=Math.max(0,Math.floor(Math.min(a.x,b.x,c.x))-1)
+  const right=Math.min(ctx.canvas.width,Math.ceil(Math.max(a.x,b.x,c.x))+1)
+  const top=Math.max(0,Math.floor(Math.min(a.y,b.y,c.y))-1)
+  const bottom=Math.min(ctx.canvas.height,Math.ceil(Math.max(a.y,b.y,c.y))+1)
+  ctx.beginPath()
+  for(let y=top;y<bottom;y++){
+    let start=left,end=right
+    const centerY=y+.5
+    for(const [from,to] of edges){
+      if(from.y===to.y){
+        if((to.x>from.x)!==(centerY>=from.y)){end=start;break}
+        continue
+      }
+      // Evaluate the same intersection from the lower-y endpoint on both
+      // sides of a shared edge. The half-open span gives ties to one side.
+      const rising=from.y<to.y
+      const low=rising?from:to,high=rising?to:from
+      const cut=Math.ceil(low.x+(centerY-low.y)*(high.x-low.x)/(high.y-low.y)-.5)
+      if(rising)end=Math.min(end,cut)
+      else start=Math.max(start,cut)
+    }
+    if(end>start)ctx.rect(start,y,end-start,1)
+  }
+  ctx.clip()
+}
+
+function paintTriangle(ctx:CanvasRenderingContext2D, art:ImageBitmap, sx:Point, sy:Point, sz:Point, dx:Point,dy:Point,dz:Point, internal:[boolean,boolean,boolean]){
   const det=(sx.x*(sy.y-sz.y)+sy.x*(sz.y-sx.y)+sz.x*(sx.y-sy.y))
   if(Math.abs(det)<.0001)return
   const a=(dx.x*(sy.y-sz.y)+dy.x*(sz.y-sx.y)+dz.x*(sx.y-sy.y))/det
@@ -130,16 +167,26 @@ function paintTriangle(ctx:CanvasRenderingContext2D, art:ImageBitmap, sx:Point, 
   const d=(dx.y*(sz.x-sy.x)+dy.y*(sx.x-sz.x)+dz.y*(sy.x-sx.x))/det
   const f=(dx.y*(sy.x*sz.y-sz.x*sy.y)+dy.y*(sz.x*sx.y-sx.x*sz.y)+dz.y*(sx.x*sy.y-sy.x*sx.y))/det
   ctx.save()
-  ctx.beginPath()
-  ctx.moveTo(dx.x,dx.y);ctx.lineTo(dy.x,dy.y);ctx.lineTo(dz.x,dz.y);ctx.closePath();ctx.clip()
+  clipMeshTriangle(ctx,[dx,dy,dz],internal)
   ctx.transform(a,b,c,d,e,f)
   ctx.drawImage(art,0,0)
   ctx.restore()
 }
 function warpedArtwork(layer:CanvasRenderingContext2D, image:MockImage, quad:Quad, width:number,height:number,curve?:SleeveCurve){
   const q=quad.map(p=>({x:p.x*width,y:p.y*height})) as Quad
-  // Higher tessellation only when a cylindrical sleeve effect is enabled.
   const curved=Boolean(curve?.strength)
+  const [origin,topRight,bottomRight,bottomLeft]=q
+  if(!curved&&Math.abs(origin.x+bottomRight.x-topRight.x-bottomLeft.x)<1e-6
+    &&Math.abs(origin.y+bottomRight.y-topRight.y-bottomLeft.y)<1e-6){
+    // A flat print, including rotation or affine shear, needs just one draw.
+    layer.save()
+    layer.transform((topRight.x-origin.x)/image.width,(topRight.y-origin.y)/image.width,
+      (bottomLeft.x-origin.x)/image.height,(bottomLeft.y-origin.y)/image.height,origin.x,origin.y)
+    layer.drawImage(image.bitmap,0,0)
+    layer.restore()
+    return
+  }
+  // Higher tessellation only when a cylindrical sleeve effect is enabled.
   const nx=curved?16:5,ny=curved?16:6
   for(let row=0;row<ny;row++)for(let col=0;col<nx;col++){
     const u=col/nx,v=row/ny,U=(col+1)/nx,V=(row+1)/ny
@@ -147,8 +194,8 @@ function warpedArtwork(layer:CanvasRenderingContext2D, image:MockImage, quad:Qua
     const p11=curvedArtworkPoint(q,U,V,curve),p01=curvedArtworkPoint(q,u,V,curve)
     const s00={x:u*image.width,y:v*image.height},s10={x:U*image.width,y:v*image.height}
     const s11={x:U*image.width,y:V*image.height},s01={x:u*image.width,y:V*image.height}
-    paintTriangle(layer,image.bitmap,s00,s10,s11,p00,p10,p11)
-    paintTriangle(layer,image.bitmap,s00,s11,s01,p00,p11,p01)
+    paintTriangle(layer,image.bitmap,s00,s10,s11,p00,p10,p11,[row>0,col<nx-1,true])
+    paintTriangle(layer,image.bitmap,s00,s11,s01,p00,p11,p01,[true,row<ny-1,col>0])
   }
 }
 
