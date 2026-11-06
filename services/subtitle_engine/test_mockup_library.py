@@ -123,6 +123,28 @@ class CloudLibraryTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(self.store.list()[0]["product"]["name"], "Nombre actualizado")
 
+    def test_color_photo_round_trip_and_cleanup_keep_base_photo(self):
+        config = product()
+        color = "a" * 32
+        slot = f"{color}--front"
+        config["baseColorName"] = "Negro"
+        config["colors"] = [dict(id=color, name="Blanco", photos={"front": dict(photoName="blanco.png")})]
+        response = self.client.put("/api/mockups/products/test-product", headers=self.headers,
+            data={"product": json.dumps(config), "photo_views": json.dumps(["front", slot])},
+            files=[("photos", ("negro.png", b"black")), ("photos", ("blanco.png", b"white"))])
+        self.assertEqual(response.status_code, 200, response.text)
+        saved = response.json()
+        self.assertEqual(saved["product"], config)
+        self.assertEqual(set(saved["photos"]), {"front", slot})
+        digest = saved["photos"][slot]["hash"]
+        response = self.client.get(f"/api/mockups/products/test-product/photos/{slot}?digest={digest}", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"white")
+        config["colors"] = []
+        updated = self.save(config, saved["revision"], b"black")
+        self.assertEqual(updated["photos"]["front"], saved["photos"]["front"])
+        self.assertEqual([key[2] for key in self.cloud.deleted], [saved["photos"][slot]["publicId"]])
+
     def test_replacement_and_removal_delete_only_obsolete_owned_photo(self):
         saved = self.save()
         original = saved["photos"]["front"]["publicId"]

@@ -221,6 +221,8 @@
 .mockup-zen .mockup-header h1{font-size:17px;margin:0;white-space:nowrap}
 .mockup-zen .mockup-header p{display:none}
 .mockup-header-product{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b9cedd;font-size:12px;font-weight:600;border-left:1px solid #3a4f60;padding-left:12px}
+.mockup-color-select{min-width:0;max-width:min(32vw,190px);min-height:36px;padding:0 7px;border:1px solid #496378;border-radius:6px;background:#192a3a;color:#e1f0fc;font:inherit;font-size:12px}
+.mockup-color-select:disabled{opacity:.65}
 .mockup-zen .mockup-header .mockup-nav-button{min-height:36px;padding:7px 11px;font-size:11px}
 .mockup-zen .mockup-editor-shell{display:flex;flex-direction:column;flex:1;width:100%;max-width:none;min-height:0}
 .mockup-zen .mockup-layout{width:100%;max-width:none;flex:1;min-height:0;grid-template-columns:52px minmax(0,1fr) 320px;grid-template-rows:minmax(0,1fr);gap:8px;align-items:stretch}
@@ -307,6 +309,7 @@
   .mockup-zen .mockup-header{gap:7px;height:48px;min-height:48px;padding-bottom:5px}
   .mockup-zen .mockup-header h1{font-size:12px;white-space:normal;max-width:52px;line-height:1.1}
   .mockup-header-product{font-size:10px;padding-left:7px}
+  .mockup-color-select{min-height:44px}
   .mockup-zen .mockup-header .mockup-nav-button{min-width:40px;min-height:44px;padding:7px}
   .mockup-zen .mockup-header .mockup-nav-button>span{display:none}
   .mockup-zen .mockup-layout{position:relative;grid-template-columns:48px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:5px}
@@ -330,6 +333,7 @@
 
 .mockup-zen .mockup-controls>.mockup-export-actions{grid-template-columns:repeat(2,minmax(0,1fr));padding:10px;border-top:1px solid #34495a;flex-shrink:0;gap:6px;background:#152331}
 .mockup-zen .mockup-controls>.mockup-export-actions button{font-size:10px;min-height:44px;padding:6px;line-height:1.4}
+.mockup-export-actions .mockup-export-colors{grid-column:1/-1}
 
 /* Dense inspector groups keep fields and their own actions on the same row. */
 .mockup-properties .ui-inline-field-controls>input{min-height:36px;padding:6px 8px;border:1px solid #45637b;border-radius:6px;background:#0b1621;color:#f2f8ff;font:inherit;font-size:12px}
@@ -346,6 +350,7 @@
 .mockup-control-help p{margin:5px 0 0;padding:8px;background:#0b1a27;border-radius:6px}
 .mockup-product-settings{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:8px}
 .mockup-product-settings>h2,.mockup-product-settings>h3,.mockup-product-settings>.mockup-divider,.mockup-product-settings>.mockup-views-picker{grid-column:1/-1}
+.mockup-product-settings>.ui-inline-field,.mockup-product-settings>.mockup-note{grid-column:1/-1}
 .mockup-product-settings .mockup-views-picker{gap:5px}
 .mockup-product-settings .mockup-views-picker label{min-height:36px;padding:6px;font-size:11px;gap:5px}
 .mockup-properties .mockup-field{gap:4px;font-size:11px}

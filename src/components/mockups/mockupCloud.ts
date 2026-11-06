@@ -1,10 +1,10 @@
 import { loadMedia, loadMediaMetadata, storeMedia, storeMediaMetadata } from '../../utils/mediaStorage'
 import type { ViewName } from './mockupEngine'
-import { photoKey, productFingerprint, productIsDirty, productSnapshot, restoreProducts, VIEWS, type CloudPhoto, type Product } from './mockupProduct'
+import { BASE_COLOR, photoKey, photoSlot, productColors, productPhoto, productFingerprint, productIsDirty, productSnapshot, restoreProducts, VIEWS, type Product } from './mockupProduct'
 import { appApiRoot, appAuthRequired, appFetch, readAppSession } from '../auth/session'
 
 export type CloudConnection = { url:string; token:string; cloudName?:string; managed?:boolean }
-export type CloudRecord = { product:Product; revision:string; cloudName:string; photos:Partial<Record<ViewName,CloudPhoto>>; deleted:boolean; cleanupPending:boolean }
+export type CloudRecord = { product:Product; revision:string; cloudName:string; photos:NonNullable<Product['cloud']>['photos']; deleted:boolean; cleanupPending:boolean }
 export type CloudCatalogue = { cloudName:string; records:CloudRecord[] }
 const CONNECTION_KEY='gas3d.mockup-cloud.session.v1'
 export const defaultCloudUrl=()=>String(import.meta.env.VITE_MOCKUP_API_URL??import.meta.env.VITE_SUBTITLE_API_URL??'').replace(/\/$/,'')
@@ -69,30 +69,35 @@ export function mergeCloudCatalogue(local:Product[],catalogue:CloudCatalogue):Pr
   for(const record of remote.values())if(!record.deleted||record.cleanupPending)merged.push(restoredCloudProduct(record))
   return merged
 }
-export async function loadProductPhoto(product:Product,view:ViewName,connection:CloudConnection|null):Promise<Blob|null>{
-  if(!product.views[view].photoName)return null
-  const key=photoKey(product.id,view),blob=await loadMedia(key)
+export async function loadProductPhoto(product:Product,view:ViewName,connection:CloudConnection|null,color=BASE_COLOR):Promise<Blob|null>{
+  const source=productPhoto(product,view,color)
+  if(!source?.photoName)return null
+  const key=photoKey(product.id,view,color),blob=await loadMedia(key)
   const metadata=await loadMediaMetadata<{version:string|null}>(key)
-  const photo=product.cloud?.photos[view]
-  if(blob&&(!photo||(metadata?.version??null)===(product.views[view].photoVersion??null)))return blob
+  const slot=photoSlot(view,color),photo=product.cloud?.photos[slot]
+  if(blob&&(!photo||(metadata?.version??null)===(source.photoVersion??null)))return blob
   if(!photo)throw new Error('Falta una fotografía original del producto en este navegador.')
   if(!connection||connection.cloudName!==product.cloud?.cloudName)throw new Error('Conectá tu catálogo para descargar las fotografías de este producto.')
-  const response=await cloudRequest(connection,`/products/${encodeURIComponent(product.id)}/photos/${view}?digest=${photo.hash}`)
+  const response=await cloudRequest(connection,`/products/${encodeURIComponent(product.id)}/photos/${slot}?digest=${photo.hash}`)
   const original=await response.blob()
   await storeMedia(key,original)
-  await storeMediaMetadata(key,{version:product.views[view].photoVersion??null})
+  await storeMediaMetadata(key,{version:source.photoVersion??null})
   return original
 }
 export async function saveCloudProduct(connection:CloudConnection,product:Product):Promise<CloudRecord>{
   if(product.cloud&&product.cloud.cloudName!==connection.cloudName)throw new Error('Este producto pertenece a otra cuenta de Cloudinary. Duplicalo para guardarlo en esta cuenta.')
-  const body=new FormData(),photoViews:ViewName[]=[]
+  const body=new FormData(),photoViews:string[]=[]
+  let totalBytes=0
   body.set('product',JSON.stringify(productSnapshot(product)))
   body.set('revision',product.cloud?.revision??'')
-  for(const view of VIEWS){
-    if(!product.views[view].photoName)continue
-    const blob=await loadProductPhoto(product,view,connection)
+  for(const {id:color} of productColors(product))for(const view of VIEWS){
+    const name=productPhoto(product,view,color)?.photoName
+    if(!name)continue
+    const blob=await loadProductPhoto(product,view,connection,color)
     if(!blob)throw new Error('Faltan fotografías originales; no se guardó un producto incompleto.')
-    photoViews.push(view);body.append('photos',blob,product.views[view].photoName)
+    totalBytes+=blob.size
+    if(totalBytes>330*1024*1024)throw new Error('Las fotografías del producto superan el límite de 330 MB para guardar en la nube.')
+    photoViews.push(photoSlot(view,color));body.append('photos',blob,name)
   }
   body.set('photo_views',JSON.stringify(photoViews))
   return (await cloudRequest(connection,`/products/${encodeURIComponent(product.id)}`,{method:'PUT',body})).json() as Promise<CloudRecord>

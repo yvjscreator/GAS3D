@@ -180,20 +180,21 @@ function warpedArtwork(layer:CanvasRenderingContext2D, image:MockImage, quad:Qua
     &&Math.abs(origin.y+bottomRight.y-topRight.y-bottomLeft.y)<1e-6){
     // A flat print, including rotation or affine shear, needs just one draw.
     layer.save()
-    layer.transform((topRight.x-origin.x)/image.width,(topRight.y-origin.y)/image.width,
-      (bottomLeft.x-origin.x)/image.height,(bottomLeft.y-origin.y)/image.height,origin.x,origin.y)
+    layer.transform((topRight.x-origin.x)/image.bitmap.width,(topRight.y-origin.y)/image.bitmap.width,
+      (bottomLeft.x-origin.x)/image.bitmap.height,(bottomLeft.y-origin.y)/image.bitmap.height,origin.x,origin.y)
     layer.drawImage(image.bitmap,0,0)
     layer.restore()
     return
   }
   // Higher tessellation only when a cylindrical sleeve effect is enabled.
   const nx=curved?16:5,ny=curved?16:6
+  const sourceWidth=image.bitmap.width,sourceHeight=image.bitmap.height
   for(let row=0;row<ny;row++)for(let col=0;col<nx;col++){
     const u=col/nx,v=row/ny,U=(col+1)/nx,V=(row+1)/ny
     const p00=curvedArtworkPoint(q,u,v,curve),p10=curvedArtworkPoint(q,U,v,curve)
     const p11=curvedArtworkPoint(q,U,V,curve),p01=curvedArtworkPoint(q,u,V,curve)
-    const s00={x:u*image.width,y:v*image.height},s10={x:U*image.width,y:v*image.height}
-    const s11={x:U*image.width,y:V*image.height},s01={x:u*image.width,y:V*image.height}
+    const s00={x:u*sourceWidth,y:v*sourceHeight},s10={x:U*sourceWidth,y:v*sourceHeight}
+    const s11={x:U*sourceWidth,y:V*sourceHeight},s01={x:u*sourceWidth,y:V*sourceHeight}
     paintTriangle(layer,image.bitmap,s00,s10,s11,p00,p10,p11,[row>0,col<nx-1,true])
     paintTriangle(layer,image.bitmap,s00,s11,s01,p00,p11,p01,[true,row<ny-1,col>0])
   }
@@ -230,6 +231,7 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
   canvas.width=width;canvas.height=height
   const ctx=canvas.getContext('2d',{willReadFrequently:true,colorSpace:'srgb'})
   if(!ctx)throw new Error('No se pudo abrir el lienzo de mockups.')
+  ctx.imageSmoothingQuality='high'
   ctx.clearRect(0,0,width,height)
   ctx.drawImage(photo.bitmap,0,0,width,height)
   for(const {art,placement,clipPolygons} of layers){
@@ -246,6 +248,7 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
   try{
     const layer=overlay.getContext('2d',{willReadFrequently:true})
     if(!layer)throw new Error('No se pudo preparar el estampado.')
+    layer.imageSmoothingQuality='high'
     warpedArtwork(layer,art,quad,width,height,placement.sleeveCurve)
     if(clipPolygons?.length)applyLayerClip(layer,clipPolygons,width,height)
     if(placement.lighting>0){
