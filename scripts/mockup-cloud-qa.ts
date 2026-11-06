@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { initialPlacement } from '../src/components/mockups/mockupEngine'
-import { preferredZone, productFingerprint, productIsDirty, restoreProducts, VIEWS, type Product } from '../src/components/mockups/mockupProduct'
+import { BASE_COLOR, photoKey, photoSlot, preferredZone, productColors, productFingerprint, productIsDirty, productPhoto, restoreProducts, VIEWS, withProductPhoto, type Product } from '../src/components/mockups/mockupProduct'
 import { deleteCloudProduct, fetchCloudCatalogue, mergeCloudCatalogue, normalizeConnection, restoredCloudProduct, saveCloudProduct, type CloudRecord } from '../src/components/mockups/mockupCloud'
 
 const local:Product={id:'test-product',name:'Remera',type:'Remera',views:Object.fromEntries(VIEWS.map(view=>[view,{
@@ -23,6 +23,20 @@ assert.equal(restoredCloudProduct({...record,product:{...local,views:{...local.v
 assert.equal(productIsDirty(local),true,'Existing local products must be explicitly uploaded')
 assert.equal(productIsDirty(remote),false,'A downloaded snapshot must start clean')
 assert.equal(productFingerprint(remote),productFingerprint(restoreProducts([JSON.parse(JSON.stringify(remote))])[0]),'Reloading defaults cannot create false unsaved changes')
+const colorId='a'.repeat(32)
+const basePhoto=withProductPhoto(local,'front',BASE_COLOR,{photoName:'negro.png',photoVersion:'original'})
+basePhoto.views.front.silhouette=[{x:.1,y:.1},{x:.9,y:.1},{x:.9,y:.9},{x:.1,y:.9}]
+const variants=withProductPhoto({...basePhoto,baseColorName:'Negro',colors:[{id:colorId,name:'Blanco',photos:{}}]},
+  'front',colorId,{photoName:'blanco.png',photoVersion:'variant'})
+const restoredVariants=restoredCloudProduct({...record,product:variants})
+assert.deepEqual(productColors(restoredVariants).map(color=>color.name),['Negro','Blanco'])
+assert.equal(productPhoto(restoredVariants,'front',BASE_COLOR)?.photoName,'negro.png')
+assert.equal(productPhoto(restoredVariants,'front',colorId)?.photoName,'blanco.png')
+assert.equal(photoSlot('front',BASE_COLOR),'front','Legacy cloud photo slots remain stable')
+assert.equal(photoKey(local.id,'front'),'mockup-studio:v2:test-product:front:photo','Legacy local photo keys remain stable')
+assert.notEqual(photoKey(local.id,'front',colorId),photoKey(local.id,'front'))
+assert.deepEqual(withProductPhoto(restoredVariants,'front',BASE_COLOR,{photoName:'nuevo.png'}).views.front.silhouette,
+  restoredVariants.views.front.silhouette,'Replacing a photo shared with other colors must preserve its silhouette')
 const edited={...remote,name:'Edición sin conexión'}
 assert.equal(productIsDirty(edited),true)
 const updated={...record,revision:'second',product:{...local,name:'Edición de otro dispositivo'}}

@@ -3,13 +3,14 @@ import { ArrowDownToLine, Copy, Hand, ImagePlus, Layers2, Maximize2, LogOut, Pen
 import { AppLauncher } from '../navigation/AppLauncher'
 import { loadMedia, removeMedia, storeMedia, storeMediaMetadata } from '../../utils/mediaStorage'
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
+import { createZipArchive } from '../images/zipExport'
 import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type RenderLayer, type ViewName } from './mockupEngine'
 import { pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from './mockupMasks'
 import { artworkFitsZone, calibrationLineToSave, fitPrintToZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, withCalibrationReference, zoneDimensionsCm, type CalibrationAxis } from './mockupCalibration'
 import { detectGarment, type GarmentDetection } from './garmentDetection'
 import { PhotoRulers } from './PhotoRulers'
 import { configuredZoneOutline, resizeZoneFromEdge, zoneEdgeHandles, ZONE_EDGE_NAMES, type ZoneGeometry } from './mockupZoneGeometry'
-import { LIBRARY_KEY, photoKey, preferredZone, productIsDirty, restoreProducts, VIEWS, type Product, type ProductView, type Zone } from './mockupProduct'
+import { BASE_COLOR, colorSuffix, LIBRARY_KEY, MAX_COLORS, photoKey, preferredZone, productColors, productIsDirty, productPhoto, restoreProducts, VIEWS, withProductPhoto, type Product, type ProductView, type Zone } from './mockupProduct'
 import { loadProductPhoto, type CloudConnection } from './mockupCloud'
 import { useMockupCloud } from './useMockupCloud'
 import { CloudLibraryPanel } from './CloudLibraryPanel'
@@ -30,12 +31,12 @@ type Models = Record<ViewName,{photo:MockImage|null;arts:Record<string,MockImage
 type DraftValue = {placement:Placement;name:string}
 type Draft = Partial<Record<ViewName,Record<string,DraftValue>>>
 type Screen = 'library'|'setup'|'mockup'
-type UploadTarget = {kind:'photo'|'art';view:ViewName;zoneId?:string}
+type UploadTarget = {kind:'photo'|'art';view:ViewName;zoneId?:string;editorKey?:string}
 type Drag = {view:ViewName;zoneId:string;pointerId:number;corner:number;edge?:number;originZone?:ZoneGeometry;kind:'move'|'scale'|'warp'|'edge';start:Point;origin:Placement;artSize:{width:number;height:number}}
 const LABELS:Record<ViewName,string>={front:'Frente',back:'Espalda',left:'Lateral izquierdo',right:'Lateral derecho',leftSleeve:'Manga izquierda',rightSleeve:'Manga derecha'}
 const TYPES=['Remera','Remera oversize','Hoodie','Campera','Gorra','Otro']
-const draftKey=(id:string)=>'gas3d.mockup-draft.v2:'+id
-const artKey=(id:string,v:ViewName,z:string)=>'mockup-studio:v2:'+id+':'+v+':zone:'+z+':art'
+const draftKey=(id:string,color=BASE_COLOR)=>'gas3d.mockup-draft.v2:'+id+colorSuffix(color)
+const artKey=(id:string,v:ViewName,z:string,color=BASE_COLOR)=>'mockup-studio:v2:'+id+':'+v+':zone:'+z+':art'+colorSuffix(color)
 const uid=()=>globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)+Math.random().toString(36).slice(2)
 const blank=():Models=>Object.fromEntries(VIEWS.map(view=>[view,{photo:null,arts:{}}])) as Models
 const newZone=(view:ViewName,name='Estampado principal'):Zone=>({
@@ -53,18 +54,34 @@ function readProducts():Product[]{
     return restoreProducts(JSON.parse(localStorage.getItem(LIBRARY_KEY)||'[]'))
   }catch{return []}
 }
-async function decode(blob:Blob,name:string,kind:'photo'|'art'):Promise<MockImage>{
+function readDraft(id:string,color:string):Draft{
+  try{return JSON.parse(localStorage.getItem(draftKey(id,color))||'{}') as Draft||{}}
+  catch{return {}}
+}
+async function decode(blob:Blob,name:string,kind:'photo'|'art',maxArtEdge=4096):Promise<MockImage>{
   if(kind==='art'){
     const size=await readPngSourceSize(blob)
     if(!size)throw new Error('El diseño debe ser un PNG válido.')
     assertStreamedDimensions(size)
-    const ratio=Math.min(1,4096/Math.max(size.width,size.height))
-    const bitmap=await createImageBitmap(blob,{resizeWidth:Math.max(1,Math.round(size.width*ratio)),resizeHeight:Math.max(1,Math.round(size.height*ratio)),resizeQuality:'high'})
-    return {bitmap,width:bitmap.width,height:bitmap.height,name}
+    const ratio=Math.min(1,maxArtEdge/Math.max(size.width,size.height),Math.sqrt(20_000_000/(size.width*size.height)))
+    const bitmap=ratio===1?await createImageBitmap(blob):await createImageBitmap(blob,{
+      resizeWidth:Math.max(1,Math.round(size.width*ratio)),resizeHeight:Math.max(1,Math.round(size.height*ratio)),resizeQuality:'high',
+    })
+    return {bitmap,...size,name}
   }
   const bitmap=await createImageBitmap(blob)
   try{ensurePhotoSize(bitmap)}catch(e){bitmap.close();throw e}
   return {bitmap,width:bitmap.width,height:bitmap.height,name}
+}
+function filenamePart(value:string){
+  return value.normalize('NFC').replace(/[^\p{L}\p{N}_-]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,72)||'mockup'
+}
+async function clearColorAssets(product:Product,color:string){
+  for(const view of VIEWS){
+    await removeMedia(photoKey(product.id,view,color))
+    for(const zone of product.views[view].zones)await removeMedia(artKey(product.id,view,zone.id,color))
+  }
+  localStorage.removeItem(draftKey(product.id,color))
 }
 function download(blob:Blob,name:string){
   const url=URL.createObjectURL(blob),a=document.createElement('a')
@@ -90,9 +107,9 @@ function ProductThumbnail({product,connection}:{product:Product;connection:Cloud
   const [url,setUrl]=useState('')
   useEffect(()=>{
     let closed=false
-    const selected=VIEWS.find(v=>product.views[v].enabled&&product.views[v].photoName)
-    if(!selected){setUrl('');return}
-    void loadProductPhoto(product,selected,connection).then(blob=>{
+    const source=productColors(product).flatMap(({id})=>VIEWS.filter(v=>product.views[v].enabled&&productPhoto(product,v,id)?.photoName).map(view=>({view,id})))[0]
+    if(!source){setUrl('');return}
+    void loadProductPhoto(product,source.view,connection,source.id).then(blob=>{
       if(!blob||closed)return
       const next=URL.createObjectURL(blob)
       setUrl(next)
@@ -106,6 +123,8 @@ export function ProductMockupStudio(){
   const [products,setProducts]=useState<Product[]>(readProducts)
   const cloud=useMockupCloud(setProducts)
   const [selectedId,setSelectedId]=useState<string|null>(null)
+  const [activeColor,setActiveColor]=useState(BASE_COLOR)
+  const [newColorName,setNewColorName]=useState('')
   const [screen,setScreen]=useState<Screen>('library')
   const [viewModes,setViewModes]=useState(()=>initialViewModes('setup'))
   const [newName,setNewName]=useState('')
@@ -115,6 +134,8 @@ export function ProductMockupStudio(){
   const [models,setModels]=useState<Models>(blank)
   const [draft,setDraft]=useState<Draft>({})
   const [loadedId,setLoadedId]=useState<string|null>(null)
+  const editorKey=selectedId?selectedId+colorSuffix(activeColor):null
+  const ready=!!editorKey&&loadedId===editorKey
   const [busy,setBusy]=useState(false)
   const [warpMode,setWarpMode]=useState(false)
   const [guides,setGuides]=useState(true)
@@ -142,20 +163,23 @@ export function ProductMockupStudio(){
   const spaceRef=useRef(false)
   const maskDragRef=useRef<{view:ViewName;index:number;pointerId:number}|null>(null)
   useTaskNotice(busy,'Procesando…')
-  useTaskNotice(!!selectedId&&loadedId!==selectedId,'Cargando fotografías…')
+  useTaskNotice(!!selectedId&&!ready,'Cargando fotografías y artes…')
   const inputRef=useRef<HTMLInputElement>(null)
   const targetRef=useRef<UploadTarget>({kind:'photo',view:'front'})
   const canvasRefs=useRef<Partial<Record<ViewName,HTMLCanvasElement|null>>>({})
   const dragRef=useRef<Drag|null>(null)
   const modelsRef=useRef(models)
+  const workingBitmaps=useRef(new Set<ImageBitmap>())
   useEffect(()=>{modelsRef.current=models},[models])
   useEffect(()=>{setMeasureDraft({});setCalibrationMode(null);setMaskEditing(null);setMaskDraft([]);setDetection(null);setZen(!!selectedId)},[selectedId])
   const product=products.find(p=>p.id===selectedId)
+  const colors=product?productColors(product):[]
+  const colorName=colors.find(color=>color.id===activeColor)?.name??'Color base'
   const enabled=product?VIEWS.filter(v=>product.views[v].enabled):[]
   const current=product?.views[active]
   const selectedZone=current?preferredZone(current,zoneId):undefined
-  const selectedArt=selectedZone?models[active].arts[selectedZone.id]:null
-  const photo=models[active].photo
+  const selectedArt=ready&&selectedZone?models[active].arts[selectedZone.id]:null
+  const photo=ready?models[active].photo:null
   const calibration=current?.calibration??{}
   const photoScale=photo?photoPixelsPerCm(photo,calibration):null
   const zoneCm=photo&&selectedZone?zoneDimensionsCm(photo,selectedZone.placement,selectedZone.aspect,calibration):null
@@ -251,39 +275,44 @@ export function ProductMockupStudio(){
   useEffect(()=>{
     if(!selectedId||!product){setLoadedId(null);setModels(blank());setDraft({});return}
     let disposed=false
-    const opened:ImageBitmap[]=[]
+    const opened=new Set<ImageBitmap>()
+    workingBitmaps.current=opened
     setLoadedId(null)
-    // Retain the current canvas while the next product's assets decode; the
-    // loadedId gate prevents exporting stale photos under another product.
     setModels(blank());setDraft({})
     void (async()=>{
       const next=blank()
-      let stored:Draft={}
-      try{stored=JSON.parse(localStorage.getItem(draftKey(selectedId))||'{}') as Draft}catch{stored={}}
+      const stored=readDraft(selectedId,activeColor)
+      const keep=(asset:MockImage)=>{
+        if(disposed)asset.bitmap.close()
+        else opened.add(asset.bitmap)
+        return asset
+      }
       for(const view of VIEWS){
+        if(disposed)return
         try{
-          const blob=await loadProductPhoto(product,view,cloud.connection)
-          if(blob){const asset=await decode(blob,product.views[view].photoName||'Foto', 'photo');opened.push(asset.bitmap);next[view].photo=asset}
+          const blob=await loadProductPhoto(product,view,cloud.connection,activeColor)
+          if(blob&&!disposed)next[view].photo=keep(await decode(blob,productPhoto(product,view,activeColor)?.photoName||'Foto','photo'))
         }catch(e){if(!disposed)setError(e instanceof Error?e.message:'No se pudo recuperar una fotografía del producto.')}
         for(const zone of product.views[view].zones){
           try{
-            const blob=await loadMedia(artKey(selectedId,view,zone.id))
-            if(blob){const asset=await decode(blob,stored[view]?.[zone.id]?.name||'Diseño','art');opened.push(asset.bitmap);next[view].arts[zone.id]=asset}
+            if(disposed)return
+            const blob=await loadMedia(artKey(selectedId,view,zone.id,activeColor))
+            if(blob&&!disposed)next[view].arts[zone.id]=keep(await decode(blob,stored[view]?.[zone.id]?.name||'Diseño','art'))
           }catch{/* A missing artwork must not block the library. */}
         }
       }
-      if(!disposed){setModels(next);setDraft(stored);setLoadedId(selectedId)}
+      if(!disposed){setModels(next);setDraft(stored);setLoadedId(editorKey)}
     })()
     return ()=>{disposed=true;opened.forEach(b=>b.close())}
     // Product setup edits must not force the photo to reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[selectedId])
+  },[editorKey])
   useEffect(()=>{
-    if(!selectedId||loadedId!==selectedId)return
-    try{localStorage.setItem(draftKey(selectedId),JSON.stringify(draft))}catch{/* Browser quota */}
-  },[selectedId,loadedId,draft])
+    if(!selectedId||!ready)return
+    try{localStorage.setItem(draftKey(selectedId,activeColor),JSON.stringify(draft))}catch{/* Browser quota */}
+  },[selectedId,activeColor,ready,draft])
   useEffect(()=>{
-    if(!product||loadedId!==product.id)return
+    if(!product||!ready)return
     const frame=requestAnimationFrame(()=>{
       for(const view of VIEWS.filter(v=>product.views[v].enabled)){
         const photo=models[view].photo,canvas=canvasRefs.current[view]
@@ -295,7 +324,7 @@ export function ProductMockupStudio(){
       }
     })
     return ()=>cancelAnimationFrame(frame)
-  },[models,draft,product,screen,loadedId,zen,active])
+  },[models,draft,product,screen,ready,zen,active])
 
   const updateProduct=(edit:(p:Product)=>Product)=>{
     setProducts(all=>all.map(p=>p.id===selectedId?edit(p):p))
@@ -386,8 +415,8 @@ export function ProductMockupStudio(){
     clearMeasureDraft(axis)
   }
   const openUpload=(kind:'photo'|'art',view:ViewName,zid?:string)=>{
-    if(busy||cloud.working||loadedId!==selectedId)return
-    targetRef.current={kind,view,zoneId:zid}
+    if(busy||cloud.working||!ready)return
+    targetRef.current={kind,view,zoneId:zid,editorKey:editorKey!}
     if(inputRef.current){
       inputRef.current.accept=kind==='art'?'image/png':'image/png,image/jpeg,image/webp'
       inputRef.current.click()
@@ -396,67 +425,90 @@ export function ProductMockupStudio(){
   const onSelect=(event:ChangeEvent<HTMLInputElement>)=>{
     const file=event.currentTarget.files?.[0]
     event.currentTarget.value=''
-    if(!file||busy||cloud.working||!selectedId||loadedId!==selectedId)return
+    if(!file||busy||cloud.working||!selectedId||!product||!ready||targetRef.current.editorKey!==editorKey)return
     const {kind,view,zoneId:zid}=targetRef.current
+    const artPhoto=models[view].photo
+    const artZone=product.views[view].zones.find(zone=>zone.id===zid)
+    if(kind==='art'&&(!artPhoto||!artZone))return
     const valid=kind==='art'?file.type==='image/png'||(!file.type&&/\.png$/i.test(file.name)):
       /^image\/(png|jpeg|webp)$/.test(file.type)||(!file.type&&/\.(png|jpe?g|webp)$/i.test(file.name))
     if(!valid){setError(kind==='art'?'El estampado debe ser PNG.':'La fotografía debe ser JPG, PNG o WebP.');return}
     if(file.size>55*1024*1024){setError('El archivo supera 55 MB.');return}
     setBusy(true);setError('');setFeedback('')
-    const key=kind==='photo'?photoKey(selectedId,view):artKey(selectedId,view,zid||'')
+    const key=kind==='photo'?photoKey(selectedId,view,activeColor):artKey(selectedId,view,zid||'',activeColor)
+    const opened=workingBitmaps.current
+    const previous=kind==='photo'?models[view].photo:models[view].arts[zid||'']
+    const resetGeometry=activeColor===BASE_COLOR&&!product.colors?.some(color=>color.photos[view]?.photoName)
     void (async()=>{
+      let image:MockImage|undefined
       try{
-        const image=await decode(file,file.name,kind)
+        const asset=await decode(file,file.name,kind)
+        image=asset
         await storeMedia(key,file)
         const photoVersion=kind==='photo'?uid():undefined
         if(kind==='photo')await storeMediaMetadata(key,{version:photoVersion})
+        if(previous){previous.bitmap.close();opened.delete(previous.bitmap)}
+        opened.add(asset.bitmap)
         setModels(old=>({...old,[view]:{
-          ...old[view],photo:kind==='photo'?image:old[view].photo,
-          arts:kind==='art'?{...old[view].arts,[zid||'']:image}:old[view].arts,
+          ...old[view],photo:kind==='photo'?asset:old[view].photo,
+          arts:kind==='art'?{...old[view].arts,[zid||'']:asset}:old[view].arts,
         }}))
         if(kind==='photo'){
-          // A replacement photo invalidates previously marked references.
-          updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:file.name,photoVersion,calibration:{},silhouette:[]}}}))
-          setMeasureDraft(old=>Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(view+':'))))
-          setCalibrationMode(null)
-          if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}
-          setDetection(null)
+          updateProduct(p=>withProductPhoto(p,view,activeColor,{photoName:file.name,photoVersion}))
+          if(resetGeometry){
+            setMeasureDraft(old=>Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(view+':'))))
+            setCalibrationMode(null)
+            if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}
+            setDetection(null)
+          }
         }
         else if(zid){
           setDraft(old=>({...old,[view]:{...old[view],[zid]:{
             placement:old[view]?.[zid]?.placement??{
-              ...fitPrintToZone(modelsRef.current[view].photo!,image,product!.views[view].zones.find(z=>z.id===zid)!),
+              ...fitPrintToZone(artPhoto!,asset,artZone!),
               ...(view.endsWith('Sleeve')?{sleeveCurve:defaultSleeveCurve()}:{})
             },
             name:file.name,
           }}}))
         }
-        if(kind==='photo')detectPhoto(image,view)
+        if(kind==='photo'&&resetGeometry)detectPhoto(asset,view)
         else setFeedback('Archivo guardado en este navegador.')
-      }catch(e){setError(e instanceof Error?e.message:'No se pudo cargar el archivo.')}
+      }catch(e){
+        if(image&&!opened.has(image.bitmap))image.bitmap.close()
+        setError(e instanceof Error?e.message:'No se pudo cargar el archivo.')
+      }
       finally{setBusy(false)}
     })()
   }
   const removeAsset=(kind:'photo'|'art',view:ViewName,zid?:string)=>{
-    if(!selectedId||busy||cloud.working)return
-    const key=kind==='photo'?photoKey(selectedId,view):artKey(selectedId,view,zid||'')
-    setModels(old=>({...old,[view]:{
-      photo:kind==='photo'?null:old[view].photo,
-      arts:kind==='art'?Object.fromEntries(Object.entries(old[view].arts).filter(([id])=>id!==zid)):old[view].arts,
-    }}))
-    if(kind==='photo'){
-      updateProduct(p=>({...p,views:{...p.views,[view]:{...p.views[view],photoName:undefined,photoVersion:undefined,calibration:{},silhouette:[]}}}))
-      if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}
-      setDetection(null)
-    }
-    void removeMedia(key).catch(()=>setError('No se pudo borrar el archivo del navegador.'))
+    if(!selectedId||!ready||busy||cloud.working)return
+    const key=kind==='photo'?photoKey(selectedId,view,activeColor):artKey(selectedId,view,zid||'',activeColor)
+    setBusy(true)
+    void removeMedia(key).then(()=>{
+      const previous=kind==='photo'?models[view].photo:models[view].arts[zid||'']
+      if(previous){previous.bitmap.close();workingBitmaps.current.delete(previous.bitmap)}
+      setModels(old=>({...old,[view]:{
+        photo:kind==='photo'?null:old[view].photo,
+        arts:kind==='art'?Object.fromEntries(Object.entries(old[view].arts).filter(([id])=>id!==zid)):old[view].arts,
+      }}))
+      if(kind==='photo'){
+        updateProduct(p=>withProductPhoto(p,view,activeColor,{photoName:undefined,photoVersion:undefined}))
+        if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}
+        setDetection(null)
+      }
+      // Retain placement for a replacement PNG, but record that this slot is empty.
+      else if(zid)setDraft(old=>{
+        const value=old[view]?.[zid]
+        return value?{...old,[view]:{...old[view],[zid]:{...value,name:''}}}:old
+      })
+    }).catch(()=>setError('No se pudo borrar el archivo del navegador.')).finally(()=>setBusy(false))
   }
   const position=(e:ReactPointerEvent<HTMLDivElement>):Point=>{
     const r=e.currentTarget.getBoundingClientRect()
     return {x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height}
   }
   const onPointerDown=(e:ReactPointerEvent<HTMLDivElement>,view:ViewName)=>{
-    if(busy||cloud.working||loadedId!==selectedId||!product)return
+    if(busy||cloud.working||!ready||!product)return
     if(zen&&(zenTool==='hand'||spaceRef.current||e.button===1)){
       e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId)
       panDragRef.current={pointerId:e.pointerId,start:{x:e.clientX,y:e.clientY},origin:pan};return
@@ -587,12 +639,12 @@ export function ProductMockupStudio(){
     if(busy||cloud.working)return
     setBusy(true)
     try{
-      const copy:Product={...p,id:uid(),cloud:undefined,name:p.name+' (copia)',views:structuredClone(p.views)}
-      for(const view of VIEWS){
-        const src=await loadProductPhoto(p,view,cloud.connection)
+      const copy:Product={...structuredClone(p),id:uid(),cloud:undefined,name:p.name+' (copia)'}
+      for(const {id:color} of productColors(p))for(const view of VIEWS){
+        const src=await loadProductPhoto(p,view,cloud.connection,color)
         if(src){
-          await storeMedia(photoKey(copy.id,view),src)
-          await storeMediaMetadata(photoKey(copy.id,view),{version:p.views[view].photoVersion??null})
+          await storeMedia(photoKey(copy.id,view,color),src)
+          await storeMediaMetadata(photoKey(copy.id,view,color),{version:productPhoto(p,view,color)?.photoVersion??null})
         }
       }
       setProducts(all=>[...all,copy]);setFeedback('Producto duplicado con sus fotografías y zonas.')
@@ -605,31 +657,38 @@ export function ProductMockupStudio(){
     setBusy(true)
     try{
       await cloud.erase(p)
-      for(const view of VIEWS){
-        await removeMedia(photoKey(p.id,view))
-        for(const zone of p.views[view].zones)await removeMedia(artKey(p.id,view,zone.id))
-      }
-      localStorage.removeItem(draftKey(p.id))
+      for(const {id:color} of productColors(p))await clearColorAssets(p,color)
       setProducts(all=>all.filter(item=>item.id!==p.id))
       if(selectedId===p.id){setSelectedId(null);setScreen('library')}
       setFeedback('Producto eliminado.')
     }catch(e){setError(e instanceof Error?e.message:'No se pudo completar la eliminación. Los datos locales se conservan.')}
     finally{setBusy(false)}
   }
+  const renderExportView=async(item:Product,view:ViewName,color:string,photo:MockImage,colorDraft:Draft)=>{
+    const arts:Record<string,MockImage>={}
+    const canvas=document.createElement('canvas')
+    try{
+      for(const zone of item.views[view].zones){
+        const original=await loadMedia(artKey(item.id,view,zone.id,color))
+        if(original)arts[zone.id]=await decode(original,colorDraft[view]?.[zone.id]?.name||'Diseño','art',8192)
+      }
+      renderGarmentLayers(canvas,photo,viewLayers(item.views[view],photo,arts,colorDraft[view]),8192)
+      return canvas
+    }catch(e){canvas.width=0;canvas.height=0;throw e}
+    finally{Object.values(arts).forEach(art=>art.bitmap.close())}
+  }
   const exportMockup=async(all:boolean)=>{
-    if(!product||busy||loadedId!==product.id)return
+    if(!product||busy||!ready)return
     const chosen=(all?enabled:[active]).filter(view=>models[view].photo)
     if(!chosen.length){setError('Añadí una fotografía al producto antes de exportar.');return}
     setBusy(true);setError('');setFeedback('')
     const canvases:HTMLCanvasElement[]=[]
+    let output:HTMLCanvasElement|undefined
     try{
       for(const view of chosen){
-        const photo=models[view].photo!
-        const layers=viewLayers(product.views[view],photo,models[view].arts,draft[view])
-        const canvas=document.createElement('canvas')
-        renderGarmentLayers(canvas,photo,layers,8192);canvases.push(canvas)
+        canvases.push(await renderExportView(product,view,activeColor,models[view].photo!,draft))
       }
-      let output=canvases[0]
+      output=canvases[0]
       if(all&&canvases.length>1){
         const pad=32,gap=24,columns=Math.min(2,canvases.length),rows=Math.ceil(canvases.length/columns)
         const colWidths=Array.from({length:columns},(_,col)=>Math.max(...canvases.filter((_,i)=>i%columns===col).map(c=>c.width)))
@@ -649,11 +708,53 @@ export function ProductMockupStudio(){
         })
       }
       const blob=await canvasPng(output)
-      download(blob,'GAS3D-'+product.name.replace(/[^a-z0-9_-]+/gi,'-')+'-'+(all?'vistas':active)+'.png')
+      const colorTag=colors.length>1||product.baseColorName?'-'+filenamePart(colorName):''
+      download(blob,'GAS3D-'+filenamePart(product.name)+colorTag+'-'+(all?'vistas':active)+'.png')
       setFeedback('Exportación PNG terminada · '+output.width+' × '+output.height+' px.')
-      if(output!==canvases[0]){output.width=0;output.height=0}
     }catch(e){setError(e instanceof Error?e.message:'No se pudo exportar.')}
-    finally{canvases.forEach(c=>{c.width=0;c.height=0});setBusy(false)}
+    finally{
+      if(output){output.width=0;output.height=0}
+      canvases.forEach(c=>{c.width=0;c.height=0});setBusy(false)
+    }
+  }
+  const exportColors=async()=>{
+    if(!product||busy||!ready)return
+    const available=colors.filter(color=>productPhoto(product,active,color.id)?.photoName)
+    if(!available.length)return
+    setBusy(true)
+    try{
+      const entries:{name:string;blob:Blob}[]=[]
+      const usedNames=new Set<string>()
+      const prefix='GAS3D-'+filenamePart(product.name)
+      const viewLabel=filenamePart(active==='front'?'Pecho':LABELS[active])
+      for(const color of available){
+        const currentColor=color.id===activeColor
+        const source=productPhoto(product,active,color.id)!
+        let photo=currentColor?models[active].photo:null
+        let temporary:MockImage|undefined
+        let canvas:HTMLCanvasElement|undefined
+        try{
+          if(!photo){
+            const original=await loadProductPhoto(product,active,cloud.connection,color.id)
+            if(!original)throw new Error('Falta la foto original de «'+color.name+'».')
+            photo=temporary=await decode(original,source.photoName||'Foto','photo')
+          }
+          canvas=await renderExportView(product,active,color.id,photo,currentColor?draft:readDraft(product.id,color.id))
+          const basename=prefix+'-'+filenamePart(color.name)+'-'+viewLabel
+          let name=basename+'.png',suffix=2
+          while(usedNames.has(name.toLowerCase()))name=basename+'-'+String(suffix++)+'.png'
+          usedNames.add(name.toLowerCase())
+          entries.push({name,blob:await canvasPng(canvas)})
+        }finally{
+          temporary?.bitmap.close()
+          if(canvas){canvas.width=0;canvas.height=0}
+        }
+      }
+      download(await createZipArchive(entries),prefix+'-todos-los-colores-'+viewLabel+'.zip')
+      const omitted=colors.length-available.length
+      setFeedback('ZIP exportado con '+entries.length+' PNG.'+(omitted?' Colores sin foto en esta vista: '+omitted+'.':''))
+    }catch(e){setError(e instanceof Error?e.message:'No se pudieron exportar los colores.')}
+    finally{setBusy(false)}
   }
 
   const cancelPen=()=>{
@@ -666,9 +767,34 @@ export function ProductMockupStudio(){
   }
   const openProduct=(item:Product,mode:ViewMode)=>{
     returnFocusRef.current=document.activeElement instanceof HTMLElement?document.activeElement:null
-    setViewModes(initialViewModes(mode));setSelectedId(item.id);setScreen(mode)
+    setViewModes(initialViewModes(mode));setSelectedId(item.id);setActiveColor(BASE_COLOR);setNewColorName('');setScreen(mode)
     setActive(VIEWS.find(v=>item.views[v].enabled)||'front');setZoneId('');setInspector('zone');setZenTool('zone')
     setInspectorOpen(window.innerWidth>760)
+  }
+  const changeColor=async(color:string)=>{
+    if(!ready||busy||cloud.working||color===activeColor||!await canLeavePen())return
+    dragRef.current=null
+    setCalibrationMode(null);setMeasureDraft({});setDetection(null);setActiveColor(color)
+  }
+  const addColor=async()=>{
+    const name=newColorName.trim()
+    if(!product||!name||colors.length>=MAX_COLORS||!ready||busy||cloud.working||!await canLeavePen())return
+    const id=Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('')
+    updateProduct(p=>({...p,colors:[...(p.colors??[]),{id,name,photos:{}}]}))
+    setNewColorName('');setCalibrationMode(null);setMeasureDraft({});setDetection(null);setActiveColor(id)
+    setFeedback('Color añadido. Cargá su fotografía en cada vista que necesites.')
+  }
+  const deleteColor=async()=>{
+    if(!product||activeColor===BASE_COLOR||!ready||busy||cloud.working||maskEditing)return
+    if(!await requestConfirmation({title:'Eliminar color',description:'Se borrarán las fotos y artes locales de «'+colorName+'».',accept:'Eliminar color',destructive:true}))return
+    setBusy(true)
+    try{
+      await clearColorAssets(product,activeColor)
+      updateProduct(p=>({...p,colors:p.colors?.filter(color=>color.id!==activeColor)}))
+      setActiveColor(BASE_COLOR);setCalibrationMode(null);setMeasureDraft({});setDetection(null)
+      setFeedback('Color eliminado del producto.')
+    }catch(e){setError(e instanceof Error?e.message:'No se pudo eliminar el color.')}
+    finally{setBusy(false)}
   }
   const selectLayer=async(view:ViewName,mode:ViewMode=viewModes[view])=>{
     if(view===active&&mode===screen)return
@@ -702,6 +828,9 @@ export function ProductMockupStudio(){
       <div className="mockup-header-title"><h1>Mockup <span>Studio</span></h1>{!zen&&<p>Biblioteca de productos y estampados reutilizables</p>}</div>
       {zen&&product&&<>
         <strong className="mockup-header-product" title={product.name}>{product.name}</strong>
+        <select className="mockup-color-select" aria-label="Color del producto" value={activeColor} disabled={busy||cloud.working||!ready} onChange={e=>void changeColor(e.target.value)}>
+          {colors.map(color=><option key={color.id} value={color.id}>{color.name}</option>)}
+        </select>
         <button type="button" className="mockup-nav-button" aria-label={inspectorOpen?'Ocultar panel de controles':'Mostrar panel de controles'} aria-expanded={inspectorOpen} onClick={()=>setInspectorOpen(value=>!value)}><PanelRight size={16}/><span>Panel</span></button>
         <button type="button" className="mockup-nav-button mockup-zen-exit" aria-label="Salir a productos" disabled={busy||cloud.working} onClick={()=>void leaveEditor()}><LogOut size={16}/><span>Salir</span></button>
       </>}
@@ -717,7 +846,7 @@ export function ProductMockupStudio(){
       <div className="mockup-product-grid">
         {products.map(p=><article key={p.id} className="mockup-product-card">
           <ProductThumbnail product={p} connection={cloud.connection}/>
-          <div className="mockup-product-info"><small>{p.type} · {VIEWS.filter(v=>p.views[v].enabled).length} vistas</small><h3>{p.name}</h3><span className="mockup-cloud-badge">{p.cloud?.deleting?'Eliminación pendiente':productIsDirty(p)?'Cambios locales sin subir':'Guardado en Cloudinary'}</span></div>
+          <div className="mockup-product-info"><small>{p.type} · {VIEWS.filter(v=>p.views[v].enabled).length} vistas · {productColors(p).length} {productColors(p).length===1?'color':'colores'}</small><h3>{p.name}</h3><span className="mockup-cloud-badge">{p.cloud?.deleting?'Eliminación pendiente':productIsDirty(p)?'Cambios locales sin subir':'Guardado en Cloudinary'}</span></div>
           <div className="mockup-product-actions">
             <button type="button" disabled={busy||cloud.working||p.cloud?.deleting} onClick={()=>openProduct(p,'mockup')}>Nuevo mockup</button>
             <button type="button" disabled={busy||cloud.working||p.cloud?.deleting} onClick={()=>openProduct(p,'setup')}>Editar</button>
@@ -756,7 +885,7 @@ export function ProductMockupStudio(){
           {maskEditing===active&&<div className="mockup-pen-context" role="group" aria-label="Trazo en edición"><strong>Pluma · {penTarget==='zone'?'Zona de estampado':'Silueta de la prenda'}</strong><span>{maskDraft.length} nodos</span><button type="button" className="mockup-primary" disabled={!maskClosed||restoreGarmentMask(maskDraft).length<3} onClick={saveSilhouette}>{penTarget==='zone'?'Guardar zona':'Guardar silueta'}</button><button type="button" onClick={cancelPen}>Cancelar</button></div>}
           <div className="mockup-view-grid">
             {enabled.filter(v=>v===active).map(view=>{
-              const photo=models[view].photo
+              const photo=ready?models[view].photo:null
               const z=view===active?selectedZone:preferredZone(product.views[view])
               const art=z?(screen==='setup'?zoneSize(z):models[view].arts[z.id]):null
               const placement=z?(screen==='setup'?z.placement:placementFor(view,z)):null
@@ -841,9 +970,9 @@ export function ProductMockupStudio(){
                       <circle cx={calibrationMode.second.x*100} cy={calibrationMode.second.y*100} r="1.1"/>
                     </g>}
                   </svg>}
-                </div></div></div>:<button type="button" className="mockup-empty" disabled={screen!=='setup'} onClick={()=>openUpload('photo',view)}><Shirt size={32}/><strong>{screen==='setup'?'Añadir fotografía':'Falta configurar la fotografía'}</strong><small>{LABELS[view]}</small></button>}
+                </div></div></div>:<button type="button" className="mockup-empty" disabled={!ready||busy||cloud.working} onClick={()=>openUpload('photo',view)}><Shirt size={32}/><strong>{ready?'Añadir fotografía':'Cargando…'}</strong><small>{LABELS[view]} · {colorName}</small></button>}
                 <div className="mockup-view-actions">
-                  {screen==='setup'?<button type="button" disabled={busy} onClick={()=>openUpload('photo',view)}><ImagePlus size={15}/>{photo?'Cambiar foto':'Añadir foto'}</button>:
+                  {screen==='setup'?<button type="button" disabled={busy||!ready} onClick={()=>openUpload('photo',view)}><ImagePlus size={15}/>{photo?'Cambiar foto':'Añadir foto'}</button>:
                     <button type="button" disabled={busy||!z||!photo} onClick={()=>openUpload('art',view,z?.id)}><Layers2 size={15}/>{z&&models[view].arts[z.id]?'Cambiar PNG':'Añadir PNG'}</button>}
                   {screen==='setup'&&photo&&<button type="button" className="mockup-remove" onClick={()=>removeAsset('photo',view)} aria-label="Quitar foto"><Trash2 size={15}/></button>}
                   {!zen&&photo&&<button type="button" onClick={()=>{setZenTool('zone');setInspector('zone');openZen(view)}}><Maximize2 size={15}/> Editar en grande</button>}
@@ -855,7 +984,7 @@ export function ProductMockupStudio(){
 
         </section>
         <aside className={'mockup-controls'+(zen?' tool-'+zenTool+' inspector-'+inspector+(screen==='setup'?' is-setup':''):'')}>
-          <MockupLayers product={product} active={active} modes={viewModes} labels={LABELS} photos={Object.fromEntries(VIEWS.map(view=>[view,models[view].photo])) as Record<ViewName,MockImage|null>} disabled={busy||cloud.working}
+          <MockupLayers product={product} active={active} modes={viewModes} labels={LABELS} photos={Object.fromEntries(VIEWS.map(view=>[view,ready?models[view].photo:null])) as Record<ViewName,MockImage|null>} disabled={busy||cloud.working||!ready}
             onSelect={view=>void selectLayer(view)} onMode={(view,mode)=>void selectLayer(view,mode)} onManage={()=>{
               if(maskEditing){setInspector('pen');setInspectorOpen(true);setError('Guardá o cancelá el trazo antes de gestionar las vistas.');return}
               setScreen('setup');setViewModes(old=>({...old,[active]:'setup'}));setInspector('product');setInspectorOpen(true)
@@ -872,6 +1001,22 @@ export function ProductMockupStudio(){
             <h2>Configuración del producto</h2>
             <label className="mockup-field">Nombre<input value={product.name} onChange={e=>updateProduct(p=>({...p,name:e.target.value}))}/></label>
             <label className="mockup-field">Tipo<select value={product.type} onChange={e=>updateProduct(p=>({...p,type:e.target.value}))}>{TYPES.map(t=><option key={t}>{t}</option>)}</select></label>
+            <div className="mockup-divider"/>
+            <h3>Colores del producto</h3>
+            <InlineField label="Nombre del color activo" htmlFor="mockup-current-color">
+              <input id="mockup-current-color" key={activeColor} defaultValue={colorName} maxLength={80} disabled={busy||cloud.working||!ready} onBlur={e=>{
+                const name=e.target.value.trim()||colorName
+                e.target.value=name
+                if(name===colorName)return
+                updateProduct(p=>activeColor===BASE_COLOR?{...p,baseColorName:name}:{...p,colors:p.colors?.map(color=>color.id===activeColor?{...color,name}:color)})
+              }} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}}/>
+              <button type="button" disabled={activeColor===BASE_COLOR||busy||cloud.working||!ready||!!maskEditing} onClick={()=>void deleteColor()} aria-label="Eliminar color activo" title="Eliminar color activo"><Trash2 size={15}/></button>
+            </InlineField>
+            <InlineField label="Nuevo color" htmlFor="mockup-new-color">
+              <input id="mockup-new-color" placeholder="Ej. Azul marino" value={newColorName} maxLength={80} onChange={e=>setNewColorName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void addColor()}} disabled={colors.length>=MAX_COLORS||busy||cloud.working||!ready}/>
+              <button type="button" disabled={!newColorName.trim()||colors.length>=MAX_COLORS||busy||cloud.working||!ready} onClick={()=>void addColor()} aria-label="Añadir color" title="Añadir color"><Plus size={16}/></button>
+            </InlineField>
+            <p className="mockup-note">Usá el mismo encuadre por vista. Los colores comparten la silueta y las zonas.</p>
             <div className="mockup-divider"/>
             <h3>Vistas disponibles</h3>
             <div className="mockup-views-picker">{VIEWS.map(v=><label key={v}><input type="checkbox" checked={product.views[v].enabled} onChange={e=>{
@@ -985,7 +1130,9 @@ export function ProductMockupStudio(){
                   const zones=p.views[active].zones.filter(z=>z.id!==selectedZone.id)
                   return {...p,views:{...p.views,[active]:{...p.views[active],zones,defaultZoneId:p.views[active].defaultZoneId===selectedZone.id?zones[0]?.id:p.views[active].defaultZoneId}}}
                 })
-                void removeMedia(artKey(product.id,active,selectedZone.id)).catch(()=>{})
+                for(const color of colors){
+                  void removeMedia(artKey(product.id,active,selectedZone.id,color.id)).catch(()=>{})
+                }
                 setZoneId('')
               }}><Trash2 size={15}/> Eliminar zona</button>
             </>:<>
@@ -1087,8 +1234,9 @@ export function ProductMockupStudio(){
           </section>
           </div>
           {screen==='mockup'&&<div className="mockup-export-actions">
-            <button type="button" disabled={busy||!models[active].photo} onClick={()=>void exportMockup(false)}><ArrowDownToLine size={16}/> Exportar {LABELS[active]}</button>
-            <button type="button" className="mockup-primary" disabled={busy||loadedId!==selectedId||!enabled.some(v=>models[v].photo)} onClick={()=>void exportMockup(true)}><ArrowDownToLine size={16}/> Exportar todas las vistas</button>
+            <button type="button" disabled={busy||!ready||!photo} onClick={()=>void exportMockup(false)}><ArrowDownToLine size={16}/> Exportar {LABELS[active]}</button>
+            <button type="button" className="mockup-primary" title={'Exportar las vistas de '+colorName} disabled={busy||!ready||!enabled.some(v=>models[v].photo)} onClick={()=>void exportMockup(true)}><ArrowDownToLine size={16}/> Todas las vistas</button>
+            {colors.length>1&&<button type="button" className="mockup-export-colors" disabled={busy||!ready||!colors.some(color=>productPhoto(product,active,color.id)?.photoName)} onClick={()=>void exportColors()}><ArrowDownToLine size={16}/> Todos los colores · {active==='front'?'Pecho':LABELS[active]} (ZIP)</button>}
           </div>}
           {screen==='setup'&&<div className="mockup-save-product"><small>{productIsDirty(product)?'Cambios guardados en este navegador':'Producto sincronizado'}</small><button type="button" className="mockup-primary mockup-secondary-full" disabled={busy||cloud.working||!!maskEditing||!cloud.connection||product.cloud?.deleting} onClick={()=>void cloud.save([product])}>{cloud.working?'Guardando…':'Guardar en nube'}</button></div>}
         </aside>

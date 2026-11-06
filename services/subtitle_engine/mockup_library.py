@@ -30,7 +30,13 @@ from .auth import session_user
 PREFIX = "gas3d/mockup-studio/v1"
 MARKER = "gas3d-mockup-studio"
 VIEWS = ("front", "back", "left", "right", "leftSleeve", "rightSleeve")
+MAX_COLORS = 12
+COLOR_ID = re.compile(r"[a-f0-9]{32}")
+PHOTO_SLOT_PATTERN = rf"(?:{COLOR_ID.pattern}--)?(?:{'|'.join(VIEWS)})"
+PHOTO_SLOT = re.compile(PHOTO_SLOT_PATTERN)
+OWNED_PHOTO = re.compile(rf"({PHOTO_SLOT_PATTERN})-([a-f0-9]{{64}})")
 MAX_PHOTO = 55 * 1024 * 1024
+MAX_PRODUCT_PHOTOS = len(VIEWS) * MAX_PHOTO
 MAX_MANIFEST = 512 * 1024
 ID = re.compile(r"^[a-zA-Z0-9_-]{1,100}$")
 HASH = re.compile(r"^[a-f0-9]{64}$")
@@ -45,7 +51,7 @@ def valid_id(value: str) -> str:
 
 def photo_id(product_id: str, view: str, digest: str) -> str:
     valid_id(product_id)
-    if view not in VIEWS or not HASH.fullmatch(digest):
+    if not PHOTO_SLOT.fullmatch(view) or not HASH.fullmatch(digest):
         raise HTTPException(422, "Referencia de fotografía inválida.")
     return f"{PREFIX}/photos/{product_id}/{view}-{digest}"
 
@@ -155,8 +161,7 @@ class CloudLibrary:
                 prefix=prefix, max_results=500, next_cursor=cursor, **self.options)
             for asset in page.get("resources", []):
                 public_id = asset["public_id"]
-                match = re.fullmatch(r"(front|back|left|right|leftSleeve|rightSleeve)-([a-f0-9]{64})",
-                                     public_id.removeprefix(prefix))
+                match = OWNED_PHOTO.fullmatch(public_id.removeprefix(prefix))
                 if match and public_id == photo_id(product_id, *match.groups()):
                     view, digest = match.groups()
                     photos[public_id] = dict(publicId=public_id, hash=digest, view=view, format=asset.get("format"))
@@ -187,14 +192,13 @@ class CloudLibrary:
 
     def save(self, product_id, product, revision, uploads):
         valid_id(product_id)
-        validate_product(product, product_id)
+        expected = validate_product(product, product_id)
         with self.lock:
             previous = self.read(product_id)
             if previous and (previous.get("deleted") or previous["revision"] != revision):
                 raise HTTPException(409, "Otro dispositivo modificó o eliminó este producto. Recuperá la versión de la nube o duplicá tus cambios locales.")
             if not previous and revision:
                 raise HTTPException(409, "El producto ya no existe en este catálogo. Duplicalo para guardarlo como nuevo.")
-            expected = {view for view in VIEWS if product["views"][view].get("photoName")}
             if expected != set(uploads):
                 raise HTTPException(422, "Faltan fotografías originales. No se guardó el producto incompleto.")
             photos = {}
@@ -268,6 +272,31 @@ def validate_product(product, product_id):
                 or not isinstance(view.get("zones"), list) or len(view["zones"]) > 100
                 or (view.get("photoName") is not None and not isinstance(view["photoName"], str))):
             raise HTTPException(422, "Configuración de vista inválida.")
+    base_name = product.get("baseColorName")
+    colors = product.get("colors", [])
+    if (base_name is not None and not valid_color_name(base_name)
+            or not isinstance(colors, list) or len(colors) >= MAX_COLORS):
+        raise HTTPException(422, "Configuración de colores inválida.")
+    slots = {view for view in VIEWS if product["views"][view].get("photoName")}
+    color_ids = set()
+    for color in colors:
+        if (not isinstance(color, dict) or not isinstance(color.get("id"), str)
+                or not COLOR_ID.fullmatch(color["id"]) or color["id"] in color_ids
+                or not valid_color_name(color.get("name")) or not isinstance(color.get("photos"), dict)
+                or any(view not in VIEWS for view in color["photos"])):
+            raise HTTPException(422, "Variante de color inválida.")
+        color_ids.add(color["id"])
+        for view, source in color["photos"].items():
+            if (not isinstance(source, dict) or not isinstance(source.get("photoName"), str)
+                    or not source["photoName"] or len(source["photoName"]) > 255
+                    or (source.get("photoVersion") is not None and not isinstance(source["photoVersion"], str))):
+                raise HTTPException(422, "Fotografía de color inválida.")
+            slots.add(f'{color["id"]}--{view}')
+    return slots
+
+
+def valid_color_name(name):
+    return isinstance(name, str) and 1 <= len(name.strip()) <= 80
 
 
 _library = CloudLibrary()
@@ -302,14 +331,17 @@ def list_products():
 def save_product(product_id: str, product: str = Form(...), revision: str = Form(""),
                  photo_views: str = Form("[]"), photos: list[UploadFile] = File(default=[])):
     valid_id(product_id)
-    if len(product.encode()) > MAX_MANIFEST or len(photo_views) > 200 or len(photos) > len(VIEWS):
+    if (len(product.encode()) > MAX_MANIFEST or len(photo_views) > 4096 or len(photos) > MAX_COLORS * len(VIEWS)
+            or sum(upload.size or 0 for upload in photos) > MAX_PRODUCT_PHOTOS):
         raise HTTPException(413, "El producto supera el tamaño permitido.")
     try:
         config = json.loads(product)
         views = json.loads(photo_views)
     except ValueError:
         raise HTTPException(422, "Configuración JSON inválida.") from None
-    if not isinstance(views, list) or len(views) != len(photos) or any(v not in VIEWS for v in views) or len(set(views)) != len(views):
+    if (not isinstance(views, list) or len(views) != len(photos)
+            or any(not isinstance(v, str) or not PHOTO_SLOT.fullmatch(v) for v in views)
+            or len(set(views)) != len(views)):
         raise HTTPException(422, "Fotografías de vistas inválidas.")
     return cloud_call(lambda: library().save(product_id, config, revision, dict(zip(views, photos))))
 

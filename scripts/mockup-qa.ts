@@ -224,7 +224,7 @@ assert.ok(Math.abs(curvedArtworkPoint(sleeveQuad,.2,.35,{...softCurve,strength:0
 // An affine print must not have internal clips. For a curved print, each
 // interior pixel must belong to exactly one triangle, including shared edges.
 const rasterSize={width:159,height:143}
-const fixture={...rasterSize,name:'fixture',bitmap:{} as ImageBitmap}
+const fixture={...rasterSize,name:'fixture',bitmap:{...rasterSize} as ImageBitmap}
 const target={getContext:()=>({clearRect(){},drawImage(){}})} as unknown as HTMLCanvasElement
 const flatPrint={...initialPlacement('back'),x:.49,y:.46,width:.64,rotation:17,lighting:0}
 for(const sleeveCurve of [undefined,softCurve]){
@@ -312,7 +312,7 @@ assert.ok(productPage.includes('zoneDimensionsCm')&&productPage.includes('artwor
 assert.ok(productPage.includes('Adaptación a mangas')&&productPage.includes('defaultSleeveCurve'),'Curvature controls or automatic sleeve presets missing')
 assert.ok(productPage.includes('pointInArtwork')&&productPage.includes('artworkOutline'),'Curved hit testing and outline guides missing')
 assert.ok(productPage.includes('saveSilhouette')&&productPage.includes('restoreGarmentMask'),'Editable fabric silhouette panel missing')
-assert.ok(productPage.includes('detectPhoto(image,view)')&&productPage.includes('Añadir zona sugerida'),'Uploaded photos must offer automatic contours and independent zone suggestions')
+assert.ok(productPage.includes("if(kind==='photo'&&resetGeometry)detectPhoto(asset,view)")&&productPage.includes('Añadir zona sugerida'),'Base photos must offer automatic contours and independent zone suggestions')
 assert.ok(productPage.includes("enabled.filter(v=>v===active).map")&&productPage.includes('PhotoRulers'),'Focused editor must show only the active photo with rulers')
 assert.ok(productPage.includes('setMaskClosed(true)')&&productPage.includes('Eliminar nodo')&&productPage.includes('setPointerCapture'),'Pen tool must support closure, node editing and captured touch drags')
 assert.ok(productPage.includes('panDragRef')&&productPage.includes('setZoom')&&productPage.includes('saveCalibration'),'Zoom, panning and point-first calibration must be wired')
@@ -362,9 +362,10 @@ for(const path of readdirSync('src',{recursive:true}).filter(path=>/\.[cm]?[jt]s
 assert.ok(source('src/main.tsx').includes('<NotificationHost />')&&source('src/components/ui/NotificationHost.tsx').includes('<Toaster'),'Floating notices and DOM confirmations must be mounted once for every route')
 assert.ok(source('src/components/ui/notifications.ts').includes('id: nextId()'),'Progress and result popups need distinct IDs so cleanup cannot dismiss the result')
 assert.ok(productPage.includes('clipToZone')&&productPage.includes('seamMarginCm'),'Independent seam margins and zone clipping missing')
-assert.ok(productPage.includes('photoName:file.name,photoVersion,calibration:{},silhouette:[]'),'Replacing a photo must invalidate its stale silhouette')
+assert.ok(productPage.includes('withProductPhoto(p,view,activeColor,{photoName:file.name,photoVersion})'),'Photo replacements must update the correct color slot')
 assert.ok(productPage.includes('if(maskEditing===view){setMaskEditing(null);setMaskDraft([]);maskDragRef.current=null}'),'Old contours must not be saved onto replacement photos')
-assert.ok(productPage.includes('viewLayers(product.views[view],photo,models[view].arts,draft[view])'),'Preview and export must use identical mask layer builder')
+assert.ok(productPage.includes('viewLayers(product.views[view],photo,models[view].arts,draft[view])')
+  &&productPage.includes('viewLayers(item.views[view],photo,arts,colorDraft[view])'),'Preview and export must use identical mask layer builder')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-calibration-grid'),'Responsive calibration panel missing')
 assert.ok(productPage.includes('Añadir zona')&&productPage.includes('zoneId'),'Independent print zones must be configurable')
 assert.ok(productPage.includes("screen==='setup'")&&productPage.includes("screen==='mockup'"),'Product authoring and artwork application must remain separate')
