@@ -214,6 +214,8 @@ export function ProductMockupStudio(){
     ?printInsideSafeAreas(photo,selectedArt,currentPrint,[current.silhouette]):true
   const fittedWidth=photo?Math.max(1,Math.min(viewport.width-32,(viewport.height-32)*photo.width/photo.height)):1
   const fittedHeight=photo?fittedWidth*photo.height/photo.width:1
+  // Match the zoomed display instead of enlarging a fixed-size preview.
+  const previewEdge=zen?bound(Math.ceil(Math.max(fittedWidth,fittedHeight)*zoom*(window.devicePixelRatio||1)),1050,2560):1050
 
   useEffect(()=>{
     if(!zen)return
@@ -336,12 +338,12 @@ export function ProductMockupStudio(){
         if(!photo||!canvas)continue
         const layers=screen==='mockup'
           ?viewLayers(product.views[view],photo,models[view].arts,draft[view]):[]
-        try{renderGarmentLayers(canvas,photo,layers,1050)}
+        try{renderGarmentLayers(canvas,photo,layers,previewEdge)}
         catch(e){setError(e instanceof Error?e.message:'Error al mostrar el mockup.')}
       }
     })
     return ()=>cancelAnimationFrame(frame)
-  },[models,draft,product,screen,ready,zen,active])
+  },[models,draft,product,screen,ready,zen,active,previewEdge])
 
   const updateProduct=(edit:(p:Product)=>Product)=>{
     setProducts(all=>all.map(p=>p.id===selectedId?edit(p):p))
@@ -1256,7 +1258,7 @@ export function ProductMockupStudio(){
                 </div>}
               </section>}
               <label className="mockup-adjustment"><span>Rotación: {placementFor(active,selectedZone).rotation}°</span><input type="range" min="-45" max="45" value={placementFor(active,selectedZone).rotation} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,rotation:Number(e.target.value)}))}/></label>
-              <label className="mockup-adjustment"><span>Luces y sombras: {Math.round(placementFor(active,selectedZone).lighting*100)}%</span><input type="range" min="0" max="100" value={Math.round(placementFor(active,selectedZone).lighting*100)} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,lighting:Number(e.target.value)/100}))}/></label>
+              <label className="mockup-adjustment" title="Ajusta las luces y sombras amplias de la prenda. En 0%, el estampado conserva los colores de su PNG."><span>Luces y sombras: {Math.round(placementFor(active,selectedZone).lighting*100)}%</span><input type="range" min="0" max="100" value={Math.round(placementFor(active,selectedZone).lighting*100)} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,lighting:Number(e.target.value)/100}))}/></label>
             </>}
             <div className="mockup-controls-row">
               <button type="button" onClick={()=>{
