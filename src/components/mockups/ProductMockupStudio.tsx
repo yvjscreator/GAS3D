@@ -682,39 +682,57 @@ export function ProductMockupStudio(){
     const chosen=(all?enabled:[active]).filter(view=>models[view].photo)
     if(!chosen.length){setError('Añadí una fotografía al producto antes de exportar.');return}
     setBusy(true);setError('');setFeedback('')
-    const canvases:HTMLCanvasElement[]=[]
-    let output:HTMLCanvasElement|undefined
+    const colorTag=colors.length>1||product.baseColorName?'-'+filenamePart(colorName):''
+    const prefix='GAS3D-'+filenamePart(product.name)+colorTag
+    let canvas:HTMLCanvasElement|undefined
+    let collage:HTMLCanvasElement|undefined
     try{
-      for(const view of chosen){
-        canvases.push(await renderExportView(product,view,activeColor,models[view].photo!,draft))
+      if(chosen.length===1){
+        const view=chosen[0]
+        canvas=await renderExportView(product,view,activeColor,models[view].photo!,draft)
+        download(await canvasPng(canvas),prefix+'-'+(all?'vistas':view)+'.png')
+        setFeedback('Exportación PNG terminada · '+canvas.width+' × '+canvas.height+' px.')
+        return
       }
-      output=canvases[0]
-      if(all&&canvases.length>1){
-        const pad=32,gap=24,columns=Math.min(2,canvases.length),rows=Math.ceil(canvases.length/columns)
-        const colWidths=Array.from({length:columns},(_,col)=>Math.max(...canvases.filter((_,i)=>i%columns===col).map(c=>c.width)))
-        const rowHeights=Array.from({length:rows},(_,row)=>Math.max(...canvases.slice(row*columns,(row+1)*columns).map(c=>c.height)))
-        const width=colWidths.reduce((a,b)=>a+b,0)+2*pad+gap*(columns-1)
-        const height=rowHeights.reduce((a,b)=>a+b,0)+2*pad+gap*(rows-1)
-        if(width>8192||height>8192||width*height>24_000_000)throw new Error('El collage supera el límite de 24 MP. Exportá cada vista por separado.')
-        output=document.createElement('canvas');output.width=width;output.height=height
-        const ctx=output.getContext('2d')
+      const photos=chosen.map(view=>models[view].photo!)
+      const pad=32,gap=24,columns=2,rows=Math.ceil(photos.length/columns)
+      const colWidths=Array.from({length:columns},(_,col)=>Math.max(...photos.filter((_,i)=>i%columns===col).map(photo=>photo.width)))
+      const rowHeights=Array.from({length:rows},(_,row)=>Math.max(...photos.slice(row*columns,(row+1)*columns).map(photo=>photo.height)))
+      const width=colWidths.reduce((a,b)=>a+b,0)+2*pad+gap*(columns-1)
+      const height=rowHeights.reduce((a,b)=>a+b,0)+2*pad+gap*(rows-1)
+      const fitsCollage=width<=8192&&height<=8192&&width*height<=24_000_000
+      let ctx:CanvasRenderingContext2D|null=null
+      if(fitsCollage){
+        collage=document.createElement('canvas');collage.width=width;collage.height=height
+        ctx=collage.getContext('2d')
         if(!ctx)throw new Error('No se pudo crear el collage.')
         ctx.fillStyle='#fff';ctx.fillRect(0,0,width,height)
-        canvases.forEach((c,i)=>{
+      }
+      const entries:{name:string;blob:Blob}[]=[]
+      for(const [i,view] of chosen.entries()){
+        canvas=await renderExportView(product,view,activeColor,photos[i],draft)
+        if(ctx){
           const col=i%columns,row=Math.floor(i/columns)
           const x=pad+colWidths.slice(0,col).reduce((a,b)=>a+b,0)+col*gap
           const y=pad+rowHeights.slice(0,row).reduce((a,b)=>a+b,0)+row*gap
-          ctx.drawImage(c,x,y)
-        })
+          ctx.drawImage(canvas,x,y)
+        }else{
+          entries.push({name:prefix+'-'+filenamePart(LABELS[view])+'.png',blob:await canvasPng(canvas)})
+        }
+        canvas.width=0;canvas.height=0;canvas=undefined
       }
-      const blob=await canvasPng(output)
-      const colorTag=colors.length>1||product.baseColorName?'-'+filenamePart(colorName):''
-      download(blob,'GAS3D-'+filenamePart(product.name)+colorTag+'-'+(all?'vistas':active)+'.png')
-      setFeedback('Exportación PNG terminada · '+output.width+' × '+output.height+' px.')
+      if(collage){
+        download(await canvasPng(collage),prefix+'-vistas.png')
+        setFeedback('Exportación PNG terminada · '+width+' × '+height+' px.')
+      }else{
+        download(await createZipArchive(entries),prefix+'-vistas.zip')
+        setFeedback('ZIP exportado con '+entries.length+' vistas a resolución original.')
+      }
     }catch(e){setError(e instanceof Error?e.message:'No se pudo exportar.')}
     finally{
-      if(output){output.width=0;output.height=0}
-      canvases.forEach(c=>{c.width=0;c.height=0});setBusy(false)
+      if(canvas){canvas.width=0;canvas.height=0}
+      if(collage){collage.width=0;collage.height=0}
+      setBusy(false)
     }
   }
   const exportColors=async()=>{
