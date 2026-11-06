@@ -387,7 +387,7 @@ assert.ok(page.includes('setActive(view)')&&page.includes('setPointerCapture'),'
 assert.ok(page.includes('onPointerDown')&&page.includes('pointerMove'),'Mouse/touch editing missing')
 assert.ok(page.includes("exportMockup('combined')")&&page.includes("exportMockup('active')"),'Both export modes required')
 assert.ok(engine.includes('renderGarment')&&engine.includes('warpedArtwork')&&engine.includes('placement.lighting'),'Compositing, warp or fabric lights missing')
-assert.ok(engine.includes('warpedArtwork(layer,art,quad,width,height,placement.sleeveCurve)'),'Both preview and export must use sleeve warping in the common renderer')
+assert.ok(engine.includes('warpedArtwork(layer,bitmap??art.bitmap,quad,placement.sleeveCurve)'),'Both preview and export must use sleeve warping in the common renderer')
 assert.ok(engine.includes('const outline=artworkOutline'),'Curve must be included in lighting bounds')
 assert.ok(engine.includes("globalCompositeOperation='destination-in'")&&engine.includes('applyLayerClip(layer,clipPolygons'),'Fabric clipping must happen in the compositor, without changing source PNGs')
 assert.ok(source('src/components/mockups/mockupStudio.css').includes('.mockup-mask-editor'),'Responsive garment silhouette editor missing')
