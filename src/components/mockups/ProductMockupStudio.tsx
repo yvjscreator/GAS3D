@@ -4,7 +4,7 @@ import { AppLauncher } from '../navigation/AppLauncher'
 import { loadMedia, removeMedia, storeMedia, storeMediaMetadata } from '../../utils/mediaStorage'
 import { readPngSourceSize, assertStreamedDimensions } from '../images/largeImageExport'
 import { createZipArchive } from '../images/zipExport'
-import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type RenderLayer, type ViewName } from './mockupEngine'
+import { artworkOutline, bound, canvasPng, defaultSleeveCurve, ensurePhotoSize, initialPlacement, MAX_PHOTO_EDGE, placementQuad, pointInArtwork, pointInQuad, renderGarmentLayers, restorePlacement, scaleFromCorner, type MockImage, type Placement, type Point, type RenderLayer, type ViewName } from './mockupEngine'
 import { pointInPolygon, printInsideSafeAreas, restoreGarmentMask, safeZonePolygon } from './mockupMasks'
 import { artworkFitsZone, calibrationLineToSave, fitPrintToZone, photoPixelsPerCm, placementWidthForCm, printDimensionsCm, resizePrintPreservingWarp, withCalibrationReference, zoneDimensionsCm, type CalibrationAxis } from './mockupCalibration'
 import { detectGarment, type GarmentDetection } from './garmentDetection'
@@ -75,6 +75,23 @@ async function decode(blob:Blob,name:string,kind:'photo'|'art',maxArtEdge=4096):
 }
 function filenamePart(value:string){
   return value.normalize('NFC').replace(/[^\p{L}\p{N}_-]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,72)||'mockup'
+}
+const MAX_SHEET_PIXELS=24_000_000
+function sheetLayout(photos:ReadonlyArray<Pick<MockImage,'width'|'height'>>,maxColumns:number){
+  const pad=32,gap=24,columns=Math.min(maxColumns,photos.length),rows=Math.ceil(photos.length/columns)
+  const colWidths=Array.from({length:columns},(_,col)=>Math.max(...photos.filter((_,i)=>i%columns===col).map(photo=>photo.width)))
+  const rowHeights=Array.from({length:rows},(_,row)=>Math.max(...photos.slice(row*columns,(row+1)*columns).map(photo=>photo.height)))
+  const width=colWidths.reduce((a,b)=>a+b,0)+2*pad+gap*(columns-1)
+  const height=rowHeights.reduce((a,b)=>a+b,0)+2*pad+gap*(rows-1)
+  const positions=photos.map((_,i)=>{
+    const col=i%columns,row=Math.floor(i/columns)
+    return {
+      x:pad+colWidths.slice(0,col).reduce((a,b)=>a+b,0)+col*gap,
+      y:pad+rowHeights.slice(0,row).reduce((a,b)=>a+b,0)+row*gap,
+    }
+  })
+  const scale=Math.min(1,MAX_PHOTO_EDGE/width,MAX_PHOTO_EDGE/height,Math.sqrt(MAX_SHEET_PIXELS/(width*height)))
+  return {width,height,positions,scale}
 }
 async function clearColorAssets(product:Product,color:string){
   for(const view of VIEWS){
@@ -664,7 +681,7 @@ export function ProductMockupStudio(){
     }catch(e){setError(e instanceof Error?e.message:'No se pudo completar la eliminación. Los datos locales se conservan.')}
     finally{setBusy(false)}
   }
-  const renderExportView=async(item:Product,view:ViewName,color:string,photo:MockImage,colorDraft:Draft)=>{
+  const renderExportView=async(item:Product,view:ViewName,color:string,photo:MockImage,colorDraft:Draft,maxEdge=MAX_PHOTO_EDGE)=>{
     const arts:Record<string,MockImage>={}
     const canvas=document.createElement('canvas')
     try{
@@ -672,7 +689,7 @@ export function ProductMockupStudio(){
         const original=await loadMedia(artKey(item.id,view,zone.id,color))
         if(original)arts[zone.id]=await decode(original,colorDraft[view]?.[zone.id]?.name||'Diseño','art',8192)
       }
-      renderGarmentLayers(canvas,photo,viewLayers(item.views[view],photo,arts,colorDraft[view]),8192)
+      renderGarmentLayers(canvas,photo,viewLayers(item.views[view],photo,arts,colorDraft[view]),maxEdge)
       return canvas
     }catch(e){canvas.width=0;canvas.height=0;throw e}
     finally{Object.values(arts).forEach(art=>art.bitmap.close())}
@@ -695,14 +712,9 @@ export function ProductMockupStudio(){
         return
       }
       const photos=chosen.map(view=>models[view].photo!)
-      const pad=32,gap=24,columns=2,rows=Math.ceil(photos.length/columns)
-      const colWidths=Array.from({length:columns},(_,col)=>Math.max(...photos.filter((_,i)=>i%columns===col).map(photo=>photo.width)))
-      const rowHeights=Array.from({length:rows},(_,row)=>Math.max(...photos.slice(row*columns,(row+1)*columns).map(photo=>photo.height)))
-      const width=colWidths.reduce((a,b)=>a+b,0)+2*pad+gap*(columns-1)
-      const height=rowHeights.reduce((a,b)=>a+b,0)+2*pad+gap*(rows-1)
-      const fitsCollage=width<=8192&&height<=8192&&width*height<=24_000_000
+      const {width,height,positions,scale}=sheetLayout(photos,2)
       let ctx:CanvasRenderingContext2D|null=null
-      if(fitsCollage){
+      if(scale===1){
         collage=document.createElement('canvas');collage.width=width;collage.height=height
         ctx=collage.getContext('2d')
         if(!ctx)throw new Error('No se pudo crear el collage.')
@@ -712,9 +724,7 @@ export function ProductMockupStudio(){
       for(const [i,view] of chosen.entries()){
         canvas=await renderExportView(product,view,activeColor,photos[i],draft)
         if(ctx){
-          const col=i%columns,row=Math.floor(i/columns)
-          const x=pad+colWidths.slice(0,col).reduce((a,b)=>a+b,0)+col*gap
-          const y=pad+rowHeights.slice(0,row).reduce((a,b)=>a+b,0)+row*gap
+          const {x,y}=positions[i]
           ctx.drawImage(canvas,x,y)
         }else{
           entries.push({name:prefix+'-'+filenamePart(LABELS[view])+'.png',blob:await canvasPng(canvas)})
@@ -740,39 +750,56 @@ export function ProductMockupStudio(){
     const available=colors.filter(color=>productPhoto(product,active,color.id)?.photoName)
     if(!available.length)return
     setBusy(true)
+    let collage:HTMLCanvasElement|undefined
     try{
-      const entries:{name:string;blob:Blob}[]=[]
-      const usedNames=new Set<string>()
-      const prefix='GAS3D-'+filenamePart(product.name)
-      const viewLabel=filenamePart(active==='front'?'Pecho':LABELS[active])
+      // Read dimensions first so every tile can use the same scale. Keep only
+      // the compressed sources between passes and render one color at a time.
+      const photos:{id:string;name:string;width:number;height:number;source:Blob|MockImage}[]=[]
       for(const color of available){
-        const currentColor=color.id===activeColor
-        const source=productPhoto(product,active,color.id)!
-        let photo=currentColor?models[active].photo:null
-        let temporary:MockImage|undefined
+        const loaded=color.id===activeColor?models[active].photo:null
+        if(loaded){
+          photos.push({id:color.id,name:loaded.name,width:loaded.width,height:loaded.height,source:loaded})
+          continue
+        }
+        const original=await loadProductPhoto(product,active,cloud.connection,color.id)
+        if(!original)throw new Error('Falta la foto original de «'+color.name+'».')
+        const name=productPhoto(product,active,color.id)?.photoName||'Foto'
+        const {width,height,bitmap}=await decode(original,name,'photo')
+        bitmap.close()
+        photos.push({id:color.id,name,width,height,source:original})
+      }
+      const {width,height,positions,scale}=sheetLayout(photos,3)
+      collage=document.createElement('canvas')
+      collage.width=Math.floor(width*scale);collage.height=Math.floor(height*scale)
+      const ctx=collage.getContext('2d')
+      if(!ctx)throw new Error('No se pudo crear el collage.')
+      ctx.fillStyle='#fff';ctx.fillRect(0,0,collage.width,collage.height)
+      for(const [i,{id,name,source}] of photos.entries()){
+        const temporary=source instanceof Blob
+        const photo=temporary?await decode(source,name,'photo'):source
         let canvas:HTMLCanvasElement|undefined
         try{
-          if(!photo){
-            const original=await loadProductPhoto(product,active,cloud.connection,color.id)
-            if(!original)throw new Error('Falta la foto original de «'+color.name+'».')
-            photo=temporary=await decode(original,source.photoName||'Foto','photo')
-          }
-          canvas=await renderExportView(product,active,color.id,photo,currentColor?draft:readDraft(product.id,color.id))
-          const basename=prefix+'-'+filenamePart(color.name)+'-'+viewLabel
-          let name=basename+'.png',suffix=2
-          while(usedNames.has(name.toLowerCase()))name=basename+'-'+String(suffix++)+'.png'
-          usedNames.add(name.toLowerCase())
-          entries.push({name,blob:await canvasPng(canvas)})
+          const maxEdge=Math.max(1,Math.floor(Math.max(photo.width,photo.height)*scale))
+          canvas=await renderExportView(product,active,id,photo,id===activeColor?draft:readDraft(product.id,id),maxEdge)
+          const {x,y}=positions[i]
+          ctx.drawImage(canvas,Math.floor(x*scale),Math.floor(y*scale))
         }finally{
-          temporary?.bitmap.close()
+          if(temporary)photo.bitmap.close()
           if(canvas){canvas.width=0;canvas.height=0}
         }
       }
-      download(await createZipArchive(entries),prefix+'-todos-los-colores-'+viewLabel+'.zip')
+      const viewLabel=filenamePart(active==='front'?'Pecho':LABELS[active])
+      download(await canvasPng(collage),'GAS3D-'+filenamePart(product.name)+'-todos-los-colores-'+viewLabel+'.png')
       const omitted=colors.length-available.length
-      setFeedback('ZIP exportado con '+entries.length+' PNG.'+(omitted?' Colores sin foto en esta vista: '+omitted+'.':''))
+      const size=collage.width+' × '+collage.height+' px.'
+      setFeedback('PNG con '+photos.length+' colores · '+size
+        +(scale<1?' Escala ajustada para reunirlos en una imagen.':'')
+        +(omitted?' Colores sin foto en esta vista: '+omitted+'.':''))
     }catch(e){setError(e instanceof Error?e.message:'No se pudieron exportar los colores.')}
-    finally{setBusy(false)}
+    finally{
+      if(collage){collage.width=0;collage.height=0}
+      setBusy(false)
+    }
   }
 
   const cancelPen=()=>{
@@ -1254,7 +1281,7 @@ export function ProductMockupStudio(){
           {screen==='mockup'&&<div className="mockup-export-actions">
             <button type="button" disabled={busy||!ready||!photo} onClick={()=>void exportMockup(false)}><ArrowDownToLine size={16}/> Exportar {LABELS[active]}</button>
             <button type="button" className="mockup-primary" title={'Exportar las vistas de '+colorName} disabled={busy||!ready||!enabled.some(v=>models[v].photo)} onClick={()=>void exportMockup(true)}><ArrowDownToLine size={16}/> Todas las vistas</button>
-            {colors.length>1&&<button type="button" className="mockup-export-colors" disabled={busy||!ready||!colors.some(color=>productPhoto(product,active,color.id)?.photoName)} onClick={()=>void exportColors()}><ArrowDownToLine size={16}/> Todos los colores · {active==='front'?'Pecho':LABELS[active]} (ZIP)</button>}
+            {colors.length>1&&<button type="button" className="mockup-export-colors" disabled={busy||!ready||!colors.some(color=>productPhoto(product,active,color.id)?.photoName)} onClick={()=>void exportColors()}><ArrowDownToLine size={16}/> Todos los colores · {active==='front'?'Pecho':LABELS[active]} (PNG)</button>}
           </div>}
           {screen==='setup'&&<div className="mockup-save-product"><small>{productIsDirty(product)?'Cambios guardados en este navegador':'Producto sincronizado'}</small><button type="button" className="mockup-primary mockup-secondary-full" disabled={busy||cloud.working||!!maskEditing||!cloud.connection||product.cloud?.deleting} onClick={()=>void cloud.save([product])}>{cloud.working?'Guardando…':'Guardar en nube'}</button></div>}
         </aside>
