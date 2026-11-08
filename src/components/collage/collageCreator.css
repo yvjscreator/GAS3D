@@ -1,12 +1,12 @@
 /* Collage Creator — mobile-first, locally persisted prompt references */
 .collage-creator {
   min-height:100dvh;
-  padding:78px clamp(12px,3vw,42px) 52px;
+  padding:78px clamp(12px,1.5vw,28px) 52px;
   color:#e5eef7;
   background:radial-gradient(circle at 65% 7%,#1b2c39 0,#101923 35%,#090f16 85%);
 }
 .collage-creator * { box-sizing:border-box; }
-.collage-container { width:100%; max-width:1260px; margin:0 auto; display:grid; gap:24px; }
+.collage-container { width:100%; display:grid; grid-template-columns:minmax(0,1fr); gap:24px; }
 .collage-header {
   width:100%; height:auto; min-height:0; margin:0; padding:4px 0 20px;
   display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:18px;
@@ -40,7 +40,7 @@
 .collage-section-number { color:#78b5df; font:10px 'DM Mono',monospace; }
 .collage-section-heading>span { color:#8298ad; font-size:11px; }
 .collage-preview-fit {
-  min-width:0; width:100%; overflow:hidden; border-radius:9px; border:1px solid #55606b;
+  min-width:0; width:100%; justify-self:center; overflow:hidden; border-radius:9px; border:1px solid #55606b;
   background:#fff;
 }
 .collage-preview-board { position:relative; width:100%; height:auto; background:#fff; overflow:hidden; }
