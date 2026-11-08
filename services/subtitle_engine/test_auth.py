@@ -101,15 +101,39 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(response.content, data)
         self.assertEqual(saved["photos"]["front"]["hash"], hashlib.sha256(data).hexdigest())
 
-    def test_forged_expired_and_rotated_credentials_cannot_access(self):
+    def test_session_remains_valid_after_seven_days_and_rejects_forgery_and_rotation(self):
         session = self.login()
+        self.assertIsNone(session["expiresAt"])
         for token in ["gas3d.invalid", session["token"] + "tampered", "invalid"]:
             self.assertEqual(self.client.get("/api/mockups/products", headers={"Authorization": "Bearer " + token}).status_code, 401)
         headers = {"Authorization": "Bearer " + session["token"]}
-        with patch.object(auth.time, "time", return_value=time.time() + auth.SESSION_SECONDS + 1):
-            self.assertEqual(self.client.get("/api/mockups/products", headers=headers).status_code, 401)
+        with patch.object(auth.time, "time", return_value=time.time() + 400 * 24 * 60 * 60):
+            self.assertEqual(self.client.get("/api/mockups/products", headers=headers).status_code, 200)
+            self.assertEqual(self.client.get("/api/subtitles/private-test", headers=headers).status_code, 200)
+            status = self.client.get("/api/auth/session?upgrade=true", headers=headers).json()
+            self.assertEqual(status["user"], "owner")
+            self.assertIsNone(status["expiresAt"])
+            self.assertNotIn("upgradedToken", status)
         with patch.dict(os.environ, {"GAS3D_AUTH_PASSWORD_HASH": auth.password_hash("new unit-test password")}):
             self.assertEqual(self.client.get("/api/mockups/products", headers=headers).status_code, 401)
+
+    def test_only_valid_legacy_sessions_upgrade_without_reentering_credentials(self):
+        expiry = int(time.time()) + 60
+        legacy = "gas3d." + auth._serializer().dumps({"user": "owner", "expiresAt": expiry, "nonce": "legacy"})
+        headers = {"Authorization": "Bearer " + legacy}
+        self.assertNotIn("upgradedToken", self.client.get("/api/auth/session", headers=headers).json())
+        response = self.client.get("/api/auth/session?upgrade=true", headers=headers)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(response.json()["expiresAt"], expiry)
+        upgraded = {"Authorization": "Bearer " + response.json()["upgradedToken"]}
+        with patch.object(auth.time, "time", return_value=expiry + 1):
+            self.assertEqual(self.client.get("/api/mockups/products", headers=headers).status_code, 401)
+            self.assertNotIn("upgradedToken", self.client.get("/api/auth/session?upgrade=true", headers=headers).json())
+            self.assertEqual(self.client.get("/api/mockups/products", headers=upgraded).status_code, 200)
+        for payload in [{"user": "owner"}, {"user": "owner", "expiresAt": "null"}]:
+            invalid = {"Authorization": "Bearer gas3d." + auth._serializer().dumps(payload)}
+            self.assertNotIn("upgradedToken", self.client.get("/api/auth/session?upgrade=true", headers=invalid).json())
+            self.assertEqual(self.client.get("/api/mockups/products", headers=invalid).status_code, 401)
 
     def test_login_attempts_are_limited(self):
         for _ in range(8):

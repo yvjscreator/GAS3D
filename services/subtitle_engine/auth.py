@@ -15,7 +15,6 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 router = APIRouter(prefix="/api/auth", tags=["GAS3D access"])
-SESSION_SECONDS = 7 * 24 * 60 * 60
 HASH_ROUNDS = 600_000
 _attempts: dict[str, deque] = {}
 _attempt_lock = threading.Lock()
@@ -54,14 +53,22 @@ def _serializer():
     return URLSafeTimedSerializer(os.getenv("GAS3D_AUTH_SECRET", ""), salt="gas3d-access-v1:" + hashlib.sha256(identity.encode()).hexdigest(), signer_kwargs={"digest_method": hashlib.sha256})
 
 
+def _issue_session_token(user: str):
+    payload = {"user": user, "expiresAt": None, "nonce": secrets.token_urlsafe(16)}
+    return "gas3d." + _serializer().dumps(payload)
+
+
 def session_user(authorization: str | None):
     if not auth_enabled() or not auth_configured() or not authorization or not authorization.startswith("Bearer gas3d.") or len(authorization) > 4096:
         return None
     try:
-        payload = _serializer().loads(authorization.removeprefix("Bearer gas3d."), max_age=SESSION_SECONDS)
+        payload = _serializer().loads(authorization.removeprefix("Bearer gas3d."))
         if not isinstance(payload, dict) or payload.get("user") != os.getenv("GAS3D_AUTH_USERNAME", "admin"):
             return None
-        if not isinstance(payload.get("expiresAt"), int) or payload["expiresAt"] <= time.time():
+        expiry = payload.get("expiresAt")
+        # The signed expiry remains binding for old tokens, including ones
+        # that expired before this deployment.
+        if "expiresAt" not in payload or (expiry is not None and (type(expiry) is not int or expiry <= time.time())):
             return None
         return payload
     except (BadSignature, ValueError, TypeError):
@@ -112,10 +119,13 @@ def _reserve_attempt(client):
 
 
 @router.get("/session")
-def status(authorization: str | None = Header(default=None)):
+def status(authorization: str | None = Header(default=None), upgrade: bool = False):
     session = session_user(authorization)
-    return JSONResponse({"enabled": auth_enabled(), "configured": auth_configured(), "user": session["user"] if session else None,
-                         "expiresAt": session["expiresAt"] if session else None}, headers={"Cache-Control": "no-store"})
+    result = {"enabled": auth_enabled(), "configured": auth_configured(), "user": session["user"] if session else None,
+              "expiresAt": session["expiresAt"] if session else None}
+    if upgrade and session and session["expiresAt"] is not None:
+        result["upgradedToken"] = _issue_session_token(session["user"])
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/login")
@@ -132,5 +142,5 @@ def login(values: Login, request: Request):
         raise HTTPException(401, "Usuario o contraseña incorrectos.", headers={"Cache-Control": "no-store"})
     with _attempt_lock:
         _attempts.pop(client, None)
-    payload = {"user": values.username, "expiresAt": int(time.time()) + SESSION_SECONDS, "nonce": secrets.token_urlsafe(16)}
-    return JSONResponse({"token": "gas3d." + _serializer().dumps(payload), "user": values.username, "expiresAt": payload["expiresAt"]}, headers={"Cache-Control": "no-store"})
+    return JSONResponse({"token": _issue_session_token(values.username), "user": values.username, "expiresAt": None},
+                        headers={"Cache-Control": "no-store"})
