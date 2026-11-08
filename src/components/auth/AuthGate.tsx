@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { LockKeyhole, LogIn, RefreshCw } from 'lucide-react'
-import { AUTH_CHANGED, AUTH_STORAGE_KEY, appApiRoot, appAuthRequired, readAppSession, rememberAppSession, type AppSession } from './session'
+import { AUTH_CHANGED, AUTH_STORAGE_KEY, appApiRoot, appAuthRequired, parseAppSession, readAppSession, rememberAppSession, upgradeAppSession, type AppSession } from './session'
 import './auth.css'
 
 export function AuthGate({ children }: { children: ReactNode }) {
@@ -34,16 +34,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
     void (async () => {
       setChecking(true); setVerified(false); setIssue('')
       try {
-        const response = await fetch(appApiRoot() + '/api/auth/session', {
+        const upgrade = saved && saved.expiresAt !== null ? '?upgrade=true' : ''
+        const response = await fetch(appApiRoot() + '/api/auth/session' + upgrade, {
           cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)]),
           headers: saved ? { Authorization: 'Bearer ' + saved.token } : {},
         })
         if (!response.ok) throw new Error('No se pudo verificar el acceso. Reintentá en unos momentos.')
-        const result = await response.json() as { enabled?: boolean; configured?: boolean; user?: string; expiresAt?: number }
+        const result = await response.json() as { enabled?: boolean; configured?: boolean; user?: string; expiresAt?: number | null; upgradedToken?: string }
         if (!result.enabled || !result.configured) throw new Error('El acceso a GAS3D todavía no está configurado en el servidor.')
-        if (controller.signal.aborted) return
+        if (controller.signal.aborted || readAppSession()?.token !== saved?.token) return
         if (saved && result.user === saved.user && result.expiresAt === saved.expiresAt) {
-          setSession(saved); setVerified(true)
+          setSession(upgradeAppSession(saved.token, result.upgradedToken) ?? saved); setVerified(true)
         } else { rememberAppSession(null); setSession(null); setVerified(false) }
       } catch (error) {
         if (!controller.signal.aborted) { setVerified(false); setIssue(error instanceof Error ? error.message : 'No se pudo conectar con GAS3D.') }
@@ -53,8 +54,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [required, attempt])
 
   useEffect(() => {
-    if (!required || !session) return
-    const timer = window.setTimeout(() => rememberAppSession(null), Math.max(0, session.expiresAt * 1000 - Date.now()))
+    if (!required || !session || session.expiresAt === null) return
+    const timer = window.setTimeout(() => {
+      const current = readAppSession()
+      if (!current || current.token === session.token) rememberAppSession(null)
+    }, Math.max(0, session.expiresAt * 1000 - Date.now()))
     return () => window.clearTimeout(timer)
   }, [required, session])
 
@@ -71,8 +75,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
         const error = await response.json().catch(() => null) as { detail?: unknown } | null
         throw new Error(typeof error?.detail === 'string' ? error.detail : 'No se pudo iniciar sesión. Reintentá.')
       }
-      const next = await response.json() as AppSession
-      if (!next.token?.startsWith('gas3d.') || !next.user || !(next.expiresAt * 1000 > Date.now())) throw new Error('El servidor devolvió una sesión inválida.')
+      const next = parseAppSession(await response.json())
+      if (!next) throw new Error('El servidor devolvió una sesión inválida.')
       rememberAppSession(next, remember); setSession(next); setVerified(true); setPassword('')
     } catch (error) { setIssue(error instanceof Error ? error.message : 'No se pudo conectar con GAS3D.') }
     finally { setBusy(false) }
@@ -90,7 +94,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         {issue && <p id="gas-auth-issue" className="gas-auth-issue" role="alert">{issue}</p>}
         <div className="gas-auth-actions"><button type="submit" disabled={busy}><LogIn size={17}/>{busy ? 'Ingresando…' : 'Entrar'}</button>
           {issue && <button type="button" className="gas-auth-retry" disabled={busy} onClick={() => setAttempt(old => old + 1)}><RefreshCw size={16}/>Reintentar conexión</button>}</div>
-        <small>La sesión dura hasta 7 días. El catálogo se carga automáticamente al entrar.</small>
+        <small>Si recordás la sesión, seguirá abierta en este navegador hasta que la cierres.</small>
       </form>}
     </section>
   </main>

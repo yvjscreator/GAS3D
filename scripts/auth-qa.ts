@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { AUTH_STORAGE_KEY, appAuthRequired, appFetch, isAppRequest, readAppSession, rememberAppSession, signOut } from '../src/components/auth/session'
+import { AUTH_STORAGE_KEY, appAuthRequired, appFetch, isAppRequest, parseAppSession, readAppSession, rememberAppSession, signOut, upgradeAppSession } from '../src/components/auth/session'
 import { fetchCloudCatalogue, readCloudConnection, rememberCloudConnection } from '../src/components/mockups/mockupCloud'
 
 class MemoryStorage {
@@ -12,7 +12,7 @@ class MemoryStorage {
 const local = new MemoryStorage(), session = new MemoryStorage()
 Object.assign(globalThis, { localStorage: local, sessionStorage: session, window: new EventTarget() })
 assert.equal(appAuthRequired(), true)
-const access = { user: 'owner', token: 'gas3d.unit-test-signed-session', expiresAt: Math.floor(Date.now() / 1000) + 3600 }
+const access = { user: 'owner', token: 'gas3d.unit-test-signed-session', expiresAt: null }
 rememberAppSession(access, true)
 assert.deepEqual(readAppSession(), access)
 assert.ok(local.getItem(AUTH_STORAGE_KEY), 'Remembered access must survive reopening the browser')
@@ -20,6 +20,21 @@ assert.equal(session.getItem(AUTH_STORAGE_KEY), null)
 rememberAppSession(access, false)
 assert.equal(local.getItem(AUTH_STORAGE_KEY), null, 'Switching to temporary access must remove persistent access')
 assert.ok(session.getItem(AUTH_STORAGE_KEY))
+const legacy = { ...access, token: 'gas3d.legacy-test-session', expiresAt: Math.floor(Date.now() / 1000) + 3600 }
+for (const persistent of [true, false]) {
+  rememberAppSession(legacy, persistent)
+  assert.equal(upgradeAppSession('gas3d.other-session', access.token), null, 'A delayed response cannot replace a different session')
+  assert.deepEqual(upgradeAppSession(legacy.token, access.token), access)
+  assert.ok((persistent ? local : session).getItem(AUTH_STORAGE_KEY), 'An upgrade must preserve the remember choice')
+  assert.equal((persistent ? session : local).getItem(AUTH_STORAGE_KEY), null)
+}
+const now = Date.now
+try {
+  Date.now = () => now() + 400 * 24 * 60 * 60 * 1000
+  assert.deepEqual(readAppSession(), access, 'Session access should survive beyond the old seven-day limit')
+  assert.equal(parseAppSession(legacy), null, 'Expired legacy sessions cannot be revived')
+} finally { Date.now = now }
+assert.equal(parseAppSession({ ...access, expiresAt: undefined }), null, 'Indefinite access must be explicit')
 const managed = readCloudConnection()!
 assert.equal(managed.managed, true, 'A GAS3D session must supply the catalogue connection without a provider-key form')
 assert.equal(managed.url, 'https://api.gas3d.example')
@@ -69,4 +84,4 @@ assert.ok(source('src/main.tsx').includes('<AuthGate><App /></AuthGate>'), 'All 
 assert.ok(source('src/components/navigation/AppLauncher.tsx').includes('Cerrar sesión'), 'Logout must stay in the shared compact launcher')
 assert.ok(source('src/components/auth/AuthGate.tsx').includes('autoComplete="current-password"'), 'Use a real accessible password field')
 assert.ok(!source('src/components/subtitles/api.ts').includes('await fetch('), 'Every subtitle API operation must carry app session access')
-console.log('GAS3D access QA passed: session persistence, automatic private catalogue, request scope, expiry, logout and module gate.')
+console.log('GAS3D access QA passed: indefinite sessions, legacy upgrades, private catalogue, request scope, logout and module gate.')

@@ -17,12 +17,12 @@ Enable the API settings and the frontend flag together with the new deployment. 
 
 ## Session and API contract
 
-- `GET /api/auth/session` returns only configuration presence and the currently authenticated username/expiry; it never returns the signing secret, password hash or catalogue key.
-- `POST /api/auth/login` checks the username/password, rate-limits attempts (8 per client in 5 minutes, with bounded in-process bookkeeping) and issues an ItsDangerous signed, expiring application token. Responses are not cacheable.
-- Tokens last up to 7 days. **Recordar sesión** stores only application access in localStorage; without it, sessionStorage is used. The password is never stored by GAS3D in the browser. Tokens are sent in Authorization headers, never query parameters.
+- `GET /api/auth/session` returns configuration presence and the currently authenticated username/expiry. With `?upgrade=true`, a valid legacy session also receives a replacement token. Signing secrets, password hashes and catalogue keys stay on the server.
+- `POST /api/auth/login` checks the username/password, rate-limits attempts (8 per client in 5 minutes, with bounded in-process bookkeeping) and issues a signed ItsDangerous application token with `expiresAt: null`. Session responses are not cacheable.
+- New tokens have no scheduled expiry. The frontend upgrades valid legacy tokens on load and keeps their storage scope. Expired legacy tokens still require a new login. **Recordar sesión** stores application access in localStorage. Temporary access uses sessionStorage. Tokens are sent in Authorization headers, never query parameters. GAS3D does not store the password in the browser.
 - Bearer access is used because the static frontend and API use different Render origins. This does not depend on cross-site cookies. Script access to browser storage remains part of the frontend trust boundary; do not add untrusted scripts or inject unescaped HTML.
 - All `/api/` operations require a valid session when enabled, except login, session status and the two health endpoints. CORS preflights remain supported. The old private catalogue key retains its original scope only for `/api/mockups/` compatibility; it cannot authenticate subtitle or other APIs.
-- Changing the username, password hash or signing secret revokes existing application tokens. Logout in the shared launcher removes access from the current browser and preserves all original local media and saved projects. Copied bearer tokens remain valid until expiry or credential rotation; this basic implementation has no per-token revocation database.
+- Changing the username, password hash or signing secret revokes existing application tokens. Logout in the shared launcher removes access from the current browser and preserves all original local media and saved projects. Copied indefinite bearer tokens stay valid until credential rotation because the service has no per-token revocation database.
 - A 401 from a protected request returns the app to login. Access is only attached to the configured GAS3D API, never arbitrary asset/service origins. Existing subtitle session headers remain intact.
 
 ## Automatic catalogue
@@ -33,7 +33,7 @@ The old manual connection UI and private key contract remain available only when
 
 ## Checks
 
-- `npm run qa:auth`: session persistence/expiry/logout, managed catalogue loading, current token refresh, credential destination restrictions, subtitle header compatibility and the all-module gate.
+- `npm run qa:auth`: indefinite sessions, legacy expiry and upgrade, storage scope, logout, managed catalogue loading, current token refresh, credential destination restrictions, subtitle header compatibility and the all-module gate.
 - `npm run qa:mockups`: existing geometry, storage, cloud merge and source preservation regressions.
 - `PYTHONPATH=services python -m unittest subtitle_engine.test_auth subtitle_engine.test_mockup_library -v`: anonymous rejection, valid/invalid/expired/tampered sessions, credential rotation, rate limits, exact original photo delivery, product save/reload/delete, legacy scope, cloud failure and SolutionSuite isolation.
 - `npm run build` includes the frontend checks; the existing backend workflow includes authentication tests.
