@@ -173,11 +173,12 @@ export function CollageCreator() {
     try {
       replacementUrl = URL.createObjectURL(file)
       const dimensions = await getImageDimensions(replacementUrl)
+      const replacement = { url: replacementUrl, name: file.name, ...dimensions }
       // Overwrite the same IndexedDB entry. Keep id, position and background.
       await storeCollageImage(targetId, file)
-      activeUrls.current.add(replacementUrl)
+      activeUrls.current.add(replacement.url)
       setItems((existing) => existing.map((item) => item.id === targetId
-        ? { ...item, url: replacementUrl!, name: file.name, ...dimensions }
+        ? { ...item, ...replacement }
         : item))
       activeUrls.current.delete(current.url)
       URL.revokeObjectURL(current.url)
@@ -320,7 +321,8 @@ export function CollageCreator() {
         <div className="collage-section-heading"><div><span className="collage-section-number">01</span><h2>Vista previa</h2></div><span>{items.length} paneles · Horizontal</span></div>
         {hydrating ? <div className="collage-empty"><Images size={30} /><strong>Recuperando imágenes guardadas…</strong></div> :
           items.length === 0 ? <button type="button" className="collage-empty" onClick={() => pickerRef.current?.click()}><ImagePlus size={32} /><strong>Comienza con tus imágenes</strong><span>Puedes elegir varias fotos de tu galería al mismo tiempo.</span></button> :
-          <div className="collage-preview-fit" role="img" aria-label={'Vista previa completa del collage de ' + items.length + ' imágenes, sin recortes'}>
+          <div className="collage-preview-fit" style={{ maxWidth: `calc(clamp(200px, 62dvh, 780px) * ${previewGeometry.width / previewGeometry.height})` }}
+            role="img" aria-label={'Vista previa completa del collage de ' + items.length + ' imágenes, sin recortes'}>
             <div className="collage-preview-board" style={{ aspectRatio: `${previewGeometry.width} / ${previewGeometry.height}` }}>
               {items.map((item, index) => {
                 const panel = previewGeometry.panels[index]
