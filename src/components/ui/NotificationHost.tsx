@@ -7,8 +7,23 @@ import './notifications.css'
 
 export function NotificationHost() {
   const request = useSyncExternalStore(subscribeConfirmation, confirmationSnapshot)
+  const notices = useRef<HTMLDivElement>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId(), descriptionId = useId()
+  useEffect(() => {
+    const root = notices.current
+    if (!root) return
+    // Sileo renders notices as buttons. Keep the live announcements without tab stops.
+    const skipNotices = () => {
+      for (const toast of root.querySelectorAll<HTMLElement>('[data-sileo-toast]:not([tabindex="-1"])')) {
+        toast.tabIndex = -1
+      }
+    }
+    const observer = new MutationObserver(skipNotices)
+    observer.observe(root, { childList: true, subtree: true })
+    skipNotices()
+    return () => observer.disconnect()
+  }, [])
   useEffect(() => {
     if (!request || !dialog.current) return
     const element = dialog.current
@@ -23,7 +38,10 @@ export function NotificationHost() {
     }
   }, [request])
   return createPortal(<>
-    <Toaster position="bottom-left" offset={{ left: 68, bottom: 12 }} theme="light" options={{ fill: '#1c2c3b', roundness: 14, autopilot: { expand: 0, collapse: 10000 } }} />
+    <div ref={notices}>
+      <Toaster position="top-center" offset={{ top: 'env(safe-area-inset-top, 0px)' }} theme="light"
+        options={{ fill: '#152331', roundness: 22, autopilot: { expand: 180, collapse: 10000 } }} />
+    </div>
     {request && <dialog ref={dialog} className="gas-confirmation" aria-labelledby={titleId} aria-describedby={descriptionId}
       onCancel={event => { event.preventDefault(); settleConfirmation(false) }}>
       <form onSubmit={event => { event.preventDefault(); settleConfirmation(true) }}>
