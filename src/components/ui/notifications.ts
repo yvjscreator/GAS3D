@@ -19,7 +19,6 @@ export function notify(kind: 'success' | 'error' | 'info', message: string) {
     id: nextId(),
     title: kind === 'error' ? 'No se pudo completar' : kind === 'success' ? 'Listo' : 'Información',
     description: message, duration: kind === 'error' ? 9000 : 5500,
-    button: { title: 'Cerrar', onClick: () => sileo.dismiss(id) },
   }
   const id = sileo[kind](options)
   visible.push(id)
