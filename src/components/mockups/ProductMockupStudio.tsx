@@ -1259,6 +1259,11 @@ export function ProductMockupStudio(){
               </section>}
               <label className="mockup-adjustment"><span>Rotación: {placementFor(active,selectedZone).rotation}°</span><input type="range" min="-45" max="45" value={placementFor(active,selectedZone).rotation} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,rotation:Number(e.target.value)}))}/></label>
               <label className="mockup-adjustment" title="Ajusta las luces y sombras amplias de la prenda. En 0%, el estampado conserva los colores de su PNG."><span>Luces y sombras: {Math.round(placementFor(active,selectedZone).lighting*100)}%</span><input type="range" min="0" max="100" value={Math.round(placementFor(active,selectedZone).lighting*100)} disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,lighting:Number(e.target.value)/100}))}/></label>
+              <label className="mockup-adjustment" title="Adapta el PNG a las hendiduras oscuras y los relieves claros de la fotografía. Ajustá Luces y sombras para acompañar los pliegues.">
+                <span>Relieve de la tela: {Math.round(placementFor(active,selectedZone).foldStrength??0)}%</span>
+                <input type="range" aria-label="Relieve de la tela" min="0" max="100" value={placementFor(active,selectedZone).foldStrength??0}
+                  disabled={!selectedArt} onChange={e=>editPlacement(active,selectedZone,p=>({...p,foldStrength:Number(e.target.value)}))}/>
+              </label>
             </>}
             <div className="mockup-controls-row">
               <button type="button" onClick={()=>{
@@ -1275,6 +1280,9 @@ export function ProductMockupStudio(){
           <div className="mockup-mode-toggle" role="group" aria-label="Modo de esquinas">
             <button type="button" className={!warpMode?'active':''} onClick={()=>setWarpMode(false)}>Escalar</button>
             <button type="button" className={warpMode?'active':''} onClick={()=>setWarpMode(true)}>Deformar</button>
+            {screen==='mockup'&&selectedZone&&<button type="button" className="mockup-reset-warp" aria-label="Restablecer deformación del PNG" title="Restablecer deformación del PNG"
+              disabled={!selectedArt||busy||cloud.working||!placementFor(active,selectedZone).corners.some(point=>point.x!==0||point.y!==0)}
+              onClick={()=>editPlacement(active,selectedZone,p=>({...p,corners:initialPlacement(active).corners}))}><RotateCcw size={16}/></button>}
           </div>
           <p className="mockup-note">{photoScale?'Escala estimada a partir de referencias marcadas en esta fotografía.':'Sin calibrar: las medidas de esta vista son relativas a la fotografía.'}</p>
           {screen==='setup'&&<button type="button" className="mockup-primary mockup-secondary-full" onClick={()=>void selectLayer(active,'mockup')}>Crear mockup de este producto</button>}

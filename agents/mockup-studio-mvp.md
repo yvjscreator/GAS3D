@@ -11,6 +11,9 @@ Route: `#/mockups`; integrated into the shared AppLauncher. The October 2026 rel
 
 ## Editing behavior
 
+- **Relieve de la tela** adjusts photo-derived fold displacement from 0–100% per print. Dark regions act as recesses and bright regions as raised fabric, using the original photo's smooth luminance map. Existing drafts default to 0%. Lighting remains adjustable independently. The common renderer applies relief before the final silhouette/zone clip, including single-view, all-views and all-colors exports.
+- **Restablecer deformación del PNG** beside Escalar/Deformar clears the four manual corner offsets. Position, proportional size, rotation, fold strength and sleeve settings are retained.
+
 - Drag the artwork interior: move.
 - Drag a corner without modifiers: proportional scaling, with opposite corner anchored.
 - Hold Ctrl (or Command) while dragging a corner: deform that corner independently.

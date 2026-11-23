@@ -22,6 +22,7 @@ export type Placement = {
   width: number
   rotation: number
   lighting: number
+  foldStrength?: number
   corners: Quad
   sleeveCurve?: SleeveCurve
 }
@@ -52,6 +53,7 @@ export function restorePlacement(value: unknown, view: ViewName): Placement {
     width:number(state.width,def.width,.025,1.5),
     rotation:number(state.rotation,def.rotation,-180,180),
     lighting:number(state.lighting,def.lighting,0,1),
+    foldStrength:state.foldStrength===undefined?undefined:number(state.foldStrength,0,0,100),
     corners:offsets,
     sleeveCurve:restoreSleeveCurve(state.sleeveCurve),
   }
@@ -254,6 +256,44 @@ function readFabricLight(photo:MockImage,width:number,height:number,x:number,y:n
   }
 }
 
+/** Inverse displacement from the original photo's smooth height field.
+ * Alpha-weighted interpolation keeps transparent PNG edges free of fringes. */
+function followFabricFolds(print:ImageData,fabric:Uint8ClampedArray,reference:number,amount:number,photoEdge:number):ImageData{
+  const {width,height,data:source}=print
+  const result=new ImageData(width,height)
+  const target=result.data
+  const amplitude=photoEdge*.012*amount/100
+  const step=Math.max(1,Math.round(photoEdge*.006))
+  const contrast=Math.max(10,reference*.35)
+  const luminance=(x:number,y:number)=>{
+    const index=(bound(y,0,height-1)*width+bound(x,0,width-1))*4
+    return .2126*fabric[index]+.7152*fabric[index+1]+.0722*fabric[index+2]
+  }
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const elevation=bound((luminance(x,y)-reference)/contrast,-1,1)
+    const slopeX=bound((luminance(x-step,y)-luminance(x+step,y))/contrast,-1,1)
+    const slopeY=bound((luminance(x,y-step)-luminance(x,y+step))/contrast,-1,1)
+    const sourceX=x-amplitude*(slopeX+elevation*.2)
+    const sourceY=y-amplitude*(slopeY-elevation*.6)
+    if(sourceX<0||sourceY<0||sourceX>width-1||sourceY>height-1)continue
+    const left=Math.floor(sourceX),top=Math.floor(sourceY)
+    const right=Math.min(width-1,left+1),bottom=Math.min(height-1,top+1)
+    const u=sourceX-left,v=sourceY-top
+    const a=(top*width+left)*4,b=(top*width+right)*4
+    const c=(bottom*width+left)*4,d=(bottom*width+right)*4
+    const wa=(1-u)*(1-v)*source[a+3],wb=u*(1-v)*source[b+3]
+    const wc=(1-u)*v*source[c+3],wd=u*v*source[d+3]
+    const alpha=wa+wb+wc+wd
+    if(!alpha)continue
+    const index=(y*width+x)*4
+    target[index]=(wa*source[a]+wb*source[b]+wc*source[c]+wd*source[d])/alpha
+    target[index+1]=(wa*source[a+1]+wb*source[b+1]+wc*source[c+1]+wd*source[d+1])/alpha
+    target[index+2]=(wa*source[a+2]+wb*source[b+2]+wc*source[c+2]+wd*source[d+2])/alpha
+    target[index+3]=alpha
+  }
+  return result
+}
+
 /** Per-layer clipping is applied to the generated overlay, never to the original PNG. */
 export type RenderLayer = {
   art:MockImage
@@ -291,10 +331,13 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
   for(const {art,placement,clipPolygons} of layers){
   const quad=placementQuad({width,height},art,placement).map(p=>({x:p.x*width,y:p.y*height})) as Quad
   const outline=artworkOutline({width,height},art,placement)
-  const x=bound(Math.floor(Math.min(...outline.map(p=>p.x))*width)-2,0,width)
-  const y=bound(Math.floor(Math.min(...outline.map(p=>p.y))*height)-2,0,height)
-  const right=bound(Math.ceil(Math.max(...outline.map(p=>p.x))*width)+2,0,width)
-  const bottom=bound(Math.ceil(Math.max(...outline.map(p=>p.y))*height)+2,0,height)
+  const foldStrength=bound(Number(placement.foldStrength)||0,0,100)
+  const photoEdge=Math.max(width,height)
+  const padding=2+Math.ceil(photoEdge*.02*foldStrength/100)
+  const x=bound(Math.floor(Math.min(...outline.map(p=>p.x))*width)-padding,0,width)
+  const y=bound(Math.floor(Math.min(...outline.map(p=>p.y))*height)-padding,0,height)
+  const right=bound(Math.ceil(Math.max(...outline.map(p=>p.x))*width)+padding,0,width)
+  const bottom=bound(Math.ceil(Math.max(...outline.map(p=>p.y))*height)+padding,0,height)
   const w=right-x,h=bottom-y
   if(w<=0||h<=0)continue
 
@@ -310,21 +353,25 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
     const sampleHeight=Math.max(1,Math.ceil(2*Math.max(distance(tl,bl),distance(tr,br))))
     bitmap=reduceRaster(art.bitmap,sampleWidth,sampleHeight,true)
     warpedArtwork(layer,bitmap??art.bitmap,quad,placement.sleeveCurve)
-    if(clipPolygons?.length)applyLayerClip(layer,clipPolygons,width,height)
-    if(placement.lighting>0){
-      const print=layer.getImageData(x,y,w,h)
-      const src=readFabricLight(photo,width,height,x,y,w,h),dst=print.data
+    if(clipPolygons?.length&&foldStrength===0)applyLayerClip(layer,clipPolygons,width,height)
+    if(placement.lighting>0||foldStrength>0){
+      let print=layer.getImageData(x,y,w,h)
+      const src=readFabricLight(photo,width,height,x,y,w,h)
       // Local relative luminance uses the actual fabric photo. Bright prints
       // on black cloth remain bright: the fabric color is NEVER multiplied into RGB.
       let total=0,samples=0
-      for(let i=0;i<dst.length;i+=Math.max(4,4*Math.ceil(w*h/9000))){
+      for(let i=0;i<print.data.length;i+=Math.max(4,4*Math.ceil(w*h/9000))){
         const px=Math.floor(i/4)*4
-        if(dst[px+3]<3)continue
+        if(print.data[px+3]<3)continue
+        const point={x:(x+(px/4)%w+.5)/width,y:(y+Math.floor(px/4/w)+.5)/height}
+        if(clipPolygons?.some(polygon=>!pointInArtwork(point,polygon)))continue
         total+=.2126*src[px]+.7152*src[px+1]+.0722*src[px+2]
         samples++
       }
       const reference=samples?total/samples:70
-      for(let i=0;i<dst.length;i+=4){
+      if(foldStrength>0)print=followFabricFolds(print,src,reference,foldStrength,photoEdge)
+      const dst=print.data
+      if(placement.lighting>0)for(let i=0;i<dst.length;i+=4){
         if(!dst[i+3])continue
         const local=.2126*src[i]+.7152*src[i+1]+.0722*src[i+2]
         const ratio=bound((local+35)/(reference+35),.56,1.30)
@@ -335,6 +382,7 @@ export function renderGarmentLayers(canvas:HTMLCanvasElement,photo:MockImage,lay
       }
       layer.putImageData(print,x,y)
     }
+    if(clipPolygons?.length&&foldStrength>0)applyLayerClip(layer,clipPolygons,width,height)
     ctx.drawImage(overlay,0,0)
   }finally{
     if(bitmap){bitmap.width=0;bitmap.height=0}

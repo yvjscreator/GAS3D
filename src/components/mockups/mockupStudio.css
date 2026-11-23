@@ -129,6 +129,8 @@
 .mockup-danger-action{display:flex;align-items:center;gap:7px;width:max-content;padding:9px 11px;border:1px solid #744b58;border-radius:7px;background:#38212b;color:#ffd9de;cursor:pointer;font-size:11px}
 .mockup-mode-toggle{margin-bottom:8px}
 .mockup-mode-toggle button{flex:1}
+.mockup-mode-toggle .mockup-reset-warp{display:grid;place-items:center;flex:0 0 44px;min-height:44px;padding:0}
+.mockup-mode-toggle .mockup-reset-warp:disabled{opacity:.4;cursor:default}
 .mockup-status{max-width:1500px;margin:12px auto;padding:10px 12px;border-radius:8px;font-size:12px;color:#b8dcf1}
 .mockup-status.mockup-feedback{background:#153427;color:#bbf2dc}
 .mockup-status.mockup-error{background:#4c222c;color:#ffced6}
