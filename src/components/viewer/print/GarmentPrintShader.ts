@@ -103,6 +103,10 @@ vec3 applyGarmentPrint(vec3 baseColor, sampler2D printMap, vec3 printCenter, vec
 }
 void main() {`)
       .replace('#include <map_fragment>', `#include <map_fragment>
+// Near-black cotton still scatters light. Lift its diffuse response so folds
+// stay readable without bringing back white specular edges or lifting the ink.
+float clothPeak = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b));
+diffuseColor.rgb += vec3(0.016 * (1.0 - smoothstep(0.0, 0.065, clothPeak)));
 vec3 garmentPrintColor = vec3(0.0);
 float garmentPrintCoverage = 0.0;
 ${applications}
@@ -144,7 +148,7 @@ vec3 garmentAmbilightResult = outgoingLight * (vec3(0.58) + uGarmentAmbilightCol
 outgoingLight = mix(outgoingLight, garmentAmbilightResult, uGarmentAmbilightStrength * garmentAmbilightMask);
 #include <opaque_fragment>`)
   }
-  material.customProgramCacheKey = () => 'garment-multi-print-v8-matte-cloth'
+  material.customProgramCacheKey = () => 'garment-multi-print-v9-dark-cloth-diffuse'
   material.needsUpdate = true
 }
 
