@@ -8,7 +8,29 @@ import type { CameraViewSettings, DirectorFrame } from '../../types/studio'
 export function CameraController({ view, onViewChange, enabled = true, directorFrame = null, fov = 35, composition = [0, 0] }: { view: CameraViewSettings; onViewChange?: (view: CameraViewSettings) => void; enabled?: boolean; directorFrame?: DirectorFrame | null; fov?: number; composition?: [number, number] }) {
   const { camera, invalidate } = useThree()
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null)
-  useEffect(() => { if (!directorFrame) { camera.position.set(...view.position); camera.lookAt(...view.target); if ('fov' in camera) { camera.fov = fov; if (composition[0] || composition[1]) camera.setViewOffset(1000, 1000, composition[0] * 115, -composition[1] * 115, 1000, 1000); else camera.clearViewOffset(); camera.updateProjectionMatrix() } if (controls.current) controls.current.target.set(...view.target); invalidate() } }, [camera, composition, directorFrame, fov, invalidate, view])
+  const { position, target } = view
+  const [offsetX, offsetY] = composition
+  const directed = directorFrame !== null
+
+  // The saved pose seeds the orbit. Layer selection and lens changes must
+  // leave the live position under OrbitControls' ownership.
+  useEffect(() => {
+    if (directed) return
+    camera.position.set(...position)
+    camera.lookAt(...target)
+    controls.current?.target.set(...target)
+    invalidate()
+  }, [camera, directed, invalidate, position, target])
+
+  useEffect(() => {
+    if (directed || !('fov' in camera)) return
+    camera.fov = fov
+    if (offsetX || offsetY) camera.setViewOffset(1000, 1000, offsetX * 115, -offsetY * 115, 1000, 1000)
+    else camera.clearViewOffset()
+    camera.updateProjectionMatrix()
+    invalidate()
+  }, [camera, directed, fov, invalidate, offsetX, offsetY])
+
   useEffect(() => { if (directorFrame) invalidate() }, [directorFrame, invalidate])
   useFrame(() => {
     if (!directorFrame) return
@@ -18,7 +40,7 @@ export function CameraController({ view, onViewChange, enabled = true, directorF
   return <OrbitControls
     ref={controls}
     enabled={enabled && !directorFrame}
-    target={view.target}
+    enableDamping={false}
     onEnd={() => {
       const target = controls.current?.target ?? new THREE.Vector3(...view.target)
       onViewChange?.({ position: [camera.position.x, camera.position.y, camera.position.z], target: [target.x, target.y, target.z] })
