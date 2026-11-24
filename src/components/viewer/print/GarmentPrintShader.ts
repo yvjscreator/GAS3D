@@ -76,6 +76,8 @@ uniform vec3 uGarmentAmbilightColor; uniform float uGarmentAmbilightStrength; un
 varying vec3 vPrintPosition;
 varying vec2 vGarmentUv;
 vec3 applyGarmentPrint(vec3 baseColor, sampler2D printMap, vec3 printCenter, vec3 printRight, vec3 printUp, vec3 printNormal, vec2 printSize, float printDepth, float printOpacity, float printEnabled, vec2 uvCenter, vec2 uvRight, vec2 uvUp, vec2 uvSize, float uvMode, vec2 uvZoneCenter, vec2 uvZoneRight, vec2 uvZoneUp, vec2 uvZoneSize, vec3 localPosition, vec2 garmentUv, inout vec3 accumulatedPrintColor, inout float accumulatedPrintCoverage) {
+  // The authored double-sided cloth must not repeat exterior ink on its reverse.
+  if (!gl_FrontFacing) return baseColor;
   vec3 printDelta = localPosition - printCenter;
   vec2 projectedUv = vec2(dot(printDelta, printRight), dot(printDelta, printUp)) / printSize + 0.5;
   vec2 uvDelta = garmentUv - uvCenter;
@@ -112,7 +114,8 @@ vec2 activeSurfaceUv = activeSurfaceLocal / uActiveUvSize + 0.5;
 vec2 activeZoneUv = mix(activeProjectedUv, activeSurfaceUv, step(0.5, uActiveUvMode));
 float activeZoneBounds = step(0.0, activeZoneUv.x) * step(activeZoneUv.x, 1.0) * step(0.0, activeZoneUv.y) * step(activeZoneUv.y, 1.0);
 float activeZoneDepthMask = mix(step(abs(dot(activeZoneDelta, uActiveZoneNormal)), uActiveZoneDepth * 0.5), 1.0, step(0.5, uActiveUvMode));
-float activeZoneMask = activeZoneBounds * activeZoneDepthMask * uActiveZoneEnabled;
+float garmentFrontFace = gl_FrontFacing ? 1.0 : 0.0;
+float activeZoneMask = activeZoneBounds * activeZoneDepthMask * uActiveZoneEnabled * garmentFrontFace;
 float activeZoneEdgeDistance = min(min(activeZoneUv.x, 1.0 - activeZoneUv.x), min(activeZoneUv.y, 1.0 - activeZoneUv.y));
 float activeZoneBorder = (1.0 - smoothstep(0.0, 0.035, activeZoneEdgeDistance)) * activeZoneMask;
 vec2 activeHalfSize = uActiveUvSize * 0.5;
@@ -121,7 +124,7 @@ float activeHandleDistance = min(min(
   distance(activeSurfaceLocal, vec2(activeHalfSize.x, -activeHalfSize.y))), min(
   distance(activeSurfaceLocal, vec2(activeHalfSize.x, activeHalfSize.y)),
   distance(activeSurfaceLocal, vec2(-activeHalfSize.x, activeHalfSize.y))));
-float activeHandles = (1.0 - smoothstep(uActiveHandleRadius * 0.72, uActiveHandleRadius, activeHandleDistance)) * uActiveZoneEnabled * step(0.5, uActiveUvMode);
+float activeHandles = (1.0 - smoothstep(uActiveHandleRadius * 0.72, uActiveHandleRadius, activeHandleDistance)) * uActiveZoneEnabled * step(0.5, uActiveUvMode) * garmentFrontFace;
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.18, 0.48, 0.95), activeZoneMask * 0.16 * uActiveZoneFill);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.35, 0.72, 1.0), activeZoneBorder * 0.82);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.20, 0.60, 1.0), activeHandles * 0.96);
@@ -141,13 +144,13 @@ vec3 garmentAmbilightResult = outgoingLight * (vec3(0.58) + uGarmentAmbilightCol
 outgoingLight = mix(outgoingLight, garmentAmbilightResult, uGarmentAmbilightStrength * garmentAmbilightMask);
 #include <opaque_fragment>`)
   }
-  material.customProgramCacheKey = () => 'garment-multi-print-v7-ambilight-reach'
+  material.customProgramCacheKey = () => 'garment-multi-print-v8-matte-cloth'
   material.needsUpdate = true
 }
 
 export function createCottonMaterial(source: THREE.Material) {
-  const original = source as THREE.MeshPhongMaterial
-  const material = new THREE.MeshStandardMaterial({
+  const original = source as THREE.MeshPhysicalMaterial
+  const material = new THREE.MeshPhysicalMaterial({
     name: source.name,
     color: original.color?.clone() ?? new THREE.Color('#ffffff'),
     map: original.map ?? null,
@@ -156,10 +159,15 @@ export function createCottonMaterial(source: THREE.Material) {
     transparent: original.transparent,
     opacity: original.opacity,
     alphaTest: original.alphaTest,
-    side: THREE.FrontSide,
+    side: source.side,
     metalness: 0,
     roughness: 0.92,
     envMapIntensity: 0.08,
+    // StandardMaterial discards the GLB's low specular color and uses a full
+    // white Fresnel reflection at grazing angles. Collar/seam edges then glow
+    // on black cloth. Keep the authored tint and a restrained matte reflection.
+    specularColor: original.specularColor?.clone() ?? new THREE.Color(0.15, 0.15, 0.15),
+    specularIntensity: Math.min(original.specularIntensity ?? 1, 0.25),
   })
   if (original.normalScale) material.normalScale.copy(original.normalScale).multiplyScalar(0.38)
   return material

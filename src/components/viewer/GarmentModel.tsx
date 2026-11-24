@@ -96,7 +96,7 @@ function LoadedShirt({ source, color, config, prints, printZoneAdjustments, acti
       const wasArray = Array.isArray(mesh.material)
       const originalMaterials: THREE.Material[] = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
       const materials = originalMaterials.map(createCottonMaterial)
-      materials.forEach((material) => { material.side = THREE.FrontSide; installGarmentPrintShader(material, printUniforms) })
+      materials.forEach((material) => installGarmentPrintShader(material, printUniforms))
       mesh.material = wasArray ? materials : materials[0]
     })
     clone.position.sub(center)
