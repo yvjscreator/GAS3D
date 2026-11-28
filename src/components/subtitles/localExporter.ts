@@ -5,6 +5,7 @@ import {
   AudioBufferSource,
   BlobSource,
   BufferTarget,
+  canEncodeAudio,
   Conversion,
   Input,
   Mp4OutputFormat,
@@ -12,6 +13,7 @@ import {
   Quality,
 } from 'mediabunny'
 import { mixPresentationAudioFallback } from './api'
+import { captionAt, groupWords } from './narration'
 import type { SubtitleCaption, SubtitleExportOptions, SubtitlePresetId, SubtitleWord } from './types'
 
 export type LocalExportProgress = {
@@ -24,6 +26,7 @@ export type LocalExportRequest = {
   words: SubtitleWord[]
   options: SubtitleExportOptions
   generatedAudio?: Blob | null
+  showSubtitles?: boolean
   onProgress?: (state: LocalExportProgress) => void
 }
 
@@ -43,32 +46,6 @@ type WordBox = {
   width: number
   lineHeight: number
   lineIndex: number
-}
-
-const groupWords = (words: RenderWord[], maxWords: number): SubtitleCaption[] => {
-  const groups: SubtitleCaption[] = []
-  let current: RenderWord[] = []
-
-  const flush = () => {
-    if (!current.length) return
-    groups.push({
-      id: groups.length,
-      start: current[0].start,
-      end: current[current.length - 1].end,
-      wordIds: current.map((word) => word.id),
-    })
-    current = []
-  }
-
-  for (const word of words) {
-    const previous = current[current.length - 1]
-    if (previous && word.start - previous.end > 0.7) flush()
-    current.push(word)
-    if (current.length >= maxWords || /[.!?…]$/.test(word.text)) flush()
-  }
-
-  flush()
-  return groups
 }
 
 const easeOutBack = (value: number) => {
@@ -216,7 +193,7 @@ const drawSubtitleFrame = (
   captions: SubtitleCaption[],
   options: SubtitleExportOptions,
 ) => {
-  const caption = captions.find((item) => time >= item.start - 0.04 && time <= item.end + 0.28)
+  const caption = captionAt(captions, time)
   if (!caption) return
 
   const byId = new Map(words.map((word) => [word.id, word]))
@@ -225,7 +202,7 @@ const drawSubtitleFrame = (
 
   const active = captionWords.find((word, index) => {
     const next = captionWords[index + 1]
-    const boundary = next?.start ?? caption.end + 0.22
+    const boundary = next?.start ?? caption.end + 0.25
     return time >= word.start - 0.03 && time < boundary
   }) ?? captionWords[captionWords.length - 1]
 
@@ -671,21 +648,23 @@ const mixAudioOnServer = async (
   return decodeStandaloneAudio(mixedBlob)
 }
 
-export async function exportSubtitledVideoLocally({ file, words, options, generatedAudio = null, onProgress }: LocalExportRequest) {
+export async function exportSubtitledVideoLocally({ file, words, options, generatedAudio = null, showSubtitles = true, onProgress }: LocalExportRequest) {
   if (!('VideoEncoder' in window) || !('VideoDecoder' in window)) {
     throw new Error('Este navegador no tiene WebCodecs. La exportación local requiere Chrome/Edge/Safari moderno con WebCodecs.')
   }
 
-  onProgress?.({ progress: 0.01, message: 'Cargando tipografía exacta…' })
-  await ensureSubtitleFont(options.preset)
+  if (showSubtitles) {
+    onProgress?.({ progress: 0.01, message: 'Cargando tipografía exacta…' })
+    await ensureSubtitleFont(options.preset)
+  }
 
   onProgress?.({ progress: 0.02, message: 'Analizando video en el dispositivo…' })
 
-  const resolvedWords: RenderWord[] = words.map((word) => {
+  const resolvedWords: SubtitleWord[] = (showSubtitles ? words : []).map((word) => {
     const replacement = options.wordOverrides[word.id]
     const text = replacement?.trim() || word.text
     return {
-      id: word.id,
+      ...word,
       text: options.uppercase ? text.toUpperCase() : text,
       start: word.start,
       end: word.end,
@@ -732,11 +711,10 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
     video: {
       codec: 'avc',
       quality: videoQuality,
-      hardwareAcceleration: 'prefer-hardware',
       forceTranscode: true,
       processedWidth: width,
       processedHeight: height,
-      process: (sample) => {
+      process: showSubtitles ? (sample) => {
         if (!canvas || !ctx) {
           canvas = document.createElement('canvas')
           canvas.width = width
@@ -749,7 +727,7 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
         sample.draw(ctx, 0, 0, width, height)
         drawSubtitleFrame(ctx, width, height, sample.timestamp, resolvedWords, captions, options)
         return canvas
-      },
+      } : undefined,
     },
   })
 
@@ -785,6 +763,14 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
     if (!voiceTrack) throw new Error('La voz generada no contiene una pista de audio válida.')
 
     const videoDuration = await videoTrack.getDurationFromMetadata() ?? await videoTrack.computeDuration()
+    const audioSupport = audioTrack
+      ? await canEncodeAudio('aac', { sampleRate: 48000, numberOfChannels: 2, bitrate: 256000 })
+      : await canEncodeAudio('aac', { sampleRate: await voiceTrack.getSampleRate(), numberOfChannels: await voiceTrack.getNumberOfChannels(), bitrate: 256000 })
+    if (!audioSupport) {
+      onProgress?.({ progress: 0.03, message: 'Preparando el codificador de audio local…' })
+      const { registerAacEncoder } = await import('@mediabunny/aac-encoder')
+      registerAacEncoder()
+    }
 
     if (audioTrack) {
       onProgress?.({

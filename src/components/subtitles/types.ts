@@ -4,6 +4,7 @@ export type SubtitleWord = {
   start: number
   end: number
   speaker?: string | null
+  blockId?: string
 }
 
 export type SubtitleCaption = {
@@ -74,6 +75,7 @@ export type PresentationType =
   | 'lifestyle'
   | 'premium'
   | 'storytelling'
+  | 'collection'
 
 export type VoiceStyleId =
   | 'influencer'
@@ -109,12 +111,15 @@ export type PresentationForm = {
   audience: string
   cta: string
   language: string
+  collectionItems?: string
 }
 
 export type PresentationSegment = {
   start: number
   end: number
   purpose: string
+  label?: string | null
+  visibleText?: string | null
   text: string
 }
 
@@ -126,6 +131,29 @@ export type PresentationScript = {
   estimatedSeconds: number
   visualNotes: string[]
   segments: PresentationSegment[]
+}
+
+export type NarrationMode = 'voice' | 'voice_and_subtitles'
+
+export type NarrationBlock = {
+  id: string
+  text: string
+  label: string
+  visibleText?: string
+  start: number
+  sceneStart: number | null
+  sceneEnd: number | null
+  anchored: boolean
+}
+
+export type NarrationClip = { pcm: Blob; signature: string }
+
+export type PresentationScriptJob = {
+  id: string
+  status: 'preparing' | 'analyzing' | 'writing' | 'ready' | 'error' | 'cancelled'
+  message: string
+  result: PresentationScript | null
+  error: string | null
 }
 
 export type AiLogEvent = {
@@ -169,4 +197,7 @@ export type SubtitleSavedSession = {
   generatedVoiceReady: boolean
   generatedVoiceSignature: string
   videoMode: VideoAudioMode | null
+  narrationMode?: NarrationMode
+  narrationBlocks?: NarrationBlock[]
+  narrationTranscriptSignature?: string
 }

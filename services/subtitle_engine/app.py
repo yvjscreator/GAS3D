@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -13,14 +14,14 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from google import genai
 from google.genai import types as genai_types
 from pydantic import BaseModel, Field
 from .mockup_library import router as mockup_library_router
-from .auth import AuthenticationGuard, router as auth_router
+from .auth import AuthenticationGuard, router as auth_router, session_user
 
 APP_NAME = "GAS3D Subtitle Engine"
 GEMINI_MODEL = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe")
@@ -102,10 +103,21 @@ _executor = ThreadPoolExecutor(
 )
 
 
+SCRIPT_DEADLINE_SECONDS = 160
+SCRIPT_JOB_RETENTION_SECONDS = 1800
+SCRIPT_UPLOAD_LIMIT = 250 * 1024 * 1024
+SCRIPT_CONCURRENCY = 2
+_script_executor = ThreadPoolExecutor(max_workers=SCRIPT_CONCURRENCY)
+_script_jobs: dict[str, dict] = {}
+_script_lock = threading.Lock()
+
+
 class PresentationSegment(BaseModel):
     start: float = Field(ge=0)
     end: float = Field(gt=0)
     purpose: str
+    label: str | None = None
+    visibleText: str | None = None
     text: str
 
 
@@ -164,10 +176,11 @@ LANGUAGE_STYLES = {
 }
 
 
-def _new_genai_client() -> genai.Client:
+def _new_genai_client(timeout_ms: int | None = None) -> genai.Client:
     return genai.Client(
         api_key=GEMINI_API_KEY,
         http_options=genai_types.HttpOptions(
+            timeout=timeout_ms,
             retry_options=genai_types.HttpRetryOptions(attempts=1),
         ),
     )
@@ -252,14 +265,17 @@ def _run_ai_with_fallback(
     session_id: str | None,
     models: list[str],
     call,
+    *,
+    max_retries: int | None = None,
 ):
     if not models:
         raise RuntimeError(f"No hay modelos configurados para {operation}.")
 
     last_error: Exception | None = None
+    retries = AI_RETRIES_PER_MODEL if max_retries is None else max_retries
 
     for model_index, model in enumerate(models):
-        for attempt in range(1, AI_RETRIES_PER_MODEL + 2):
+        for attempt in range(1, retries + 2):
             started = time.monotonic()
             _log_ai(
                 session_id,
@@ -300,7 +316,7 @@ def _run_ai_with_fallback(
                 if not retryable:
                     raise
 
-                if attempt <= AI_RETRIES_PER_MODEL:
+                if attempt <= retries:
                     delay = _retry_delay(attempt)
                     _log_ai(
                         session_id,
@@ -319,16 +335,16 @@ def _run_ai_with_fallback(
                 "warning",
                 f"Degradando al siguiente modelo: {models[model_index + 1]}.",
                 model=model,
-                attempt=AI_RETRIES_PER_MODEL + 1,
+                attempt=retries + 1,
                 error=last_error,
             )
 
     raise last_error or RuntimeError(f"{operation} falló sin un error detallado.")
 
 
-def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
+def _run(command: list[str], timeout: float | None = None) -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(command, check=True, capture_output=True, text=True)
+        return subprocess.run(command, check=True, capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError as exc:
         raise RuntimeError(f"No se encontró {command[0]}.") from exc
     except subprocess.CalledProcessError as exc:
@@ -349,7 +365,7 @@ def _parse_rate(rate: str | None) -> float | None:
         return None
 
 
-def _probe(path: Path) -> dict:
+def _probe(path: Path, timeout: float | None = None) -> dict:
     result = _run([
         "ffprobe",
         "-v",
@@ -359,7 +375,7 @@ def _probe(path: Path) -> dict:
         "-of",
         "json",
         str(path),
-    ])
+    ], timeout=timeout)
     payload = json.loads(result.stdout)
     video = next(
         (
@@ -738,44 +754,85 @@ def list_presentation_voices(
         ) from exc
 
 
-@app.post("/api/subtitles/presentation/script")
-async def generate_presentation_script(
-    video: UploadFile = File(...),
-    x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
-    presentation_type: str = Form(default="influencer"),
-    product: str = Form(default=""),
-    highlights: str = Form(default=""),
-    audience: str = Form(default=""),
-    cta: str = Form(default=""),
-    language: str = Form(default="es-LATAM"),
-) -> dict:
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=503, detail="Falta configurar GEMINI_API_KEY en Render.")
+def _script_owner(session_id: str | None, authorization: str | None) -> tuple[str, str]:
+    session = session_user(authorization)
+    return (session["user"] if session else "local", _session_id(session_id))
 
-    work_dir = WORK_ROOT / f"script-{uuid.uuid4().hex}"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    suffix = Path(video.filename or "video.mp4").suffix or ".mp4"
-    input_path = work_dir / f"input{suffix.lower()}"
+
+def _script_status(job_id: str, owner: tuple[str, str]) -> dict:
+    with _script_lock:
+        current = _script_jobs.get(job_id)
+        if not current or current["owner"] != owner:
+            raise HTTPException(404, "No se encontró este guion. Puedes reintentar desde tu borrador.")
+        if current["status"] not in ("ready", "error", "cancelled") and time.monotonic() >= current["deadline"]:
+            current.update(status="error", error=f"Se agotó el tiempo en {current['message'].rstrip('…').lower()}.")
+        return {key: current[key] for key in ("id", "status", "message", "result", "error")}
+
+
+def _write_script_status(job: dict, **changes) -> None:
+    with _script_lock:
+        if job["status"] not in ("ready", "error", "cancelled"):
+            job.update(changes)
+
+
+def _check_script_time(job: dict) -> None:
+    with _script_lock:
+        if job["status"] == "cancelled":
+            raise RuntimeError("Cancelado")
+        if time.monotonic() >= job["deadline"]:
+            raise TimeoutError("Se agotó el tiempo de generación del guion.")
+
+
+def _build_presentation_script(job: dict, work_dir: Path, input_path: Path, form: dict, phrases: list[str]) -> None:
+    x_ai_session_id = job["owner"][1]
+    presentation_type = form["presentation_type"]
+    product, highlights, audience, cta, language, collection_items = (
+        form[key] for key in ("product", "highlights", "audience", "cta", "language", "collection_items")
+    )
     client = None
     remote_file = None
 
     try:
-        with input_path.open("wb") as target:
-            while chunk := await video.read(1024 * 1024):
-                target.write(chunk)
-        await video.close()
+        _check_script_time(job)
+        _write_script_status(job, status="preparing", message="Preparando el video…")
+        duration = float(_probe(input_path, timeout=15).get("duration") or 0)
+        if not 0 < duration <= 1800:
+            raise ValueError("El video necesita una duración válida de hasta 30 minutos.")
+        target_seconds = max(1.0, duration - min(1.0, duration * 0.06))
+        max_words = max(2, round(target_seconds * 2.35))
+        mode_instructions = ""
+        if presentation_type == "collection":
+            mode_instructions = (
+                "Act as a collection presenter. Identify each distinct design in first appearance order, "
+                "including quick consecutive cuts. For each design, write one short selling line inside "
+                "the visible window; name or characterize that design before the next appears. Combine "
+                "the hook with the first design if it is already visible. Keep any CTA within the last "
+                "shot. Use supplied names to identify designs, never invent a visible scene. List supplied "
+                "designs that cannot be matched confidently in visualNotes. Read legible text printed on the design "
+                "or shown with it; put the exact readable phrase in visibleText and use its meaning to write a selling line. "
+                "Spoken copy should complement on-screen words, without reading them verbatim unless that quote is the hook. "
+                "Leave visibleText null if uncertain and do not guess unreadable words. Never group several designs "
+                "into a spoken list over a single design."
+            )
+        if phrases:
+            mode_instructions += (
+                " This is alignment only. Return one segment per exact user phrase in input order. "
+                "Copy the text verbatim, choose a visual moment for it, and put ambiguous matches in visualNotes. "
+                "Do not write extra hooks or CTAs, edit, omit, translate, or reorder the phrases."
+            )
 
-        metadata = _probe(input_path)
-        duration = float(metadata.get("duration") or 0)
-        if duration <= 0:
-            raise RuntimeError("No se pudo determinar la duración del video.")
-
-        target_seconds = max(3.0, duration - min(1.0, duration * 0.06))
-        max_words = max(8, round(target_seconds * 2.35))
-
-        client = _new_genai_client()
+        _write_script_status(job, status="analyzing", message="Enviando el video a Gemini…")
+        _log_ai(x_ai_session_id, "presentation_script", "info", "Enviando el video a Gemini.")
+        client = _new_genai_client(timeout_ms=40_000)
+        _check_script_time(job)
         remote_file = client.files.upload(file=str(input_path))
-        remote_file = _wait_for_gemini_file(client, remote_file)
+        _write_script_status(job, message="Analizando el video…")
+        while getattr(getattr(remote_file, "state", None), "name", None) not in (None, "ACTIVE"):
+            _check_script_time(job)
+            if getattr(remote_file.state, "name", None) == "FAILED":
+                raise RuntimeError("Gemini no pudo procesar este video.")
+            time.sleep(1.5)
+            remote_file = client.files.get(name=remote_file.name)
 
         prompt = f"""
 You are the creative director and UGC product-script writer for a short social-media video.
@@ -791,6 +848,9 @@ DETAILS TO HIGHLIGHT: {highlights or "Infer only useful, visible or user-support
 TARGET AUDIENCE: {audience or "General social-media audience"}
 CTA: {cta or "Use a short natural CTA only if it fits"}
 VOICE LANGUAGE / LOCALE: {language}
+COLLECTION DESIGN NAMES (optional, as supplied by the user): {collection_items or "Infer only from the visible designs"}
+USER'S EXACT PHRASES (optional JSON array): {json.dumps(phrases, ensure_ascii=False)}
+{mode_instructions}
 
 Rules:
 - The field "script" must contain ONLY the exact words that should be spoken.
@@ -801,18 +861,20 @@ Rules:
 - Prefer creator/UGC language over corporate advertising language.
 - Break the concept into segments aligned approximately with meaningful visual moments.
 - Segment text must concatenate naturally into the full script.
-- Keep each segment's start/end within the video duration.
+- For each segment return start and end in seconds within the video duration. Use the actual visible window as a guide to when the phrase can play. Return segments in screen order, without intersecting windows.
+- Use label for a short editable title describing the visible design or scene.
+- Fit the words for each phrase into its own window (roughly two words per second). Do not count an introduction as a separate segment unless there is an opening shot with time for it.
 """
 
         def create_script(model: str):
-            return client.interactions.create(
+            interaction = client.interactions.create(
                 model=model,
                 input=[
                     {
                         "type": "video",
                         "uri": remote_file.uri,
                         "mime_type": remote_file.mime_type,
-                        "processing": {"type": "static", "fps": 1.0},
+                        "processing": {"type": "static", "fps": 2.0 if presentation_type == "collection" and duration <= 90 else 1.0},
                     },
                     {"type": "text", "text": prompt},
                 ],
@@ -823,33 +885,156 @@ Rules:
                 },
             )
 
-        interaction, used_model = _run_ai_with_fallback(
-            "presentation_script",
-            x_ai_session_id,
-            SCRIPT_MODELS,
-            create_script,
-        )
-        result = PresentationScriptResult.model_validate_json(interaction.output_text)
-        payload = result.model_dump()
-        payload["_aiModel"] = used_model
-        return payload
-    except HTTPException:
-        raise
+            result = PresentationScriptResult.model_validate_json(interaction.output_text)
+            if phrases and (
+                len(result.segments) != len(phrases)
+                or any(" ".join(segment.text.split()) != " ".join(text.split())
+                       for segment, text in zip(result.segments, phrases))
+            ):
+                raise ValueError("Gemini cambió el texto o el orden del guion escrito.")
+            if not 1 <= len(result.segments) <= 60 or any(
+                segment.end <= segment.start or segment.start >= duration
+                for segment in result.segments
+            ):
+                raise ValueError("Gemini no devolvió tiempos utilizables para todas las frases.")
+            for index, segment in enumerate(result.segments):
+                segment.end = min(duration, segment.end)
+                if phrases:
+                    segment.text = phrases[index]
+            result.script = " ".join(segment.text for segment in result.segments)
+            return result.model_dump()
+
+        _write_script_status(job, status="writing", message="Ubicando las frases del guion…" if phrases else "Escribiendo el guion…")
+        for index, model in enumerate(SCRIPT_MODELS[:2]):
+            _check_script_time(job)
+            _log_ai(x_ai_session_id, "presentation_script", "info", "Iniciando solicitud.", model=model, attempt=index + 1)
+            try:
+                result = create_script(model)
+                _check_script_time(job)
+            except Exception as exc:
+                if index == 0 and len(SCRIPT_MODELS) > 1 and (_retryable_ai_error(exc) or isinstance(exc, ValueError)):
+                    _log_ai(x_ai_session_id, "presentation_script", "warning", "Probando un modelo alternativo.", model=model, error=exc)
+                    _write_script_status(job, message="Probando un modelo alternativo…")
+                    continue
+                raise
+            _log_ai(x_ai_session_id, "presentation_script", "success", "Guion listo.", model=model)
+            result["_aiModel"] = model
+            _write_script_status(job, status="ready", message="Guion listo", result=result)
+            return
+        raise RuntimeError("No hay un modelo de guion configurado.")
     except Exception as exc:
-        _log_ai(
-            x_ai_session_id,
-            "presentation_script",
-            "error",
-            "El pipeline de guion terminó con error.",
-            error=exc,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"No se pudo crear el guion con Gemini: {exc}",
-        ) from exc
+        if job["status"] != "cancelled":
+            _log_ai(x_ai_session_id, "presentation_script", "error", "El guion no se completó.", error=exc)
+            _write_script_status(job, status="error", error=f"{job['message']} {exc}")
     finally:
         _delete_remote_file(client, remote_file)
         shutil.rmtree(work_dir, ignore_errors=True)
+        with _script_lock:
+            job["finished_at"] = time.monotonic()
+
+
+@app.post("/api/subtitles/presentation/script")
+@app.post("/api/subtitles/presentation/script-jobs", status_code=202)
+async def generate_presentation_script(
+    request: Request,
+    video: UploadFile = File(...),
+    x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
+    authorization: str | None = Header(default=None),
+    presentation_type: str = Form(default="influencer"),
+    product: str = Form(default=""),
+    highlights: str = Form(default=""),
+    audience: str = Form(default=""),
+    cta: str = Form(default=""),
+    language: str = Form(default="es-LATAM"),
+    collection_items: str = Form(default="", max_length=4000),
+    phrases_json: str = Form(default="[]", max_length=14000),
+) -> dict:
+    if not GEMINI_API_KEY:
+        raise HTTPException(503, "Falta configurar GEMINI_API_KEY en Render.")
+    try:
+        phrases = json.loads(phrases_json)
+        if not isinstance(phrases, list) or len(phrases) > 60 or any(
+            not isinstance(item, str) or not item.strip() for item in phrases
+        ):
+            raise ValueError
+    except ValueError as exc:
+        raise HTTPException(422, "El guion debe contener hasta 60 frases válidas.") from exc
+    if video.size is not None and video.size > SCRIPT_UPLOAD_LIMIT:
+        raise HTTPException(413, "El video supera 250 MB. Exporta una copia más liviana para el análisis.")
+
+    owner = _script_owner(x_ai_session_id, authorization)
+    job_id = uuid.uuid4().hex
+    now = time.monotonic()
+    job = dict(id=job_id, owner=owner, deadline=now + SCRIPT_DEADLINE_SECONDS, finished_at=None,
+               status="preparing", message="Preparando el video…", result=None, error=None)
+    with _script_lock:
+        for key, value in list(_script_jobs.items()):
+            finished = value["finished_at"]
+            if finished is not None and now - finished > SCRIPT_JOB_RETENTION_SECONDS:
+                del _script_jobs[key]
+        active = [item for item in _script_jobs.values() if item["finished_at"] is None]
+        if len(active) >= SCRIPT_CONCURRENCY or any(item["owner"] == owner for item in active):
+            raise HTTPException(429, "Hay un análisis en curso. Espera a que termine antes de reintentar.")
+        _script_jobs[job_id] = job
+
+    work_dir = WORK_ROOT / f"script-{job_id}"
+    suffix = Path(video.filename or "video.mp4").suffix[:12] or ".mp4"
+    input_path = work_dir / f"input{suffix.lower()}"
+    try:
+        work_dir.mkdir(parents=True, exist_ok=True)
+        size = 0
+        with input_path.open("wb") as target:
+            while chunk := await video.read(1024 * 1024):
+                size += len(chunk)
+                if size > SCRIPT_UPLOAD_LIMIT:
+                    raise HTTPException(413, "El video supera 250 MB.")
+                target.write(chunk)
+        if not size:
+            raise HTTPException(422, "El archivo de video está vacío.")
+        form = dict(presentation_type=presentation_type, product=product, highlights=highlights,
+                    audience=audience, cta=cta, language=language, collection_items=collection_items)
+        _script_executor.submit(_build_presentation_script, job, work_dir, input_path, form, phrases)
+    except BaseException:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        with _script_lock:
+            _script_jobs.pop(job_id, None)
+        raise
+    finally:
+        await video.close()
+
+    if request.url.path.endswith("/script-jobs"):
+        return _script_status(job_id, owner)
+    while True:
+        state = _script_status(job_id, owner)
+        if state["status"] == "ready":
+            return state["result"]
+        if state["status"] in ("error", "cancelled"):
+            raise HTTPException(504, state["error"] or "La preparación fue cancelada.")
+        await asyncio.sleep(1)
+
+
+@app.get("/api/subtitles/presentation/script-jobs/{job_id}")
+def get_presentation_script_job(
+    job_id: str,
+    x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    return _script_status(job_id, _script_owner(x_ai_session_id, authorization))
+
+
+@app.delete("/api/subtitles/presentation/script-jobs/{job_id}")
+def cancel_presentation_script_job(
+    job_id: str,
+    x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    owner = _script_owner(x_ai_session_id, authorization)
+    _script_status(job_id, owner)
+    with _script_lock:
+        job = _script_jobs.get(job_id)
+        if job and job["owner"] == owner and job["status"] not in ("ready", "error", "cancelled"):
+            job.update(status="cancelled", message="Análisis cancelado.")
+    return _script_status(job_id, owner)
 
 
 @app.post("/api/subtitles/presentation/mix-audio")
@@ -966,7 +1151,7 @@ def generate_presentation_voice(
     )
 
     try:
-        client = _new_genai_client()
+        client = _new_genai_client(timeout_ms=30_000)
         def synthesize(model: str):
             return client.interactions.create(
                 model=model,
@@ -992,8 +1177,9 @@ def generate_presentation_voice(
         interaction, used_model = _run_ai_with_fallback(
             "presentation_tts",
             x_ai_session_id,
-            TTS_MODELS,
+            TTS_MODELS[:2],
             synthesize,
+            max_retries=0,
         )
 
         output_audio = getattr(interaction, "output_audio", None)

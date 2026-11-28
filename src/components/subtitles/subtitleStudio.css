@@ -2319,3 +2319,106 @@
   .subtitle-studio .subtitle-mobile-header>button { min-height:40px; height:40px; }
   .subtitle-studio .subtitle-mobile-header>strong { font-size:12px; text-align:left; }
 }
+
+/* Narration shares the preview clock and leaves the main editor controls reachable. */
+.subtitle-ai-presenter {
+  padding:0;
+  margin:0;
+  border:0;
+  min-inline-size:0;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.subtitle-ai-presenter > :not(.subtitle-narration-mode):not(.subtitle-presentation-type) { grid-column:1 / -1; }
+.subtitle-ai-presenter .subtitle-field { min-width:0; }
+.subtitle-ai-presenter .subtitle-narration-mode select,
+.subtitle-ai-presenter .subtitle-presentation-type select { min-width:0; width:100%; }
+.subtitle-narration-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.subtitle-narration-actions button,
+.subtitle-narration-selection button,
+.subtitle-cancel-analysis {
+  min-height:44px;
+  padding:5px 9px;
+  border:1px solid #375469;
+  border-radius:6px;
+  background:#172630;
+  color:#e0f0fa;
+  font-size:.75rem;
+}
+.subtitle-narration-actions button:disabled,
+.subtitle-cancel-analysis:disabled { opacity:.45; }
+.subtitle-cancel-analysis { margin-top:6px; }
+.subtitle-narration-editor {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  min-width:0;
+  gap:8px;
+  border:1px solid #344958;
+  background:#121d27;
+  border-radius:8px;
+  padding:9px;
+}
+.subtitle-narration-editor .subtitle-narration-phrase,
+.subtitle-narration-editor .subtitle-visible-design-text,
+.subtitle-narration-editor > small,
+.subtitle-narration-editor .subtitle-narration-actions { grid-column:1 / -1; }
+.subtitle-narration-editor small { color:#a6b9c7; font-size:.7rem; overflow-wrap:anywhere; }
+.subtitle-narration-editor textarea { min-height:64px; }
+.subtitle-narration-timeline {
+  display:grid;
+  gap:6px;
+  min-width:0;
+  margin-top:8px;
+  padding:8px;
+  color:#cddde9;
+  background:#121d27;
+  border:1px solid #344958;
+  border-radius:8px;
+  font-size:.75rem;
+}
+.subtitle-narration-timeline-header,
+.subtitle-narration-selection { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.subtitle-narration-track { height:44px; position:relative; overflow:hidden; border-radius:6px; background:#0c141b; }
+.subtitle-narration-clip {
+  position:absolute;
+  inset-block:2px;
+  border-radius:5px;
+  border:1px solid #4b7899;
+  background:#213f55;
+  color:#edf8ff;
+  min-width:4px;
+  padding-inline:4px;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+  text-align:left;
+  font-size:inherit;
+  cursor:grab;
+  touch-action:none;
+  user-select:none;
+}
+.subtitle-narration-clip.active { z-index:1; background:#2b5874; border-color:#91caf2; }
+.subtitle-narration-clip.conflict { border-color:#e3a76e; }
+.subtitle-narration-clip:focus-visible { outline:2px solid #d0ecff; outline-offset:-3px; }
+.subtitle-narration-playhead { position:absolute; inset-block:0; width:2px; z-index:2; background:#f4f9fd; pointer-events:none; }
+.subtitle-narration-selection label { display:flex; align-items:center; gap:6px; }
+.subtitle-narration-selection input { width:5.2rem; min-height:44px; color:#e3eef5; background:#0f171f; border:1px solid #375469; border-radius:6px; padding:4px 6px; font-size:1rem; }
+.subtitle-narration-warning { color:#ffcc96; margin:3px 0 0; font-size:.75rem; overflow-wrap:anywhere; }
+.subtitle-preview-column:has(.subtitle-narration-timeline) .subtitle-preview-shell { min-height:0; }
+.subtitle-preview-column:has(.subtitle-narration-timeline) .subtitle-video-frame,
+.subtitle-preview-column:has(.subtitle-narration-timeline) .subtitle-video-frame video { max-height:calc(100dvh - 302px); }
+
+@media (max-width:720px) {
+  .subtitle-mobile-editor.has-narration {
+    grid-template-rows:var(--subtitle-header-h) minmax(0,1fr) var(--subtitle-transport-h) auto var(--subtitle-dock-h);
+  }
+  .subtitle-mobile-editor.has-narration .subtitle-mobile-dock { grid-row:5; }
+  .subtitle-mobile-editor .subtitle-narration-area { grid-row:4; padding:0 8px 4px; min-width:0; }
+  .subtitle-mobile-editor .subtitle-narration-timeline { margin-top:0; padding:4px 6px; }
+  .subtitle-mobile-editor .subtitle-narration-warning { font-size:11px; }
+  .subtitle-ai-presenter .subtitle-narration-mode select,
+  .subtitle-ai-presenter .subtitle-presentation-type select { min-height:44px; }
+}
