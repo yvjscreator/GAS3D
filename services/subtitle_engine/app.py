@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
+import io
 import json
 import os
 import re
@@ -11,6 +13,7 @@ import tempfile
 import threading
 import time
 import uuid
+import wave
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -25,24 +28,30 @@ from .auth import AuthenticationGuard, router as auth_router, session_user
 
 APP_NAME = "GAS3D Subtitle Engine"
 GEMINI_MODEL = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe")
-SCRIPT_MODEL = os.getenv("GEMINI_SCRIPT_MODEL", "gemini-3.8-flash")
-TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-3.8-flash-tts")
+DEFAULT_SCRIPT_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
 SCRIPT_MODELS = [
     item.strip()
     for item in os.getenv(
         "GEMINI_SCRIPT_MODELS",
-        "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash",
+        ",".join(DEFAULT_SCRIPT_MODELS),
     ).split(",")
     if item.strip()
 ]
+# Upgrade the previous Render list, where 3.7 is now an alias for the first model.
+if SCRIPT_MODELS == ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]:
+    SCRIPT_MODELS = DEFAULT_SCRIPT_MODELS
+DEFAULT_TTS_MODELS = ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"]
+LEGACY_TTS_MODEL = "gemini-3.1-flash-tts-preview"
 TTS_MODELS = [
     item.strip()
     for item in os.getenv(
         "GEMINI_TTS_MODELS",
-        "gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts",
+        ",".join(DEFAULT_TTS_MODELS),
     ).split(",")
     if item.strip()
 ]
+if TTS_MODELS == DEFAULT_TTS_MODELS:
+    TTS_MODELS.append(LEGACY_TTS_MODEL)
 TRANSCRIBE_MODELS = [
     item.strip()
     for item in os.getenv(
@@ -176,9 +185,31 @@ LANGUAGE_STYLES = {
 }
 
 
-def _new_genai_client(timeout_ms: int | None = None) -> genai.Client:
+GEMINI_KEY_HEADER = "X-Gemini-API-Key"
+
+
+class GeminiOutputError(ValueError):
+    """A valid request received an unusable model response."""
+
+
+class GeminiWorkflowError(RuntimeError):
+    """A safe message describing a failure in our workflow."""
+
+
+def _gemini_key(personal_key: str | None) -> str:
+    if personal_key is not None:
+        key = personal_key.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", key):
+            raise HTTPException(422, "Revisa el formato de tu clave de Gemini en Subtitle Studio.")
+        return key
+    if not GEMINI_API_KEY:
+        raise HTTPException(503, "Agrega tu clave de Gemini en Subtitle Studio para continuar.")
+    return GEMINI_API_KEY
+
+
+def _new_genai_client(api_key: str, timeout_ms: int = 30_000) -> genai.Client:
     return genai.Client(
-        api_key=GEMINI_API_KEY,
+        api_key=api_key,
         http_options=genai_types.HttpOptions(
             timeout=timeout_ms,
             retry_options=genai_types.HttpRetryOptions(attempts=1),
@@ -220,37 +251,42 @@ def _log_ai(
             del bucket[:-AI_LOG_LIMIT]
 
 
-def _retryable_ai_error(exc: Exception) -> bool:
-    code = (
-        getattr(exc, "status_code", None)
-        or getattr(exc, "code", None)
-        or getattr(getattr(exc, "response", None), "status_code", None)
-    )
+def _gemini_failure(exc: Exception) -> tuple[str, str]:
+    # Provider exceptions can contain credentials, URLs or echoed payloads.
+    # Classify them internally and return only fixed messages to the UI/logs.
+    if isinstance(exc, GeminiOutputError):
+        return "model", str(exc)
+    if isinstance(exc, GeminiWorkflowError):
+        return "stop", str(exc)
+    code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    code = code or getattr(getattr(exc, "response", None), "status_code", None)
     try:
-        numeric = int(code) if code is not None else None
-    except (TypeError, ValueError):
-        numeric = None
-
-    if numeric in {408, 429, 500, 502, 503, 504}:
-        return True
-
+        code = int(code)
+    except (ValueError, TypeError):
+        code = None
     text = str(exc).lower()
-    transient_terms = (
-        "resource_exhausted",
-        "rate limit",
-        "rate_limit",
-        "too many requests",
-        "unavailable",
-        "service unavailable",
-        "overloaded",
-        "deadline",
-        "timeout",
-        "timed out",
-        "temporarily",
-        "connection reset",
-        "internal server error",
-    )
-    return any(term in text for term in transient_terms)
+    if code == 401 or any(marker in text for marker in (
+        "api_key_invalid", "api key not valid", "invalid api key", "api_key_service_blocked", "api_key_expired",
+    )):
+        return "stop", "Gemini rechazó la clave de API. Revisa la clave y sus restricciones en la configuración."
+    if code == 404 or (code in {400, 403} and any(marker in text for marker in (
+        "not supported for this model", "model is not supported", "not supported for generatecontent",
+        "model is not available", "model_not_found", "not have access to the model",
+        "not supported by this model", "not supported by the model", "model does not support",
+        "voice is not supported", "unknown voice", "unsupported model",
+    ))):
+        return "model", "El modelo o la voz no está disponible para esta operación."
+    if code == 429 or any(marker in text for marker in ("resource_exhausted", "rate limit", "too many requests")):
+        return "quota", "Gemini alcanzó el límite de uso de este modelo."
+    if code in {408, 500, 502, 503, 504} or any(marker in text for marker in (
+        "timeout", "timed out", "deadline", "overloaded", "service unavailable", "connection reset", "temporarily unavailable",
+    )):
+        return "retry", "Gemini no respondió a tiempo o está temporalmente ocupado."
+    if code == 403:
+        return "stop", "Gemini rechazó el acceso. Revisa los permisos, las restricciones de la clave y la facturación."
+    if code == 400:
+        return "stop", "Gemini rechazó los parámetros de la solicitud. Revisa el archivo o la voz seleccionada."
+    return "stop", "La operación no se pudo completar. Intenta nuevamente."
 
 
 def _retry_delay(attempt: int) -> float:
@@ -267,79 +303,41 @@ def _run_ai_with_fallback(
     call,
     *,
     max_retries: int | None = None,
+    on_attempt=None,
 ):
+    models = list(dict.fromkeys(models))
     if not models:
-        raise RuntimeError(f"No hay modelos configurados para {operation}.")
+        raise GeminiWorkflowError(f"No hay modelos configurados para {operation}.")
 
-    last_error: Exception | None = None
     retries = AI_RETRIES_PER_MODEL if max_retries is None else max_retries
-
-    for model_index, model in enumerate(models):
+    last_message = "Gemini no completó la operación."
+    for model_index, model in enumerate(models, start=1):
         for attempt in range(1, retries + 2):
+            if on_attempt:
+                on_attempt(model, model_index, len(models))
             started = time.monotonic()
-            _log_ai(
-                session_id,
-                operation,
-                "info",
-                "Iniciando solicitud.",
-                model=model,
-                attempt=attempt,
-            )
+            _log_ai(session_id, operation, "info", f"Modelo {model_index} de {len(models)}.", model=model, attempt=attempt)
             try:
                 result = call(model)
-                elapsed = int((time.monotonic() - started) * 1000)
-                _log_ai(
-                    session_id,
-                    operation,
-                    "success",
-                    "Solicitud completada.",
-                    model=model,
-                    attempt=attempt,
-                    duration_ms=elapsed,
-                )
+                _log_ai(session_id, operation, "success", "Solicitud completada.", model=model, attempt=attempt,
+                        duration_ms=int((time.monotonic() - started) * 1000))
                 return result, model
             except Exception as exc:
-                last_error = exc
-                elapsed = int((time.monotonic() - started) * 1000)
-                retryable = _retryable_ai_error(exc)
-                _log_ai(
-                    session_id,
-                    operation,
-                    "warning" if retryable else "error",
-                    "Solicitud fallida.",
-                    model=model,
-                    attempt=attempt,
-                    error=exc,
-                    duration_ms=elapsed,
-                )
-
-                if not retryable:
-                    raise
-
-                if attempt <= retries:
-                    delay = _retry_delay(attempt)
-                    _log_ai(
-                        session_id,
-                        operation,
-                        "info",
-                        f"Reintentando en {delay:g} s.",
-                        model=model,
-                        attempt=attempt,
-                    )
-                    time.sleep(delay)
-
-        if model_index < len(models) - 1:
-            _log_ai(
-                session_id,
-                operation,
-                "warning",
-                f"Degradando al siguiente modelo: {models[model_index + 1]}.",
-                model=model,
-                attempt=retries + 1,
-                error=last_error,
-            )
-
-    raise last_error or RuntimeError(f"{operation} falló sin un error detallado.")
+                kind, last_message = _gemini_failure(exc)
+                _log_ai(session_id, operation, "error" if kind == "stop" else "warning", "Solicitud fallida.",
+                        model=model, attempt=attempt, error=last_message,
+                        duration_ms=int((time.monotonic() - started) * 1000))
+                if kind == "stop":
+                    raise GeminiWorkflowError(last_message) from None
+                # Try other models first when quota is model-specific. A single
+                # Transcribe model still gets a bounded retry on transient limits.
+                if attempt <= retries and (kind == "retry" or (kind == "quota" and len(models) == 1)):
+                    time.sleep(_retry_delay(attempt))
+                    continue
+                break
+    if len(models) > 1:
+        last_message = f"Se agotaron los {len(models)} modelos configurados. {last_message}"
+    raise GeminiWorkflowError(last_message)
 
 
 def _run(command: list[str], timeout: float | None = None) -> subprocess.CompletedProcess[str]:
@@ -536,7 +534,7 @@ def _wait_for_gemini_file(
     raise RuntimeError("Gemini tardó demasiado en procesar el archivo.")
 
 
-def _transcribe(job_id: str) -> None:
+def _transcribe(job_id: str, api_key: str) -> None:
     with _jobs_lock:
         job = dict(_jobs[job_id])
 
@@ -547,9 +545,6 @@ def _transcribe(job_id: str) -> None:
     client = None
 
     try:
-        if not GEMINI_API_KEY:
-            raise RuntimeError("Falta configurar GEMINI_API_KEY en Render.")
-
         _update_job(
             job_id,
             status="transcribing",
@@ -563,7 +558,7 @@ def _transcribe(job_id: str) -> None:
             progress=0.22,
             message="Subiendo audio a Gemini…",
         )
-        client = _new_genai_client()
+        client = _new_genai_client(api_key)
         remote_file = client.files.upload(file=str(audio_path))
 
         transcription_config: dict = {
@@ -583,7 +578,7 @@ def _transcribe(job_id: str) -> None:
             message=f"Transcribiendo con {GEMINI_MODEL}…",
         )
         def transcribe_with_model(model: str):
-            return client.interactions.create(
+            interaction = client.interactions.create(
                 model=model,
                 input=[{
                     "type": "audio",
@@ -595,18 +590,18 @@ def _transcribe(job_id: str) -> None:
                 },
             )
 
-        interaction, used_model = _run_ai_with_fallback(
+            words = _extract_word_annotations(interaction)
+            if not words:
+                raise GeminiOutputError("Gemini no devolvió los tiempos por palabra necesarios para separar las frases.")
+            return words
+
+        words, used_model = _run_ai_with_fallback(
             "transcription",
             job.get("aiSessionId"),
             TRANSCRIBE_MODELS,
             transcribe_with_model,
+            max_retries=1,
         )
-
-        words = _extract_word_annotations(interaction)
-        if not words:
-            raise RuntimeError(
-                "Gemini terminó la transcripción, pero no devolvió timestamps por palabra."
-            )
 
         _update_job(
             job_id,
@@ -618,19 +613,20 @@ def _transcribe(job_id: str) -> None:
             error=None,
         )
     except Exception as exc:
+        _, message = _gemini_failure(exc)
         _log_ai(
             job.get("aiSessionId"),
             "transcription",
             "error",
             "El pipeline de transcripción terminó con error.",
-            error=exc,
+            error=message,
         )
         _update_job(
             job_id,
             status="error",
             progress=1.0,
             message="La transcripción falló.",
-            error=str(exc),
+            error=message,
         )
     finally:
         _delete_remote_file(client, remote_file)
@@ -668,6 +664,7 @@ def health() -> dict:
         "transcribeModels": TRANSCRIBE_MODELS,
         "retriesPerModel": AI_RETRIES_PER_MODEL,
         "configured": bool(GEMINI_API_KEY),
+        "personalGeminiKey": True,
         "videoExport": "browser-webcodecs",
         "audioMixFallback": "server-ffmpeg",
     }
@@ -688,20 +685,20 @@ def _voice_field(voice: object, name: str):
 
 @app.get("/api/subtitles/presentation/voices")
 def list_presentation_voices(
+    personal_key: str | None = Header(default=None, alias=GEMINI_KEY_HEADER),
     x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
 ) -> dict:
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=503, detail="Falta configurar GEMINI_API_KEY en Render.")
+    api_key = _gemini_key(personal_key)
 
     now = time.monotonic()
     with _voice_catalog_lock:
         cached_voices = list(_voice_catalog_cache.get("voices", []))
         expires_at = float(_voice_catalog_cache.get("expiresAt", 0.0))
-        if cached_voices and expires_at > now:
+        if personal_key is None and cached_voices and expires_at > now:
             return {"voices": cached_voices, "cached": True}
 
     try:
-        client = _new_genai_client()
+        client = _new_genai_client(api_key, timeout_ms=15_000)
 
         def fetch_catalog(_: str):
             return client.voices.list(page_size=1000)
@@ -711,6 +708,7 @@ def list_presentation_voices(
             x_ai_session_id,
             ["voices-api"],
             fetch_catalog,
+            max_retries=0,
         )
 
         voices: list[dict] = []
@@ -735,23 +733,25 @@ def list_presentation_voices(
             item["displayName"].lower(),
         ))
 
-        with _voice_catalog_lock:
-            _voice_catalog_cache["voices"] = voices
-            _voice_catalog_cache["expiresAt"] = time.monotonic() + VOICE_CATALOG_TTL_SECONDS
+        if personal_key is None:
+            with _voice_catalog_lock:
+                _voice_catalog_cache["voices"] = voices
+                _voice_catalog_cache["expiresAt"] = time.monotonic() + VOICE_CATALOG_TTL_SECONDS
 
         return {"voices": voices, "cached": False}
     except Exception as exc:
+        _, message = _gemini_failure(exc)
         _log_ai(
             x_ai_session_id,
             "voice_catalog",
             "error",
             "No se pudo cargar el catálogo de voces.",
-            error=exc,
+            error=message,
         )
         raise HTTPException(
             status_code=500,
-            detail=f"No se pudo cargar el catálogo de voces de Gemini: {exc}",
-        ) from exc
+            detail=f"No se pudo cargar el catálogo de voces de Gemini: {message}",
+        ) from None
 
 
 def _script_owner(session_id: str | None, authorization: str | None) -> tuple[str, str]:
@@ -783,7 +783,7 @@ def _check_script_time(job: dict) -> None:
             raise TimeoutError("Se agotó el tiempo de generación del guion.")
 
 
-def _build_presentation_script(job: dict, work_dir: Path, input_path: Path, form: dict, phrases: list[str]) -> None:
+def _build_presentation_script(job: dict, work_dir: Path, input_path: Path, form: dict, phrases: list[str], api_key: str) -> None:
     x_ai_session_id = job["owner"][1]
     presentation_type = form["presentation_type"]
     product, highlights, audience, cta, language, collection_items = (
@@ -797,7 +797,7 @@ def _build_presentation_script(job: dict, work_dir: Path, input_path: Path, form
         _write_script_status(job, status="preparing", message="Preparando el video…")
         duration = float(_probe(input_path, timeout=15).get("duration") or 0)
         if not 0 < duration <= 1800:
-            raise ValueError("El video necesita una duración válida de hasta 30 minutos.")
+            raise GeminiWorkflowError("El video necesita una duración válida de hasta 30 minutos.")
         target_seconds = max(1.0, duration - min(1.0, duration * 0.06))
         max_words = max(2, round(target_seconds * 2.35))
         mode_instructions = ""
@@ -823,14 +823,14 @@ def _build_presentation_script(job: dict, work_dir: Path, input_path: Path, form
 
         _write_script_status(job, status="analyzing", message="Enviando el video a Gemini…")
         _log_ai(x_ai_session_id, "presentation_script", "info", "Enviando el video a Gemini.")
-        client = _new_genai_client(timeout_ms=40_000)
+        client = _new_genai_client(api_key)
         _check_script_time(job)
         remote_file = client.files.upload(file=str(input_path))
         _write_script_status(job, message="Analizando el video…")
         while getattr(getattr(remote_file, "state", None), "name", None) not in (None, "ACTIVE"):
             _check_script_time(job)
             if getattr(remote_file.state, "name", None) == "FAILED":
-                raise RuntimeError("Gemini no pudo procesar este video.")
+                raise GeminiWorkflowError("Gemini no pudo procesar este video.")
             time.sleep(1.5)
             remote_file = client.files.get(name=remote_file.name)
 
@@ -885,18 +885,21 @@ Rules:
                 },
             )
 
-            result = PresentationScriptResult.model_validate_json(interaction.output_text)
+            try:
+                result = PresentationScriptResult.model_validate_json(interaction.output_text)
+            except ValueError:
+                raise GeminiOutputError("El modelo no devolvió un guion estructurado válido.") from None
             if phrases and (
                 len(result.segments) != len(phrases)
                 or any(" ".join(segment.text.split()) != " ".join(text.split())
                        for segment, text in zip(result.segments, phrases))
             ):
-                raise ValueError("Gemini cambió el texto o el orden del guion escrito.")
+                raise GeminiOutputError("Gemini cambió el texto o el orden del guion escrito.")
             if not 1 <= len(result.segments) <= 60 or any(
                 segment.end <= segment.start or segment.start >= duration
                 for segment in result.segments
             ):
-                raise ValueError("Gemini no devolvió tiempos utilizables para todas las frases.")
+                raise GeminiOutputError("Gemini no devolvió tiempos utilizables para todas las frases.")
             for index, segment in enumerate(result.segments):
                 segment.end = min(duration, segment.end)
                 if phrases:
@@ -905,27 +908,20 @@ Rules:
             return result.model_dump()
 
         _write_script_status(job, status="writing", message="Ubicando las frases del guion…" if phrases else "Escribiendo el guion…")
-        for index, model in enumerate(SCRIPT_MODELS[:2]):
+        def show_attempt(model: str, index: int, total: int):
             _check_script_time(job)
-            _log_ai(x_ai_session_id, "presentation_script", "info", "Iniciando solicitud.", model=model, attempt=index + 1)
-            try:
-                result = create_script(model)
-                _check_script_time(job)
-            except Exception as exc:
-                if index == 0 and len(SCRIPT_MODELS) > 1 and (_retryable_ai_error(exc) or isinstance(exc, ValueError)):
-                    _log_ai(x_ai_session_id, "presentation_script", "warning", "Probando un modelo alternativo.", model=model, error=exc)
-                    _write_script_status(job, message="Probando un modelo alternativo…")
-                    continue
-                raise
-            _log_ai(x_ai_session_id, "presentation_script", "success", "Guion listo.", model=model)
-            result["_aiModel"] = model
-            _write_script_status(job, status="ready", message="Guion listo", result=result)
-            return
-        raise RuntimeError("No hay un modelo de guion configurado.")
+            _write_script_status(job, message=f"Modelo {index}/{total}: {model}…")
+
+        result, model = _run_ai_with_fallback("presentation_script", x_ai_session_id, SCRIPT_MODELS, create_script,
+                                              max_retries=0, on_attempt=show_attempt)
+        _check_script_time(job)
+        result["_aiModel"] = model
+        _write_script_status(job, status="ready", message="Guion listo", result=result)
     except Exception as exc:
         if job["status"] != "cancelled":
-            _log_ai(x_ai_session_id, "presentation_script", "error", "El guion no se completó.", error=exc)
-            _write_script_status(job, status="error", error=f"{job['message']} {exc}")
+            _, message = _gemini_failure(exc)
+            _log_ai(x_ai_session_id, "presentation_script", "error", "El guion no se completó.", error=message)
+            _write_script_status(job, status="error", error=f"{job['message']} {message}")
     finally:
         _delete_remote_file(client, remote_file)
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -939,6 +935,7 @@ async def generate_presentation_script(
     request: Request,
     video: UploadFile = File(...),
     x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
+    personal_key: str | None = Header(default=None, alias=GEMINI_KEY_HEADER),
     authorization: str | None = Header(default=None),
     presentation_type: str = Form(default="influencer"),
     product: str = Form(default=""),
@@ -949,8 +946,7 @@ async def generate_presentation_script(
     collection_items: str = Form(default="", max_length=4000),
     phrases_json: str = Form(default="[]", max_length=14000),
 ) -> dict:
-    if not GEMINI_API_KEY:
-        raise HTTPException(503, "Falta configurar GEMINI_API_KEY en Render.")
+    api_key = _gemini_key(personal_key)
     try:
         phrases = json.loads(phrases_json)
         if not isinstance(phrases, list) or len(phrases) > 60 or any(
@@ -993,7 +989,7 @@ async def generate_presentation_script(
             raise HTTPException(422, "El archivo de video está vacío.")
         form = dict(presentation_type=presentation_type, product=product, highlights=highlights,
                     audience=audience, cta=cta, language=language, collection_items=collection_items)
-        _script_executor.submit(_build_presentation_script, job, work_dir, input_path, form, phrases)
+        _script_executor.submit(_build_presentation_script, job, work_dir, input_path, form, phrases, api_key)
     except BaseException:
         shutil.rmtree(work_dir, ignore_errors=True)
         with _script_lock:
@@ -1136,13 +1132,48 @@ async def mix_presentation_audio(
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
+def _speech_wav(data: bytes | str | None, mime_type: str | None) -> bytes:
+    try:
+        audio = base64.b64decode(data, validate=True) if isinstance(data, str) else bytes(data or b"")
+    except (ValueError, TypeError, binascii.Error):
+        raise GeminiOutputError("Gemini devolvió audio ilegible.") from None
+    if len(audio) > 44 and audio[:4] == b"RIFF" and audio[8:12] == b"WAVE":
+        return audio
+    if audio and len(audio) % 2 == 0 and (mime_type or "").lower().startswith("audio/l16"):
+        output = io.BytesIO()
+        rate = re.search(r"\brate=(\d+)", mime_type or "", re.IGNORECASE)
+        with wave.open(output, "wb") as wav:
+            wav.setparams((1, 2, int(rate[1]) if rate else 24_000, 0, "NONE", "not compressed"))
+            wav.writeframes(audio)
+        return output.getvalue()
+    raise GeminiOutputError("Gemini no devolvió una toma de voz utilizable.")
+
+
+def _legacy_speech(client: genai.Client, request: TTSRequest, style: str, locale_style: str) -> bytes:
+    response = client.models.generate_content(
+        model=LEGACY_TTS_MODEL,
+        contents=f"{style} {locale_style} Read only this script verbatim:\n\n{request.script.strip()}",
+        config=genai_types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=genai_types.SpeechConfig(voice_config=genai_types.VoiceConfig(
+                prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name=request.voice),
+            )),
+        ),
+    )
+    for candidate in response.candidates or []:
+        for part in getattr(candidate.content, "parts", None) or []:
+            if part.inline_data and part.inline_data.data:
+                return _speech_wav(part.inline_data.data, part.inline_data.mime_type)
+    raise GeminiOutputError("El modelo de respaldo no devolvió audio para la voz seleccionada.")
+
+
 @app.post("/api/subtitles/presentation/tts")
 def generate_presentation_voice(
     request: TTSRequest,
+    personal_key: str | None = Header(default=None, alias=GEMINI_KEY_HEADER),
     x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
 ) -> Response:
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=503, detail="Falta configurar GEMINI_API_KEY en Render.")
+    api_key = _gemini_key(personal_key)
 
     style = TTS_STYLES.get(request.styleId, TTS_STYLES["influencer"])
     locale_style = LANGUAGE_STYLES.get(
@@ -1151,9 +1182,11 @@ def generate_presentation_voice(
     )
 
     try:
-        client = _new_genai_client(timeout_ms=30_000)
+        client = _new_genai_client(api_key)
         def synthesize(model: str):
-            return client.interactions.create(
+            if model == LEGACY_TTS_MODEL:
+                return _legacy_speech(client, request, style, locale_style)
+            interaction = client.interactions.create(
                 model=model,
                 input=[{
                     "type": "user_input",
@@ -1174,23 +1207,12 @@ def generate_presentation_voice(
                 },
             )
 
-        interaction, used_model = _run_ai_with_fallback(
-            "presentation_tts",
-            x_ai_session_id,
-            TTS_MODELS[:2],
-            synthesize,
-            max_retries=0,
+            output_audio = getattr(interaction, "output_audio", None)
+            return _speech_wav(getattr(output_audio, "data", None), getattr(output_audio, "mime_type", None))
+
+        audio_bytes, used_model = _run_ai_with_fallback(
+            "presentation_tts", x_ai_session_id, TTS_MODELS, synthesize, max_retries=0,
         )
-
-        output_audio = getattr(interaction, "output_audio", None)
-        encoded = getattr(output_audio, "data", None)
-        if not encoded:
-            raise RuntimeError("Gemini no devolvió audio.")
-
-        if isinstance(encoded, str):
-            audio_bytes = base64.b64decode(encoded)
-        else:
-            audio_bytes = base64.b64decode(bytes(encoded))
 
         return Response(
             content=audio_bytes,
@@ -1201,25 +1223,28 @@ def generate_presentation_voice(
             },
         )
     except Exception as exc:
+        _, message = _gemini_failure(exc)
         _log_ai(
             x_ai_session_id,
             "presentation_tts",
             "error",
             "El pipeline TTS terminó con error.",
-            error=exc,
+            error=message,
         )
         raise HTTPException(
             status_code=500,
-            detail=f"No se pudo generar la voz con Gemini: {exc}",
-        ) from exc
+            detail=f"No se pudo generar la voz con Gemini: {message}",
+        ) from None
 
 
 @app.post("/api/subtitles/jobs")
 async def create_job(
     video: UploadFile = File(...),
     language: str | None = Form(default=None),
+    personal_key: str | None = Header(default=None, alias=GEMINI_KEY_HEADER),
     x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
 ) -> dict:
+    api_key = _gemini_key(personal_key)
     job_id = uuid.uuid4().hex
     job_dir = WORK_ROOT / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -1264,7 +1289,7 @@ async def create_job(
     with _jobs_lock:
         _jobs[job_id] = job
 
-    _executor.submit(_transcribe, job_id)
+    _executor.submit(_transcribe, job_id, api_key)
     return _public_job(job)
 
 
