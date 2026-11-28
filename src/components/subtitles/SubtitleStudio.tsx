@@ -104,6 +104,17 @@ const emptyExportState = (): SubtitleLocalExportState => ({
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
+const downloadBlob = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 const hexToHsv = (hex: string) => {
   const clean = hex.replace('#', '')
   const r = parseInt(clean.slice(0, 2), 16) / 255
@@ -226,6 +237,7 @@ export function SubtitleStudio() {
   const [previewVideoHeight, setPreviewVideoHeight] = useState(0)
   const [language, setLanguage] = useState('auto')
   const [videoMode, setVideoMode] = useState<VideoAudioMode | null>(null)
+  const [originalAudioVolume, setOriginalAudioVolume] = useState(100)
   const [job, setJob] = useState<SubtitleJob | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -374,6 +386,9 @@ export function SubtitleStudio() {
         setSavedFileName(saved.fileName)
         setLanguage(saved.language)
         setVideoMode(saved.videoMode)
+        if (typeof saved.originalAudioVolume === 'number' && Number.isFinite(saved.originalAudioVolume)) {
+          setOriginalAudioVolume(clamp(Math.round(saved.originalAudioVolume), 0, 100))
+        }
         setJob(saved.job)
         setWordOverrides(saved.wordOverrides ?? {})
         setPreset(saved.preset)
@@ -459,6 +474,7 @@ export function SubtitleStudio() {
       generatedVoiceReady: Boolean(generatedAudio),
       generatedVoiceSignature,
       videoMode,
+      originalAudioVolume,
       narrationMode,
       narrationBlocks: blocks,
       narrationTranscriptSignature: transcriptSignature,
@@ -489,6 +505,7 @@ export function SubtitleStudio() {
     generatedAudio,
     generatedVoiceSignature,
     videoMode,
+    originalAudioVolume,
     narrationMode,
     blocks,
     transcriptSignature,
@@ -551,6 +568,12 @@ export function SubtitleStudio() {
 
   const isNarrating = videoMode === 'without_voice'
   const showSubtitles = !isNarrating || narrationMode === 'voice_and_subtitles'
+  const originalAudioGain = isNarrating ? originalAudioVolume / 100 : 1
+  useEffect(() => {
+    const video = isMobile ? mobileVideoRef.current : desktopVideoRef.current
+    if (video) video.volume = originalAudioGain
+  }, [isMobile, originalAudioGain, videoUrl])
+
   const currentVoiceSignature = voiceSignature(presentationDraft, voice, voiceStyle, presentationForm.language)
   const fullScript = narrationScript(blocks.length ? blocks : [{ text: presentationDraft }])
   const takeSignature = voiceSignature(fullScript, voice, voiceStyle, presentationForm.language)
@@ -578,6 +601,11 @@ export function SubtitleStudio() {
   const timedNarration = useMemo(() => narrationReady && !blockingTiming ? composeNarration(placed) : null, [narrationReady, blockingTiming, placed])
   const activeAudio = blocks.length ? timedNarration : generatedAudio
   const activeAudioUrl = blocks.length ? narrationUrl : generatedAudioUrl
+  const projectFileStem = (file?.name ?? savedFileName ?? 'video').replace(/\.[^.]+$/, '') || 'video'
+  const downloadNarration = () => {
+    const audio = take ? narrationTakeWav(take) : activeAudio
+    if (audio) downloadBlob(audio, `${projectFileStem}-voz.wav`)
+  }
   useEffect(() => {
     if (!timedNarration) { setNarrationUrl(null); return }
     const url = URL.createObjectURL(timedNarration)
@@ -687,6 +715,7 @@ export function SubtitleStudio() {
     setVideoMode(mode)
 
     if (!reattachingRestoredVideo) {
+      setOriginalAudioVolume(100)
       setJob(null)
       setWordOverrides({})
       setPresentationScript(null)
@@ -916,6 +945,7 @@ export function SubtitleStudio() {
     setFile(null)
     setSavedFileName(null)
     setVideoMode(null)
+    setOriginalAudioVolume(100)
     setCurrentTime(0)
     setMediaDuration(0)
     setVideoAspectRatio(null)
@@ -991,6 +1021,7 @@ export function SubtitleStudio() {
         words: readyWords,
         showSubtitles,
         generatedAudio: isNarrating ? activeAudio : null,
+        originalAudioGain,
         options: {
           preset,
           baseColor,
@@ -1018,16 +1049,8 @@ export function SubtitleStudio() {
         },
       })
 
-      const original = file.name.replace(/\.[^.]+$/, '') || 'video'
-      const fileName = `${original}-subtitulado.mp4`
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = fileName
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      const fileName = `${projectFileStem}-subtitulado.mp4`
+      downloadBlob(blob, fileName)
 
       const elapsedSeconds = exportStartedAtRef.current
         ? (performance.now() - exportStartedAtRef.current) / 1000
@@ -1258,6 +1281,7 @@ export function SubtitleStudio() {
         ref={mobile ? mobileVideoRef : desktopVideoRef}
         src={videoUrl}
         controls={!mobile}
+        muted={originalAudioGain === 0}
         playsInline
         onLoadedMetadata={(event) => {
           const video = event.currentTarget
@@ -1355,6 +1379,20 @@ export function SubtitleStudio() {
       <span>{file.name}</span>
       <b>{videoMode === 'without_voice' ? 'SIN VOZ' : 'CON VOZ'}</b>
     </div>}
+
+    {file && isNarrating && <label className="subtitle-original-audio">
+      <span>Audio original</span>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={originalAudioVolume}
+        aria-valuetext={`${originalAudioVolume}%`}
+        onChange={(event) => setOriginalAudioVolume(event.currentTarget.valueAsNumber)}
+        disabled={exporting}
+      />
+      <b aria-hidden="true">{originalAudioVolume}%</b>
+    </label>}
 
     {videoMode === 'with_voice' && <label className="subtitle-field">
       <span>Idioma del video</span>
@@ -1495,6 +1533,12 @@ export function SubtitleStudio() {
         <button type="button" disabled={!file || !presentationDraft.trim()} onClick={() => void createAiScript(true)}>Ubicar mi guion</button>
         {!blocks.length && <button type="button" disabled={!presentationDraft.trim()} onClick={prepareManualBlocks}>Separar frases</button>}
       </div>
+      {(fullScript || take || activeAudio) && <div className="subtitle-narration-actions">
+        {fullScript && <button type="button" onClick={() => downloadBlob(
+          new Blob([fullScript], { type: 'text/plain;charset=utf-8' }), `${projectFileStem}-guion.txt`,
+        )}><Download size={14} /> Descargar guion</button>}
+        {(take || activeAudio) && <button type="button" onClick={downloadNarration}><Download size={14} /> Descargar voz</button>}
+      </div>}
 
         <div className="subtitle-voice-and-style">
           <div className="subtitle-field subtitle-voice-field">

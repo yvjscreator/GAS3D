@@ -182,6 +182,7 @@ export async function mixPresentationAudioFallback(
   originalAudio: Blob,
   generatedVoice: Blob,
   duration: number,
+  originalAudioGain: number,
 ) {
   const body = new FormData()
   body.append('original_audio', new File([originalAudio], 'original.m4a', {
@@ -191,6 +192,7 @@ export async function mixPresentationAudioFallback(
     type: generatedVoice.type || 'audio/wav',
   }))
   body.append('duration', String(duration))
+  body.append('original_gain', String(originalAudioGain))
 
   const response = await appFetch(`${apiBase}/presentation/mix-audio`, {
     method: 'POST',
