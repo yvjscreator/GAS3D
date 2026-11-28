@@ -1,4 +1,4 @@
-import type { PresentationForm, SubtitleSavedSession, SubtitlePresetId, VoiceStyleId } from './types'
+import type { NarrationClip, PresentationForm, SubtitleSavedSession, SubtitlePresetId, VoiceStyleId } from './types'
 
 const SESSION_KEY = 'gas3d.subtitle.session.v7'
 const LEGACY_SESSION_KEYS = [
@@ -12,6 +12,7 @@ const DB_NAME = 'gas3d-subtitle-studio'
 const STORE_NAME = 'media'
 const VIDEO_KEY = 'current-video'
 const GENERATED_AUDIO_KEY = 'generated-presentation-audio'
+const NARRATION_CLIPS_KEY = 'narration-clips'
 
 const defaultPresentationForm = (): PresentationForm => ({
   presentationType: 'influencer',
@@ -29,6 +30,7 @@ const presentationSignature = (form: PresentationForm) => JSON.stringify([
   form.audience.trim(),
   form.cta.trim(),
   form.language,
+  ...(form.collectionItems?.trim() ? [form.collectionItems.trim()] : []),
 ])
 
 const effectColorForPreset = (preset: SubtitlePresetId) => {
@@ -163,12 +165,12 @@ const openDb = () => new Promise<IDBDatabase>((resolve, reject) => {
   request.onerror = () => reject(request.error ?? new Error('No se pudo abrir IndexedDB.'))
 })
 
-const saveBlob = async (key: string, blob: Blob) => {
+const saveMedia = async (key: string, value: unknown) => {
   const db = await openDb()
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite')
-      tx.objectStore(STORE_NAME).put(blob, key)
+      tx.objectStore(STORE_NAME).put(value, key)
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error ?? new Error('No se pudo guardar el archivo.'))
       tx.onabort = () => reject(tx.error ?? new Error('No se pudo guardar el archivo.'))
@@ -178,21 +180,26 @@ const saveBlob = async (key: string, blob: Blob) => {
   }
 }
 
-const loadBlob = async (key: string) => {
+const loadMedia = async (key: string) => {
   const db = await openDb()
   try {
-    return await new Promise<Blob | null>((resolve, reject) => {
+    return await new Promise<unknown>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly')
       const request = tx.objectStore(STORE_NAME).get(key)
       request.onsuccess = () => {
         const value = request.result
-        resolve(value instanceof Blob ? value : null)
+        resolve(value)
       }
       request.onerror = () => reject(request.error ?? new Error('No se pudo recuperar el archivo.'))
     })
   } finally {
     db.close()
   }
+}
+
+const loadBlob = async (key: string) => {
+  const value = await loadMedia(key)
+  return value instanceof Blob ? value : null
 }
 
 const clearBlob = async (key: string) => {
@@ -210,7 +217,7 @@ const clearBlob = async (key: string) => {
 }
 
 export async function saveSubtitleVideo(file: File) {
-  await saveBlob(VIDEO_KEY, file)
+  await saveMedia(VIDEO_KEY, file)
 }
 
 export async function loadSubtitleVideo(): Promise<File | null> {
@@ -225,7 +232,7 @@ export async function clearSubtitleVideo() {
 }
 
 export async function saveGeneratedPresentationAudio(blob: Blob) {
-  await saveBlob(GENERATED_AUDIO_KEY, blob)
+  await saveMedia(GENERATED_AUDIO_KEY, blob)
 }
 
 export async function loadGeneratedPresentationAudio() {
@@ -234,4 +241,20 @@ export async function loadGeneratedPresentationAudio() {
 
 export async function clearGeneratedPresentationAudio() {
   await clearBlob(GENERATED_AUDIO_KEY)
+}
+
+export function saveNarrationClips(clips: Record<string, NarrationClip>) {
+  return saveMedia(NARRATION_CLIPS_KEY, clips)
+}
+
+export async function loadNarrationClips(): Promise<Record<string, NarrationClip>> {
+  const value = await loadMedia(NARRATION_CLIPS_KEY)
+  if (!value || typeof value !== 'object') return {}
+  return Object.fromEntries(Object.entries(value as Record<string, NarrationClip>).filter(
+    ([, clip]) => clip?.pcm instanceof Blob && clip.pcm.size > 0 && clip.pcm.size % 2 === 0 && typeof clip.signature === 'string',
+  ))
+}
+
+export function clearNarrationClips() {
+  return clearBlob(NARRATION_CLIPS_KEY)
 }

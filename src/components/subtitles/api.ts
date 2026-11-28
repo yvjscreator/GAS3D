@@ -3,7 +3,7 @@ import type {
   AiLogResponse,
   GeminiVoiceCatalog,
   PresentationForm,
-  PresentationScript,
+  PresentationScriptJob,
   SubtitleJob,
   VoiceStyleId,
 } from './types'
@@ -42,24 +42,31 @@ const expectJson = async <T>(response: Response): Promise<T> => {
   return response.json() as Promise<T>
 }
 
-export async function createSubtitleJob(file: File, language: string) {
+export async function createSubtitleJob(file: File, language: string, signal?: AbortSignal) {
   const body = new FormData()
+  const timeout = AbortSignal.timeout(120_000)
   body.append('video', file)
   if (language !== 'auto') body.append('language', language)
   return expectJson<SubtitleJob>(await appFetch(`${apiBase}/jobs`, {
     method: 'POST',
     headers: aiHeaders(),
     body,
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   }))
 }
 
 export async function getSubtitleJob(jobId: string) {
   return expectJson<SubtitleJob>(await appFetch(`${apiBase}/jobs/${jobId}`, {
-    headers: aiHeaders(),
+    headers: aiHeaders(), signal: AbortSignal.timeout(12_000),
   }))
 }
 
-export async function generatePresentationScript(file: File, form: PresentationForm) {
+export async function generatePresentationScript(
+  file: File,
+  form: PresentationForm,
+  options: { phrases: string[]; signal: AbortSignal; onStage: (message: string) => void },
+) {
+  const { phrases, signal, onStage } = options
   const body = new FormData()
   body.append('video', file)
   body.append('presentation_type', form.presentationType)
@@ -68,12 +75,44 @@ export async function generatePresentationScript(file: File, form: PresentationF
   body.append('audience', form.audience)
   body.append('cta', form.cta)
   body.append('language', form.language)
+  body.append('collection_items', form.collectionItems ?? '')
+  body.append('phrases_json', JSON.stringify(phrases))
 
-  return expectJson<PresentationScript>(await appFetch(`${apiBase}/presentation/script`, {
-    method: 'POST',
-    headers: aiHeaders(),
-    body,
-  }))
+  const endpoint = `${apiBase}/presentation/script-jobs`
+  const headers = aiHeaders()
+  onStage('Subiendo video…')
+  let job: PresentationScriptJob
+  const uploadTimeout = AbortSignal.timeout(120_000)
+  try {
+    job = await expectJson<PresentationScriptJob>(await appFetch(endpoint, {
+      method: 'POST', headers, body, signal: AbortSignal.any([signal, uploadTimeout]),
+    }))
+  } catch (error) {
+    if (uploadTimeout.aborted) throw new Error('La subida del video tardó demasiado. Puedes reintentar con una copia más liviana.')
+    throw error
+  }
+
+  const statusUrl = `${endpoint}/${encodeURIComponent(job.id)}`
+  const deadline = performance.now() + 170_000
+  try {
+    while (job.status !== 'ready') {
+      signal.throwIfAborted()
+      if (job.status === 'error' || job.status === 'cancelled') throw new Error(job.error ?? job.message)
+      if (performance.now() >= deadline) throw new Error(`Se agotó el tiempo. Última etapa: ${job.message}`)
+      onStage(job.message)
+      await new Promise((resolve) => window.setTimeout(resolve, 1200))
+      job = await expectJson<PresentationScriptJob>(await appFetch(statusUrl, {
+        headers, cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
+      }))
+    }
+    if (!job.result) throw new Error('El análisis terminó sin devolver un guion.')
+    return job.result
+  } catch (error) {
+    if (job.status !== 'error' && job.status !== 'cancelled' && job.status !== 'ready') {
+      void appFetch(statusUrl, { method: 'DELETE', headers, signal: AbortSignal.timeout(8000) }).catch(() => undefined)
+    }
+    throw error
+  }
 }
 
 export async function getPresentationVoices(forceRefresh = false) {
@@ -151,7 +190,9 @@ export async function generatePresentationVoice(
   voice: string,
   styleId: VoiceStyleId,
   language: string,
+  signal?: AbortSignal,
 ) {
+  const timeout = AbortSignal.timeout(68_000)
   const response = await appFetch(`${apiBase}/presentation/tts`, {
     method: 'POST',
     headers: {
@@ -159,6 +200,7 @@ export async function generatePresentationVoice(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ script, voice, styleId, language }),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   })
 
   if (!response.ok) {
