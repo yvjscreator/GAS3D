@@ -26,6 +26,7 @@ export type LocalExportRequest = {
   words: SubtitleWord[]
   options: SubtitleExportOptions
   generatedAudio?: Blob | null
+  originalAudioGain?: number
   showSubtitles?: boolean
   onProgress?: (state: LocalExportProgress) => void
 }
@@ -371,7 +372,7 @@ const getSourceVideoBitrate = async (videoTrack: Awaited<ReturnType<Input['getPr
 }
 
 const scheduleAudioTrack = async (
-  context: OfflineAudioContext,
+  destination: AudioNode,
   track: NonNullable<Awaited<ReturnType<Input['getPrimaryAudioTrack']>>>,
   maxDuration: number,
 ) => {
@@ -389,9 +390,9 @@ const scheduleAudioTrack = async (
 
     if (playable <= 0) continue
 
-    const source = context.createBufferSource()
+    const source = destination.context.createBufferSource()
     source.buffer = wrapped.buffer
-    source.connect(context.destination)
+    source.connect(destination)
     source.start(start, offset, playable)
   }
 }
@@ -488,21 +489,21 @@ const remuxAacTrackToAdts = async (sourceFile: File) => {
 }
 
 const scheduleDecodedBuffer = (
-  context: OfflineAudioContext,
+  destination: AudioNode,
   buffer: AudioBuffer,
   maxDuration: number,
 ) => {
   const playable = Math.min(buffer.duration, maxDuration)
   if (playable <= 0) return
 
-  const source = context.createBufferSource()
+  const source = destination.context.createBufferSource()
   source.buffer = buffer
-  source.connect(context.destination)
+  source.connect(destination)
   source.start(0, 0, playable)
 }
 
 const scheduleTrackWithFallback = async (
-  context: OfflineAudioContext,
+  destination: AudioNode,
   track: NonNullable<Awaited<ReturnType<Input['getPrimaryAudioTrack']>>>,
   fallbackBlob: Blob,
   duration: number,
@@ -510,7 +511,7 @@ const scheduleTrackWithFallback = async (
   fallbackKind: 'standalone' | 'mp4-aac',
 ) => {
   try {
-    await scheduleAudioTrack(context, track, duration)
+    await scheduleAudioTrack(destination, track, duration)
     return
   } catch (webCodecsError) {
     try {
@@ -521,7 +522,7 @@ const scheduleTrackWithFallback = async (
         try {
           const audioOnlyMp4 = await remuxAacTrackToAudioOnlyMp4(sourceFile)
           const buffer = await decodeStandaloneAudio(audioOnlyMp4)
-          scheduleDecodedBuffer(context, buffer, duration)
+          scheduleDecodedBuffer(destination, buffer, duration)
           return
         } catch (cause) {
           m4aError = cause
@@ -530,7 +531,7 @@ const scheduleTrackWithFallback = async (
         try {
           const adts = await remuxAacTrackToAdts(sourceFile)
           const buffer = await decodeStandaloneAudio(adts)
-          scheduleDecodedBuffer(context, buffer, duration)
+          scheduleDecodedBuffer(destination, buffer, duration)
           return
         } catch (adtsError) {
           const codec = await track.getCodec().catch(() => null)
@@ -544,7 +545,7 @@ const scheduleTrackWithFallback = async (
       }
 
       const buffer = await decodeStandaloneAudio(fallbackBlob)
-      scheduleDecodedBuffer(context, buffer, duration)
+      scheduleDecodedBuffer(destination, buffer, duration)
       return
     } catch (nativeError) {
       const codec = await track.getCodec().catch(() => null)
@@ -563,6 +564,7 @@ const mixOriginalAndGeneratedAudio = async (
   originalFile: File,
   generatedVoice: Blob,
   duration: number,
+  originalAudioGain: number,
 ) => {
   if (typeof OfflineAudioContext === 'undefined') {
     throw new Error(
@@ -589,11 +591,14 @@ const mixOriginalAndGeneratedAudio = async (
   }
 
   const context = new OfflineAudioContext(channels, frameCount, sampleRate)
+  const originalGain = context.createGain()
+  originalGain.gain.value = originalAudioGain
+  originalGain.connect(context.destination)
 
   // Decode sequentially. Some Android devices fail when two AudioDecoders
   // compete for hardware resources at the same time.
   await scheduleTrackWithFallback(
-    context,
+    originalGain,
     originalTrack,
     originalFile,
     duration,
@@ -601,7 +606,7 @@ const mixOriginalAndGeneratedAudio = async (
     'mp4-aac',
   )
   await scheduleTrackWithFallback(
-    context,
+    context.destination,
     voiceTrack,
     generatedVoice,
     duration,
@@ -638,17 +643,21 @@ const mixAudioOnServer = async (
   file: File,
   generatedAudio: Blob,
   videoDuration: number,
+  originalAudioGain: number,
 ) => {
   const originalAudioOnly = await remuxAacTrackToAudioOnlyMp4(file)
   const mixedBlob = await mixPresentationAudioFallback(
     originalAudioOnly,
     generatedAudio,
     videoDuration,
+    originalAudioGain,
   )
   return decodeStandaloneAudio(mixedBlob)
 }
 
-export async function exportSubtitledVideoLocally({ file, words, options, generatedAudio = null, showSubtitles = true, onProgress }: LocalExportRequest) {
+export async function exportSubtitledVideoLocally({
+  file, words, options, generatedAudio = null, originalAudioGain = 1, showSubtitles = true, onProgress,
+}: LocalExportRequest) {
   if (!('VideoEncoder' in window) || !('VideoDecoder' in window)) {
     throw new Error('Este navegador no tiene WebCodecs. La exportación local requiere Chrome/Edge/Safari moderno con WebCodecs.')
   }
@@ -763,7 +772,8 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
     if (!voiceTrack) throw new Error('La voz generada no contiene una pista de audio válida.')
 
     const videoDuration = await videoTrack.getDurationFromMetadata() ?? await videoTrack.computeDuration()
-    const audioSupport = audioTrack
+    const originalTrack = originalAudioGain > 0 ? audioTrack : null
+    const audioSupport = originalTrack
       ? await canEncodeAudio('aac', { sampleRate: 48000, numberOfChannels: 2, bitrate: 256000 })
       : await canEncodeAudio('aac', { sampleRate: await voiceTrack.getSampleRate(), numberOfChannels: await voiceTrack.getNumberOfChannels(), bitrate: 256000 })
     if (!audioSupport) {
@@ -772,25 +782,25 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
       registerAacEncoder()
     }
 
-    if (audioTrack) {
+    if (originalTrack) {
       onProgress?.({
         progress: 0.03,
-        message: 'Mezclando efecto original + voz Gemini…',
+        message: 'Mezclando audio original y voz Gemini…',
       })
 
       let mixedAudio: AudioBuffer
-      const originalAudioCodec = await audioTrack.getCodec().catch(() => null)
+      const originalAudioCodec = await originalTrack.getCodec().catch(() => null)
       const useServerFirst = isAndroidDevice() && originalAudioCodec === 'aac'
 
       if (useServerFirst) {
         onProgress?.({
           progress: 0.035,
-          message: 'Preparando efecto original para mezcla compatible con Android…',
+          message: 'Preparando audio original para mezcla compatible con Android…',
         })
 
         try {
           mixedAudio = await withTimeout(
-            mixAudioOnServer(file, generatedAudio, videoDuration),
+            mixAudioOnServer(file, generatedAudio, videoDuration, originalAudioGain),
             90_000,
             'La mezcla de audio del servidor tardó demasiado.',
           )
@@ -807,11 +817,12 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
           )
           mixedAudio = await withTimeout(
             mixOriginalAndGeneratedAudio(
-              audioTrack,
+              originalTrack,
               voiceTrack,
               file,
               generatedAudio,
               videoDuration,
+              originalAudioGain,
             ),
             localTimeoutMs,
             'La mezcla local de audio quedó bloqueada.',
@@ -824,7 +835,7 @@ export async function exportSubtitledVideoLocally({ file, words, options, genera
 
           try {
             mixedAudio = await withTimeout(
-              mixAudioOnServer(file, generatedAudio, videoDuration),
+              mixAudioOnServer(file, generatedAudio, videoDuration, originalAudioGain),
               90_000,
               'La mezcla de audio del servidor tardó demasiado.',
             )

@@ -80,6 +80,17 @@
   border-radius:6px;
 }
 .subtitle-field input[type=range] { width:100%; accent-color:#58a8e8; }
+.subtitle-original-audio {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) 4ch;
+  align-items:center;
+  gap:10px;
+  min-height:44px;
+  color:#dbe9f5;
+  font-size:12px;
+}
+.subtitle-original-audio input { width:100%; min-width:0; min-height:44px; margin:0; accent-color:#58a8e8; }
+.subtitle-original-audio b { text-align:right; font-variant-numeric:tabular-nums; }
 .subtitle-job-status {
   display:grid;
   grid-template-columns:20px minmax(0,1fr) auto;

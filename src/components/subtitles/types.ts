@@ -198,6 +198,7 @@ export type SubtitleSavedSession = {
   generatedVoiceReady: boolean
   generatedVoiceSignature: string
   videoMode: VideoAudioMode | null
+  originalAudioVolume?: number
   narrationMode?: NarrationMode
   narrationBlocks?: NarrationBlock[]
   narrationTranscriptSignature?: string

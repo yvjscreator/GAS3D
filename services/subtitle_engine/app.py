@@ -1038,6 +1038,7 @@ async def mix_presentation_audio(
     original_audio: UploadFile = File(...),
     generated_voice: UploadFile = File(...),
     duration: float = Form(...),
+    original_gain: float = Form(1.0, ge=0.0, le=1.0),
     x_ai_session_id: str | None = Header(default=None, alias="X-AI-Session-ID"),
 ) -> Response:
     if duration <= 0 or duration > 1800:
@@ -1078,7 +1079,7 @@ async def mix_presentation_audio(
             str(voice_path),
             "-filter_complex",
             (
-                "[0:a][1:a]"
+                f"[0:a]volume={original_gain}[original];[original][1:a]"
                 "amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,"
                 "alimiter=limit=0.95[a]"
             ),
