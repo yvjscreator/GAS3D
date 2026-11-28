@@ -1,4 +1,5 @@
-import { appApiRoot, appFetch } from '../auth/session'
+import { appApiRoot, appFetch, readAppSession } from '../auth/session'
+import { loadGeminiApiKey } from './storage'
 import type {
   AiLogResponse,
   GeminiVoiceCatalog,
@@ -14,6 +15,10 @@ const AI_SESSION_KEY = 'gas3d.ai.session.v1'
 const VOICE_CATALOG_CACHE_KEY = 'gas3d.ai.voice-catalog.v1'
 const VOICE_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
 
+export const geminiKeyOwner = () => readAppSession()?.user ?? 'local'
+
+let inMemoryAiSession: string | undefined
+
 export const getAiSessionId = () => {
   try {
     const existing = localStorage.getItem(AI_SESSION_KEY)
@@ -22,13 +27,21 @@ export const getAiSessionId = () => {
     localStorage.setItem(AI_SESSION_KEY, created)
     return created
   } catch {
-    return crypto.randomUUID()
+    return inMemoryAiSession ??= crypto.randomUUID()
   }
 }
 
 const aiHeaders = () => ({
   'X-AI-Session-ID': getAiSessionId(),
 })
+
+async function geminiHeaders(personalKey?: string | null, base = aiHeaders()) {
+  // Project settings and status requests only use the session identifier.
+  const key = personalKey === undefined ? await loadGeminiApiKey(geminiKeyOwner()).catch(() => null) : personalKey
+  const headers = new Headers(base)
+  if (key) headers.set('X-Gemini-API-Key', key)
+  return headers
+}
 
 const readError = async (response: Response, fallback: string) => {
   const body = await response.json().catch(() => null) as { detail?: string } | null
@@ -49,7 +62,8 @@ export async function createSubtitleJob(file: File, language: string, signal?: A
   if (language !== 'auto') body.append('language', language)
   return expectJson<SubtitleJob>(await appFetch(`${apiBase}/jobs`, {
     method: 'POST',
-    headers: aiHeaders(),
+    headers: await geminiHeaders(),
+    redirect: 'error',
     body,
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   }))
@@ -85,7 +99,7 @@ export async function generatePresentationScript(
   const uploadTimeout = AbortSignal.timeout(120_000)
   try {
     job = await expectJson<PresentationScriptJob>(await appFetch(endpoint, {
-      method: 'POST', headers, body, signal: AbortSignal.any([signal, uploadTimeout]),
+      method: 'POST', headers: await geminiHeaders(undefined, headers), redirect: 'error', body, signal: AbortSignal.any([signal, uploadTimeout]),
     }))
   } catch (error) {
     if (uploadTimeout.aborted) throw new Error('La subida del video tardó demasiado. Puedes reintentar con una copia más liviana.')
@@ -116,6 +130,12 @@ export async function generatePresentationScript(
 }
 
 export async function getPresentationVoices(forceRefresh = false) {
+  const personalKey = await loadGeminiApiKey(geminiKeyOwner()).catch(() => null)
+  if (personalKey) {
+    return expectJson<GeminiVoiceCatalog>(await appFetch(`${apiBase}/presentation/voices`, {
+      headers: await geminiHeaders(personalKey), redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(25_000),
+    }))
+  }
   let stale: GeminiVoiceCatalog | null = null
 
   try {
@@ -139,7 +159,7 @@ export async function getPresentationVoices(forceRefresh = false) {
 
   try {
     const catalog = await expectJson<GeminiVoiceCatalog>(await appFetch(`${apiBase}/presentation/voices`, {
-      headers: aiHeaders(),
+      headers: aiHeaders(), signal: AbortSignal.timeout(25_000),
     }))
 
     try {
@@ -192,13 +212,13 @@ export async function generatePresentationVoice(
   language: string,
   signal?: AbortSignal,
 ) {
-  const timeout = AbortSignal.timeout(68_000)
+  const timeout = AbortSignal.timeout(105_000)
+  const headers = await geminiHeaders()
+  headers.set('Content-Type', 'application/json')
   const response = await appFetch(`${apiBase}/presentation/tts`, {
     method: 'POST',
-    headers: {
-      ...aiHeaders(),
-      'Content-Type': 'application/json',
-    },
+    headers,
+    redirect: 'error',
     body: JSON.stringify({ script, voice, styleId, language }),
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   })

@@ -27,7 +27,7 @@ python -m uvicorn subtitle_engine.app:app --app-dir services --host 127.0.0.1 --
 
 Variables:
 
-- `GEMINI_API_KEY` obligatoria.
+- `GEMINI_API_KEY`: respaldo del servidor cuando el navegador no tiene una clave personal. La clave personal se guarda en IndexedDB por cuenta de GAS3D y se envía al backend autenticado solo para operaciones con Gemini. El backend la usa en memoria durante esa operación.
 - `GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe`.
 - `SUBTITLE_CORS_ORIGINS=http://localhost:5173` o la URL del frontend.
 - `TRANSCRIBE_WORKERS=2`.
@@ -37,5 +37,7 @@ Variables:
 El servicio solo necesita FFmpeg para extraer audio; no codifica el video final.
 
 `/api/subtitles/health` informa además `"videoExport": "browser-webcodecs"`.
+
+`/api/subtitles/health` también indica los modelos que la API tiene configurados. El guion prueba la lista por orden, una vez por modelo, dentro del plazo del trabajo. La voz usa la primera toma completa válida. `gemini-3.1-flash-tts-preview` es un respaldo temporal para voces compatibles; Google anuncia su retiro para el 18 de diciembre de 2026. Transcribe mantiene el modelo por lotes con tiempos por palabra y reintenta los fallos temporales.
 
 No guardes `GEMINI_API_KEY` en Git.

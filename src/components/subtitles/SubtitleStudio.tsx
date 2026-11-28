@@ -66,6 +66,7 @@ import {
 } from './storage'
 import { captionAt, clipSeconds, composeNarration, createNarrationBlocks, decodeNarrationClip, groupWords, moveNarrationWords, narrationConflicts, narrationScript, narrationTakeWav, placeNarration, splitNarration, splitNarrationTake } from './narration'
 import { NarrationTimeline } from './NarrationTimeline'
+import { GeminiKeySettings } from './GeminiKeySettings'
 import { notify, useTaskNotice } from '../ui/notifications'
 import { requestConfirmation } from '../ui/confirmation'
 import './subtitleStudio.css'
@@ -341,22 +342,26 @@ export function SubtitleStudio() {
   useEffect(() => {
     if (videoMode !== 'without_voice' || voiceCatalog.length) return
 
+    let current = true
     setVoiceCatalogLoading(true)
     setVoiceCatalogError(null)
 
     void getPresentationVoices()
       .then((response) => {
+        if (!current) return
         setVoiceCatalog(response.voices)
         appendClientLog(`Catálogo de voces cargado · ${response.voices.length} voces.`)
       })
       .catch((cause) => {
+        if (!current) return
         const message = cause instanceof Error ? cause.message : 'No se pudo cargar el catálogo de voces.'
         setVoiceCatalogError(message)
         appendClientLog(`Error cargando voces: ${message}`)
       })
       .finally(() => {
-        setVoiceCatalogLoading(false)
+        if (current) setVoiceCatalogLoading(false)
       })
+    return () => { current = false }
   }, [videoMode, voiceCatalog.length, voiceCatalogRequest, appendClientLog])
 
   useEffect(() => {
@@ -1336,6 +1341,12 @@ export function SubtitleStudio() {
     </label>
   </div>
 
+  const renderGeminiSettings = () => <GeminiKeySettings onChange={() => {
+    setVoiceCatalog([])
+    setVoiceCatalogError(null)
+    setVoiceCatalogRequest((value) => value + 1)
+  }} />
+
   const renderVideoControls = () => <div className="subtitle-video-controls">
     {renderUploadChoice()}
 
@@ -1947,7 +1958,7 @@ export function SubtitleStudio() {
         </>}
         {mobilePanel === 'text' && (colorEditorTarget ? renderMobileColorEditor() : renderTextControls())}
         {mobilePanel === 'transcript' && renderTranscript()}
-        {mobilePanel === 'logs' && renderLogs()}
+        {mobilePanel === 'logs' && <>{renderGeminiSettings()}{renderLogs()}</>}
       </div>
     </div>
   }
@@ -2034,6 +2045,7 @@ export function SubtitleStudio() {
           <div className="subtitle-card">
             <h2>1. Video</h2>
             {renderVideoControls()}
+            {renderGeminiSettings()}
           </div>
 
           {videoMode === 'without_voice' && <div className="subtitle-card">

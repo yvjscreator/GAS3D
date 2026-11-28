@@ -2422,3 +2422,22 @@
   .subtitle-ai-presenter .subtitle-narration-mode select,
   .subtitle-ai-presenter .subtitle-presentation-type select { min-height:44px; }
 }
+
+.subtitle-gemini-settings summary { min-height:44px; font-size:.75rem; }
+.subtitle-gemini-settings summary span { margin-left:auto; color:#9db1c2; font-size:.7rem; text-align:right; }
+.subtitle-gemini-settings form { display:grid; gap:6px; padding:0 9px 9px; }
+.subtitle-gemini-settings input,
+.subtitle-gemini-settings button {
+  min-width:0;
+  min-height:44px;
+  border:1px solid #375469;
+  border-radius:6px;
+  background:#172630;
+  color:#e0f0fa;
+}
+.subtitle-gemini-settings input { width:100%; padding:5px 8px; font-size:.9rem; }
+.subtitle-gemini-settings button { display:grid; place-items:center; width:44px; padding:0; }
+.subtitle-gemini-settings button:disabled { opacity:.45; }
+.subtitle-gemini-settings small { font-size:.7rem; }
+.subtitle-gemini-settings .subtitle-gemini-error { color:#ffb5ba; }
+.panel-logs .subtitle-gemini-settings { margin-bottom:8px; }

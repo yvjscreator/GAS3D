@@ -14,9 +14,9 @@ services:
       - key: GEMINI_TRANSCRIBE_MODEL
         value: gemini-3.5-transcribe
       - key: GEMINI_SCRIPT_MODELS
-        value: gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash
+        value: gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite
       - key: GEMINI_TTS_MODELS
-        value: gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts
+        value: gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts,gemini-3.1-flash-tts-preview
       - key: AI_RETRIES_PER_MODEL
         value: "3"
       - key: AI_RETRY_DELAYS

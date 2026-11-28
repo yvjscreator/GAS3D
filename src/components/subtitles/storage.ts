@@ -273,3 +273,18 @@ export async function loadNarrationClips(): Promise<Record<string, NarrationClip
 export function clearNarrationClips() {
   return clearBlob(NARRATION_CLIPS_KEY)
 }
+
+const geminiPreferenceKey = (user: string) => `gemini-api-key:${user}`
+
+export async function loadGeminiApiKey(user: string) {
+  const value = await loadMedia(geminiPreferenceKey(user))
+  return typeof value === 'string' ? value : null
+}
+
+export function saveGeminiApiKey(user: string, key: string) {
+  return saveMedia(geminiPreferenceKey(user), key)
+}
+
+export function clearGeminiApiKey(user: string) {
+  return clearBlob(geminiPreferenceKey(user))
+}
