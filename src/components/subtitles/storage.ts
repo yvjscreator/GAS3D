@@ -1,4 +1,4 @@
-import type { NarrationClip, PresentationForm, SubtitleSavedSession, SubtitlePresetId, VoiceStyleId } from './types'
+import type { NarrationClip, NarrationTake, PresentationForm, SubtitleSavedSession, SubtitlePresetId, VoiceStyleId } from './types'
 
 const SESSION_KEY = 'gas3d.subtitle.session.v7'
 const LEGACY_SESSION_KEYS = [
@@ -13,6 +13,7 @@ const STORE_NAME = 'media'
 const VIDEO_KEY = 'current-video'
 const GENERATED_AUDIO_KEY = 'generated-presentation-audio'
 const NARRATION_CLIPS_KEY = 'narration-clips'
+const NARRATION_TAKE_KEY = 'narration-take'
 
 const defaultPresentationForm = (): PresentationForm => ({
   presentationType: 'influencer',
@@ -243,15 +244,29 @@ export async function clearGeneratedPresentationAudio() {
   await clearBlob(GENERATED_AUDIO_KEY)
 }
 
-export function saveNarrationClips(clips: Record<string, NarrationClip>) {
-  return saveMedia(NARRATION_CLIPS_KEY, clips)
+export function saveNarrationTake(take: NarrationTake) {
+  return saveMedia(NARRATION_TAKE_KEY, take)
 }
+
+export async function loadNarrationTake(): Promise<NarrationTake | null> {
+  const value = await loadMedia(NARRATION_TAKE_KEY) as Partial<NarrationTake> | undefined
+  if (!value || typeof value.id !== 'string') return null
+  const { id } = value
+  return validNarrationClip(value) ? { ...value, id } : null
+}
+
+export function clearNarrationTake() {
+  return clearBlob(NARRATION_TAKE_KEY)
+}
+
+const validNarrationClip = (clip: Partial<NarrationClip>): clip is NarrationClip =>
+  clip?.pcm instanceof Blob && clip.pcm.size > 0 && clip.pcm.size % 2 === 0 && typeof clip.signature === 'string'
 
 export async function loadNarrationClips(): Promise<Record<string, NarrationClip>> {
   const value = await loadMedia(NARRATION_CLIPS_KEY)
   if (!value || typeof value !== 'object') return {}
   return Object.fromEntries(Object.entries(value as Record<string, NarrationClip>).filter(
-    ([, clip]) => clip?.pcm instanceof Blob && clip.pcm.size > 0 && clip.pcm.size % 2 === 0 && typeof clip.signature === 'string',
+    ([, clip]) => validNarrationClip(clip),
   ))
 }
 

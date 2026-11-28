@@ -36,6 +36,7 @@ import type {
   NarrationBlock,
   NarrationClip,
   NarrationMode,
+  NarrationTake,
   PresentationForm,
   PresentationScript,
   SubtitleCaption,
@@ -51,17 +52,19 @@ import { getSubtitlePreset, subtitlePresets } from './presets'
 import {
   clearGeneratedPresentationAudio,
   clearNarrationClips,
+  clearNarrationTake,
   clearSubtitleSession,
   clearSubtitleVideo,
   loadGeneratedPresentationAudio,
   loadNarrationClips,
+  loadNarrationTake,
   loadSubtitleSession,
   loadSubtitleVideo,
-  saveNarrationClips,
+  saveNarrationTake,
   saveSubtitleSession,
   saveSubtitleVideo,
 } from './storage'
-import { captionAt, clipSeconds, composeNarration, createNarrationBlocks, decodeNarrationClip, groupWords, moveNarrationWords, narrationConflicts, placeNarration, sequenceUnplacedBlocks, splitNarration } from './narration'
+import { captionAt, clipSeconds, composeNarration, createNarrationBlocks, decodeNarrationClip, groupWords, moveNarrationWords, narrationConflicts, narrationScript, narrationTakeWav, placeNarration, splitNarration, splitNarrationTake } from './narration'
 import { NarrationTimeline } from './NarrationTimeline'
 import { notify, useTaskNotice } from '../ui/notifications'
 import { requestConfirmation } from '../ui/confirmation'
@@ -266,7 +269,8 @@ export function SubtitleStudio() {
   const [generatedVoiceSignature, setGeneratedVoiceSignature] = useState('')
   const [narrationMode, setNarrationMode] = useState<NarrationMode>('voice_and_subtitles')
   const [blocks, setBlocks] = useState<NarrationBlock[]>([])
-  const [clips, setClips] = useState<Record<string, NarrationClip>>({})
+  const [legacyClips, setLegacyClips] = useState<Record<string, NarrationClip>>({})
+  const [take, setTake] = useState<NarrationTake | null>(null)
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [focusPhrase, setFocusPhrase] = useState(false)
   const [transcriptSignature, setTranscriptSignature] = useState('')
@@ -389,10 +393,11 @@ export function SubtitleStudio() {
       }
 
       try {
-        const [restoredVideo, restoredAudio, restoredClips] = await Promise.all([
+        const [restoredVideo, restoredAudio, restoredClips, restoredTake] = await Promise.all([
           loadSubtitleVideo(),
           loadGeneratedPresentationAudio(),
           loadNarrationClips().catch(() => ({})),
+          loadNarrationTake().catch(() => null),
         ])
 
         if (restoredVideo) {
@@ -403,7 +408,8 @@ export function SubtitleStudio() {
           setStorageNotice('Se restauró el proyecto. Vuelve a seleccionar el mismo video para previsualizar o exportar.')
         }
 
-        setClips(restoredClips)
+        setLegacyClips(restoredClips)
+        setTake(restoredTake)
         if (restoredAudio) {
           setGeneratedAudio(restoredAudio)
           setGeneratedAudioUrl(URL.createObjectURL(restoredAudio))
@@ -541,12 +547,25 @@ export function SubtitleStudio() {
   const isNarrating = videoMode === 'without_voice'
   const showSubtitles = !isNarrating || narrationMode === 'voice_and_subtitles'
   const currentVoiceSignature = voiceSignature(presentationDraft, voice, voiceStyle, presentationForm.language)
-  const usableClips = useMemo(() => Object.fromEntries(blocks.flatMap((block) => {
-    const clip = clips[block.id]
-    return clip?.signature === voiceSignature(block.text, voice, voiceStyle, presentationForm.language) ? [[block.id, clip]] : []
-  })), [blocks, clips, voice, voiceStyle, presentationForm.language])
-  const placed = useMemo(() => placeNarration(blocks, usableClips), [blocks, usableClips])
-  const packed = useMemo(() => placeNarration(blocks, usableClips, true), [blocks, usableClips])
+  const fullScript = narrationScript(blocks.length ? blocks : [{ text: presentationDraft }])
+  const takeSignature = voiceSignature(fullScript, voice, voiceStyle, presentationForm.language)
+  const currentTake = take?.signature === takeSignature ? take : null
+  const takeWords = currentTake && transcriptSignature === currentTake.id && job?.status === 'ready' ? job.words : null
+  const takeAlignment = useMemo(() => currentTake && takeWords ? splitNarrationTake(currentTake, blocks, takeWords) : null, [blocks, currentTake, takeWords])
+  const usableClips = useMemo(() => {
+    if (take) return Object.fromEntries((takeAlignment?.source ?? []).map(({ block, clip }) => [block.id, clip]))
+    return Object.fromEntries(blocks.flatMap((block) => {
+      const clip = legacyClips[block.id]
+      return clip?.signature === voiceSignature(block.text, voice, voiceStyle, presentationForm.language) ? [[block.id, clip]] : []
+    }))
+  }, [blocks, legacyClips, presentationForm.language, take, takeAlignment, voice, voiceStyle])
+  const timelineBlocks = useMemo(() => takeAlignment ? blocks.map((block, index) => {
+    const start = takeAlignment.source[index]?.start
+    return block.anchored || start === undefined ? block : { ...block, start }
+  }) : blocks, [blocks, takeAlignment])
+  const placed = useMemo(() => placeNarration(timelineBlocks, usableClips), [timelineBlocks, usableClips])
+  const packed = useMemo(() => take ? [] : placeNarration(blocks, usableClips, true), [blocks, take, usableClips])
+  const sourcePlacements = takeAlignment?.source ?? packed
   const packedSignature = JSON.stringify(packed.map(({ block, clip }) => [block.id, clip.signature, clip.pcm.size]))
   const narrationReady = Boolean(blocks.length && placed.length === blocks.length && blocks.every((block) => block.text.trim()))
   const conflicts = useMemo(() => narrationConflicts(placed, mediaDuration), [placed, mediaDuration])
@@ -561,12 +580,12 @@ export function SubtitleStudio() {
     return () => URL.revokeObjectURL(url)
   }, [timedNarration])
   const subtitlesCurrent = isNarrating
-    ? job?.status === 'ready' && (blocks.length ? narrationReady && transcriptSignature === packedSignature : Boolean(activeAudio && generatedVoiceSignature === currentVoiceSignature))
+    ? job?.status === 'ready' && (blocks.length ? narrationReady && transcriptSignature === (currentTake?.id ?? packedSignature) : Boolean(activeAudio && generatedVoiceSignature === currentVoiceSignature))
     : job?.status === 'ready' && (job.language ?? 'auto') === language
   const readyWords = useMemo(() => {
     if (!showSubtitles || !subtitlesCurrent || !job) return []
-    return isNarrating && blocks.length ? moveNarrationWords(job.words, packed, placed) : job.words
-  }, [showSubtitles, subtitlesCurrent, job, isNarrating, blocks.length, packed, placed])
+    return isNarrating && blocks.length ? moveNarrationWords(job.words, sourcePlacements, placed) : job.words
+  }, [showSubtitles, subtitlesCurrent, job, isNarrating, blocks.length, sourcePlacements, placed])
   const captions = useMemo(() => groupWords(readyWords, maxWords), [readyWords, maxWords])
   const wordsById = useMemo(() => new Map(readyWords.map((word) => [word.id, word])), [readyWords])
 
@@ -616,19 +635,23 @@ export function SubtitleStudio() {
 
   const duration = isNarrating ? (mediaDuration || (!blocks.length ? job?.duration ?? 0 : 0)) : Math.max(job?.duration ?? 0, mediaDuration)
   const transcribing = Boolean(pendingTranscriptId)
+  const separatingTake = Boolean(currentTake && transcriptSignature === currentTake.id && transcribing)
+  useTaskNotice(separatingTake, 'Identificando los cortes en la toma completa…')
   const exporting = localExport.status === 'checking' || localExport.status === 'exporting'
   const generatedLanguage = job?.language ?? 'auto'
   const voiceIsFresh = blocks.length ? narrationReady : Boolean(generatedAudio && generatedVoiceSignature === currentVoiceSignature)
   const primaryMode: PrimaryMode = isNarrating
     ? !presentationDraft.trim() && blocks.length === 0 ? 'script'
-      : !voiceIsFresh ? 'voice'
-        : showSubtitles && !subtitlesCurrent ? 'sync' : 'export'
+      : currentTake && !narrationReady ? 'sync'
+        : !voiceIsFresh ? 'voice'
+          : showSubtitles && !subtitlesCurrent ? 'sync' : 'export'
     : subtitlesCurrent ? 'export' : 'generate'
   const selectedBlock = blocks.find((block) => block.id === selectedBlockId) ?? blocks[0]
 
   const resetGeneratedVoice = async () => {
     setBlocks([])
-    setClips({})
+    setLegacyClips({})
+    setTake(null)
     setSelectedBlockId(null)
     setTranscriptSignature('')
     setGeneratedAudio(null)
@@ -638,7 +661,7 @@ export function SubtitleStudio() {
     setJob(null)
     setWordOverrides({})
     try {
-      await Promise.all([clearGeneratedPresentationAudio(), clearNarrationClips()])
+      await Promise.all([clearGeneratedPresentationAudio(), clearNarrationClips(), clearNarrationTake()])
     } catch {
       // Best effort.
     }
@@ -768,15 +791,15 @@ export function SubtitleStudio() {
   }
 
   const syncExistingVoice = async () => {
-    const audio = blocks.length ? composeNarration(packed) : generatedAudio
-    if (!audio || !voiceIsFresh || aiRequestRef.current) return
+    const audio = currentTake ? narrationTakeWav(currentTake) : blocks.length ? composeNarration(packed) : generatedAudio
+    if (!audio || (!currentTake && !voiceIsFresh) || aiRequestRef.current) return
     const request = new AbortController()
     aiRequestRef.current = request
     setError(null)
-    setAiStage('Sincronizando subtítulos…')
+    setAiStage(currentTake ? 'Transcribiendo la toma para ubicar las frases…' : 'Sincronizando subtítulos…')
     setAiBusy('voice')
     try {
-      await syncNarration(audio, blocks.length ? packedSignature : '', request.signal)
+      await syncNarration(audio, currentTake?.id ?? (blocks.length ? packedSignature : ''), request.signal)
     } catch (cause) {
       if (!request.signal.aborted) setError(cause instanceof Error ? cause.message : 'No se pudo sincronizar la voz.')
     } finally {
@@ -788,8 +811,9 @@ export function SubtitleStudio() {
   const createAiVoice = async () => {
     if (aiRequestRef.current) return
     const nextBlocks = blocks.length ? blocks : createNarrationBlocks(splitNarration(presentationDraft, presentationForm.language))
-    if (!nextBlocks.length || nextBlocks.length > 60 || nextBlocks.some((block) => !block.text.trim())) {
-      setError('Completa el texto de cada bloque. Puedes generar hasta 60 frases por proyecto.')
+    const script = narrationScript(nextBlocks)
+    if (!nextBlocks.length || nextBlocks.length > 60 || nextBlocks.some((block) => !block.text.trim()) || Array.from(script).length > 12_000) {
+      setError('Completa las frases. Una toma admite hasta 60 bloques y 12.000 caracteres.')
       openMobilePanel('voice')
       return
     }
@@ -797,40 +821,32 @@ export function SubtitleStudio() {
     const request = new AbortController()
     aiRequestRef.current = request
     setError(null)
-    setAiStage('Preparando voz…')
+    setAiStage('Generando la narración completa…')
     setAiBusy('voice')
     setBlocks(nextBlocks)
     setSelectedBlockId((current) => current ?? nextBlocks[0].id)
-    const updated = { ...usableClips }
     try {
-      for (const [index, block] of nextBlocks.entries()) {
-        if (updated[block.id]) continue
-        request.signal.throwIfAborted()
-        setAiStage(`Generando voz · frase ${index + 1} de ${nextBlocks.length}`)
-        const signature = voiceSignature(block.text, voice, voiceStyle, presentationForm.language)
-        const result = await generatePresentationVoice(block.text, voice, voiceStyle, presentationForm.language, request.signal)
-        updated[block.id] = await decodeNarrationClip(result.blob, signature)
-        request.signal.throwIfAborted()
-        await saveNarrationClips(updated).catch(() => setStorageNotice('La voz funciona en esta sesión, pero el navegador no pudo guardarla.'))
-        setClips({ ...updated })
+      const signature = voiceSignature(script, voice, voiceStyle, presentationForm.language)
+      const result = await generatePresentationVoice(script, voice, voiceStyle, presentationForm.language, request.signal)
+      const recording = { ...await decodeNarrationClip(result.blob, signature), id: crypto.randomUUID() }
+      request.signal.throwIfAborted()
+      try {
+        await saveNarrationTake(recording)
+      } catch {
+        setStorageNotice('La toma funciona en esta sesión, pero el navegador no pudo guardarla.')
       }
       request.signal.throwIfAborted()
-      const sequenced = sequenceUnplacedBlocks(nextBlocks, updated)
-      setBlocks(sequenced)
-      if (showSubtitles) {
-        setAiStage('Sincronizando subtítulos…')
-        const source = placeNarration(sequenced, updated, true)
-        const audio = composeNarration(source)
-        if (!audio) throw new Error('No se pudo preparar la voz para subtítulos.')
-        await syncNarration(audio, JSON.stringify(source.map(({ block, clip }) => [block.id, clip.signature, clip.pcm.size])), request.signal)
-      }
-      notify('success', 'La voz está lista para revisar en la línea de tiempo.')
+      setTake(recording)
+      setJob(null)
+      setTranscriptSignature('')
+      setAiStage('Transcribiendo la toma para ubicar las frases…')
+      await syncNarration(narrationTakeWav(recording), recording.id, request.signal)
       if (isMobile) closeMobilePanel()
     } catch (cause) {
       if (!request.signal.aborted) {
-        const message = cause instanceof Error ? cause.message : 'No se pudo generar la voz.'
+        const message = cause instanceof Error ? cause.message : 'No se pudo preparar la toma.'
         setError(message)
-        appendClientLog(`Error generando voz: ${message}`)
+        appendClientLog(`Error preparando la toma: ${message}`)
       }
     } finally {
       aiRequestRef.current = null
@@ -866,8 +882,13 @@ export function SubtitleStudio() {
     const left = selectedBlock.text.slice(0, cursor).trim()
     const right = selectedBlock.text.slice(cursor).trim()
     if (!left || !right) { notify('info', 'Coloca el cursor donde quieres dividir la frase.'); return }
-    const next = { ...selectedBlock, id: crypto.randomUUID(), text: right, anchored: false, start: selectedBlock.start + left.split(/\s+/).length / 2.35 }
-    changeBlocks([...blocks.slice(0, index), { ...selectedBlock, text: left }, next, ...blocks.slice(index + 1)])
+    const next = { ...selectedBlock, id: crypto.randomUUID(), text: right, start: selectedBlock.start + left.split(/\s+/).length / 2.35 }
+    const updated = [...blocks.slice(0, index), { ...selectedBlock, text: left }, next, ...blocks.slice(index + 1)]
+    if (selectedBlock.anchored && currentTake && takeWords) {
+      const separated = splitNarrationTake(currentTake, updated, takeWords).source
+      if (separated[index + 1]) next.start = selectedBlock.start + separated[index + 1].start - separated[index].start
+    }
+    changeBlocks(updated)
     setSelectedBlockId(next.id)
   }
 
@@ -903,7 +924,8 @@ export function SubtitleStudio() {
     setGeneratedVoiceSignature('')
     setNarrationMode('voice_and_subtitles')
     setBlocks([])
-    setClips({})
+    setLegacyClips({})
+    setTake(null)
     setSelectedBlockId(null)
     setTranscriptSignature('')
 
@@ -914,7 +936,7 @@ export function SubtitleStudio() {
     clearSubtitleSession()
 
     try {
-      await Promise.all([clearSubtitleVideo(), clearGeneratedPresentationAudio(), clearNarrationClips()])
+      await Promise.all([clearSubtitleVideo(), clearGeneratedPresentationAudio(), clearNarrationClips(), clearNarrationTake()])
     } catch {
       // Best effort.
     }
@@ -1376,7 +1398,7 @@ export function SubtitleStudio() {
       {selectedBlock && <div className="subtitle-narration-editor">
         <label className="subtitle-field"><span>Bloque</span><select value={selectedBlock.id} onChange={(event) => {
           const block = blocks.find((item) => item.id === event.target.value)
-          if (block) { setSelectedBlockId(block.id); seekTo(block.start) }
+          if (block) { setSelectedBlockId(block.id); seekTo(timelineBlocks.find((item) => item.id === block.id)?.start ?? block.start) }
         }}>{blocks.map((block, index) => <option key={block.id} value={block.id}>{index + 1}. {block.label || block.text.slice(0, 55) || 'Frase'}</option>)}</select></label>
         <label className="subtitle-field"><span>Diseño / escena</span><input value={selectedBlock.label} maxLength={120} onChange={(event) => updateBlock(selectedBlock.id, { label: event.target.value })} /></label>
         {selectedBlock.visibleText && <small className="subtitle-visible-design-text">En pantalla: «{selectedBlock.visibleText}»</small>}
@@ -1540,6 +1562,9 @@ export function SubtitleStudio() {
           </label>
         </div>
 
+        {voiceIsFresh && (!take || narrationReady) && <div className="subtitle-narration-actions">
+          <button type="button" disabled={transcribing} onClick={() => void createAiVoice()}>{take ? 'Generar otra toma completa' : 'Generar una toma completa'}</button>
+        </div>}
         {activeAudioUrl && <div className="subtitle-voice-preview">
           <span><Mic2 size={15} /> Voz generada</span>
           <audio controls src={activeAudioUrl} />
@@ -1838,21 +1863,22 @@ export function SubtitleStudio() {
   }, [mobilePanel, refreshLogs])
 
   const primaryDisabled = !file || restoring || uploading || aiBusy !== null || exporting ||
-    (showSubtitles && transcribing) || (primaryMode === 'export' && isNarrating && (blockingTiming || !activeAudio))
+    ((showSubtitles || separatingTake) && transcribing) || (primaryMode === 'export' && isNarrating && (blockingTiming || !activeAudio))
 
   const primaryLabel =
     aiBusy === 'script' ? 'Analizando…' :
     aiBusy === 'voice' ? 'Preparando voz…' :
+    separatingTake ? 'Separando frases…' :
     showSubtitles && transcribing ? 'Generando subtítulos…' :
     primaryMode === 'script' ? 'Generar guion' :
-    primaryMode === 'voice' ? (showSubtitles ? 'Generar voz y subtítulos' : 'Generar voz') :
-    primaryMode === 'sync' ? 'Sincronizar subtítulos' :
+    primaryMode === 'voice' ? 'Generar voz' :
+    primaryMode === 'sync' ? (currentTake ? 'Separar frases' : 'Sincronizar subtítulos') :
     primaryMode === 'generate' ? 'Generar subtítulos' :
     exporting ? `Exportando ${Math.round(localExport.progress * 100)}%` : 'Exportar'
 
   const renderNarrationTimeline = () => isNarrating && blocks.length > 0 && <>
     <NarrationTimeline
-      blocks={blocks} clips={usableClips} duration={duration} time={currentTime} selectedId={selectedBlock?.id ?? null}
+      blocks={timelineBlocks} clips={usableClips} duration={duration} time={currentTime} selectedId={selectedBlock?.id ?? null}
       disabled={Boolean(aiBusy || exporting)} conflicts={new Set([...conflicts.overlaps, ...conflicts.outside, ...conflicts.scenes])}
       onSelect={setSelectedBlockId}
       onMove={(id, start) => {
@@ -1862,13 +1888,14 @@ export function SubtitleStudio() {
       }}
       onSeek={seekTo} onEdit={() => { setFocusPhrase(true); openMobilePanel('voice') }}
     />
+    {takeAlignment?.error && <p className="subtitle-narration-warning" role="status">{takeAlignment.error} Puedes reintentar la separación de la misma toma.</p>}
     {(blockingTiming || conflicts.scenes.size > 0) && <p className="subtitle-narration-warning" role="status">
       {blockingTiming ? 'Hay frases superpuestas o fuera del video. Mueve o acorta los bloques marcados para exportar.' : 'Una o más frases se salen de su escena sugerida.'}
     </p>}
   </>
 
   const primaryIcon =
-    aiBusy || uploading || (showSubtitles && transcribing) || exporting
+    aiBusy || uploading || separatingTake || (showSubtitles && transcribing) || exporting
       ? <LoaderCircle size={17} className="spin" />
       : primaryMode === 'export'
         ? <Download size={17} />
