@@ -147,6 +147,7 @@ export type NarrationBlock = {
 }
 
 export type NarrationClip = { pcm: Blob; signature: string }
+export type NarrationTake = NarrationClip & { id: string }
 
 export type PresentationScriptJob = {
   id: string
